@@ -318,7 +318,7 @@ fun ChatScreen(
         RpAtmosphericBackground()
 
         // Bot background wallpaper model resolution
-        val bgModel: Any? = remember(bot.chatBgUrl, bot.avatarUrl, bot.id) {
+        val bgModel: Any = remember(bot.chatBgUrl, bot.avatarUrl, bot.id) {
             when {
                 bot.chatBgUrl == "USE_AVATAR" -> {
                     when {
@@ -334,41 +334,31 @@ fun ChatScreen(
                     }
                 }
                 bot.chatBgUrl.isNotBlank() -> bot.chatBgUrl
-                bot.id.contains("aiden_zoktay") -> com.example.R.drawable.aiden_zoktay
-                bot.id.contains("aiden_dispatch") -> com.example.R.drawable.aiden_dispatch
-                bot.id.contains("aiden_joker") -> com.example.R.drawable.aiden_joker
-                bot.id.contains("aiden_doctor") -> com.example.R.drawable.aiden_doctor
-                bot.id.contains("aiden_obsidian") -> com.example.R.drawable.aiden_obsidian
-                bot.id == "starter_ayla" || bot.aiName.equals("Ayla", ignoreCase = true) -> com.example.R.drawable.img_ayla_avatar
-                bot.id == "starter_aetheria" || bot.universeName.contains("Aetheria", ignoreCase = true) -> com.example.R.drawable.img_aetheria_universe
-                bot.avatarUrl.isNotBlank() -> bot.avatarUrl
                 else -> com.example.R.drawable.img_chat_bg_gothic
             }
         }
 
-        if (bgModel != null) {
-            coil.compose.AsyncImage(
-                model = bgModel,
-                contentDescription = "Sohbet Arka Planı",
-                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                modifier = Modifier.fillMaxSize(),
-                alpha = 0.55f
-            )
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(
-                        Brush.verticalGradient(
-                            colors = listOf(
-                                Color(0x90070512),
-                                Color(0x35070512),
-                                Color(0x80070512),
-                                Color(0xFA070512)
-                            )
+        coil.compose.AsyncImage(
+            model = bgModel,
+            contentDescription = "Sohbet Arka Planı",
+            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+            modifier = Modifier.fillMaxSize(),
+            alpha = 0.65f
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            Color(0x90070512),
+                            Color(0x35070512),
+                            Color(0x80070512),
+                            Color(0xFA070512)
                         )
                     )
-            )
-        }
+                )
+        )
 
         Scaffold(
             containerColor = Color.Transparent,

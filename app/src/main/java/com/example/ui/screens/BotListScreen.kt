@@ -1216,7 +1216,7 @@ fun BotCardItem(
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = if (isUniverse) "Aç" else "Sohbete Devam Et",
+                                text = if (isUniverse) "Aç" else "Sohbet Et",
                                 color = Color.White,
                                 fontSize = 13.5.sp,
                                 fontWeight = FontWeight.Bold
@@ -1502,34 +1502,33 @@ fun ExploreTabContent(
                         // Left-side Image of Aiden
                         Box(
                             modifier = Modifier
-                                .width(130.dp)
-                                .height(100.dp)
+                                .size(88.dp)
                                 .clip(RoundedCornerShape(16.dp))
                                 .border(1.dp, Color(0x40C084FC), RoundedCornerShape(16.dp))
                         ) {
-                            Image(
-                                painter = painterResource(id = com.example.R.drawable.aiden_zoktay),
+                            coil.compose.AsyncImage(
+                                model = com.example.R.drawable.aiden_zoktay,
                                 contentDescription = "Aiden Blackwood Stories",
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier.fillMaxSize()
                             )
                         }
 
-                        Spacer(modifier = Modifier.width(14.dp))
+                        Spacer(modifier = Modifier.width(12.dp))
 
                         Column(
                             modifier = Modifier
                                 .weight(1f)
-                                .padding(vertical = 4.dp)
+                                .padding(vertical = 2.dp)
                         ) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
                                 Text(
-                                    text = "Aiden Blackwood Stories",
+                                    text = "Aiden Blackwood",
                                     color = Color.White,
-                                    fontSize = 15.sp,
+                                    fontSize = 14.5.sp,
                                     fontWeight = FontWeight.Bold,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
@@ -1537,7 +1536,7 @@ fun ExploreTabContent(
                                 // Verified Badge
                                 Box(
                                     modifier = Modifier
-                                        .size(16.dp)
+                                        .size(15.dp)
                                         .clip(CircleShape)
                                         .background(Color(0xFF6366F1)),
                                     contentAlignment = Alignment.Center
@@ -1545,19 +1544,36 @@ fun ExploreTabContent(
                                     Text(
                                         text = "✓",
                                         color = Color.White,
-                                        fontSize = 10.sp,
+                                        fontSize = 9.5.sp,
                                         fontWeight = FontWeight.ExtraBold
                                     )
                                 }
                             }
 
-                            Spacer(modifier = Modifier.height(6.dp))
+                            Spacer(modifier = Modifier.height(4.dp))
+
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(Color(0xFF2C1A4A))
+                                    .border(1.dp, Color(0x60A78BFA), RoundedCornerShape(8.dp))
+                                    .padding(horizontal = 7.dp, vertical = 2.dp)
+                            ) {
+                                Text(
+                                    text = if (isEnglish) "5 Exclusive Stories" else "5 Özel Hikaye",
+                                    color = Color(0xFFC084FC),
+                                    fontSize = 10.5.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(4.dp))
 
                             Text(
-                                text = if (isEnglish) "Tap to switch to the Special Aiden Blackwood Story Menu" else "Özel Aiden Blackwood Hikaye Menüsüne geçmek için dokun",
+                                text = if (isEnglish) "Tap to view all 5 Aiden Blackwood scenarios" else "Tüm 5 Aiden Blackwood senaryosunu görmek için dokun",
                                 color = Color(0xFF94A3B8),
-                                fontSize = 11.5.sp,
-                                lineHeight = 15.sp,
+                                fontSize = 11.sp,
+                                lineHeight = 14.sp,
                                 maxLines = 2,
                                 overflow = TextOverflow.Ellipsis
                             )
@@ -1658,8 +1674,8 @@ fun ExploreTabContent(
                             .clip(RoundedCornerShape(16.dp))
                             .border(1.2.dp, Color(0x50C084FC), RoundedCornerShape(16.dp))
                     ) {
-                        Image(
-                            painter = painterResource(id = cardImage),
+                        coil.compose.AsyncImage(
+                            model = cardImage,
                             contentDescription = titleText,
                             contentScale = ContentScale.Crop,
                             modifier = Modifier.fillMaxSize()
@@ -2319,8 +2335,8 @@ fun AidenStoriesModal(
                                 .border(1.5.dp, Color(0xFFA78BFA), RoundedCornerShape(12.dp)),
                             contentAlignment = Alignment.Center
                         ) {
-                            Image(
-                                painter = painterResource(id = R.drawable.ic_app_logo),
+                            coil.compose.AsyncImage(
+                                model = R.drawable.ic_app_logo,
                                 contentDescription = "App Logo",
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier
@@ -2503,7 +2519,7 @@ fun AidenStoriesModal(
                                             color = if (isSelected) Color.White else Color(0xFF94A3B8),
                                             fontSize = 11.5.sp,
                                             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                            maxLines = 1,
+                                            maxLines = 2,
                                             overflow = TextOverflow.Ellipsis,
                                             modifier = Modifier.weight(1f)
                                         )
@@ -2575,8 +2591,8 @@ fun AidenStoriesModal(
                                                 .border(2.dp, Color(0xFFC084FC), CircleShape),
                                             contentAlignment = Alignment.Center
                                         ) {
-                                            Image(
-                                                painter = painterResource(id = imageResId),
+                                            coil.compose.AsyncImage(
+                                                model = imageResId,
                                                 contentDescription = "Aiden",
                                                 contentScale = ContentScale.Crop,
                                                 modifier = Modifier.fillMaxSize()
@@ -2774,8 +2790,7 @@ fun SafeAppLogo(modifier: Modifier = Modifier) {
             model = R.drawable.ic_vai_logo,
             contentDescription = "Velora Ado AI Logo",
             contentScale = ContentScale.Crop,
-            modifier = Modifier.fillMaxSize(),
-            error = painterResource(id = R.drawable.ic_app_logo)
+            modifier = Modifier.fillMaxSize()
         )
     }
 }
