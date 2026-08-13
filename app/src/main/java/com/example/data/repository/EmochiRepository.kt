@@ -1,5 +1,6 @@
 package com.example.data.repository
 
+import androidx.room.withTransaction
 import com.example.BuildConfig
 import com.example.data.api.GeminiContent
 import com.example.data.api.GeminiGenerationConfig
@@ -86,28 +87,32 @@ class EmochiRepository(
     }
 
     suspend fun deleteBot(id: String) {
-        messageDao.deleteMessagesForBot(id)
-        emotionDao.deleteEmotionsForBot(id)
-        fragmentDao.deleteFragmentsForBot(id)
-        botDao.deleteBotById(id)
+        db.withTransaction {
+            messageDao.deleteMessagesForBot(id)
+            emotionDao.deleteEmotionsForBot(id)
+            fragmentDao.deleteFragmentsForBot(id)
+            botDao.deleteBotById(id)
+        }
         autoBackupToStorage()
     }
 
     suspend fun resetBotMemoryAndEmotion(botId: String) {
-        emotionDao.deleteEmotionsForBot(botId)
-        fragmentDao.deleteFragmentsForBot(botId)
-        val bot = botDao.getBotById(botId) ?: return
-        val defaultEmotion = """{"mood":"nötr","intensity":5,"affection":50,"trust":50,"tension":10}"""
-        val updatedBot = bot.copy(
-            emotionState = defaultEmotion,
-            previousEmotionState = defaultEmotion,
-            storyNotes = "",
-            memoryNotes = "",
-            pinnedMemory = "",
-            needsSummarization = false,
-            updatedAt = System.currentTimeMillis()
-        )
-        botDao.insertOrUpdate(updatedBot)
+        db.withTransaction {
+            emotionDao.deleteEmotionsForBot(botId)
+            fragmentDao.deleteFragmentsForBot(botId)
+            val bot = botDao.getBotById(botId) ?: return@withTransaction
+            val defaultEmotion = """{"mood":"nötr","intensity":5,"affection":50,"trust":50,"tension":10}"""
+            val updatedBot = bot.copy(
+                emotionState = defaultEmotion,
+                previousEmotionState = defaultEmotion,
+                storyNotes = "",
+                memoryNotes = "",
+                pinnedMemory = "",
+                needsSummarization = false,
+                updatedAt = System.currentTimeMillis()
+            )
+            botDao.insertOrUpdate(updatedBot)
+        }
     }
 
     suspend fun saveMessage(msg: MessageEntity) {
@@ -270,10 +275,12 @@ class EmochiRepository(
     }
 
     private suspend fun recordTokenUsage(botId: String? = null, promptTokens: Long, candidateTokens: Long) {
+        val cleanPrompt = promptTokens.coerceAtLeast(0L)
+        val cleanCand = candidateTokens.coerceAtLeast(0L)
         val current = getOrCreateSettings()
         val updated = current.copy(
-            totalPromptTokens = current.totalPromptTokens + promptTokens,
-            totalCandidateTokens = current.totalCandidateTokens + candidateTokens
+            totalPromptTokens = (current.totalPromptTokens + cleanPrompt).coerceAtLeast(0L),
+            totalCandidateTokens = (current.totalCandidateTokens + cleanCand).coerceAtLeast(0L)
         )
         settingsDao.insertOrUpdate(updated)
 
@@ -281,8 +288,8 @@ class EmochiRepository(
             val bot = botDao.getBotById(botId)
             if (bot != null) {
                 val updatedBot = bot.copy(
-                    totalPromptTokens = bot.totalPromptTokens + promptTokens,
-                    totalCandidateTokens = bot.totalCandidateTokens + candidateTokens
+                    totalPromptTokens = (bot.totalPromptTokens + cleanPrompt).coerceAtLeast(0L),
+                    totalCandidateTokens = (bot.totalCandidateTokens + cleanCand).coerceAtLeast(0L)
                 )
                 botDao.insertOrUpdate(updatedBot)
             }
@@ -884,8 +891,10 @@ tension_delta: <-10 ile +10 arası>
 
         // 3. Eski Mesajları Veritabanından Temizleme
         if (summarizationSucceeded) {
-            for (m in olderMessages) {
-                messageDao.deleteMessageById(m.id)
+            db.withTransaction {
+                for (m in olderMessages) {
+                    messageDao.deleteMessageById(m.id)
+                }
             }
         }
 

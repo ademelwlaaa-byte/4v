@@ -4,10 +4,17 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -51,6 +58,7 @@ import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.LocalHospital
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.foundation.verticalScroll
@@ -270,7 +278,7 @@ fun BotListScreen(
                         }
                     }
 
-                    // 4. Karakterler (templates) Tab
+                    // 4. Şablonlar (templates) Tab
                     val isTemplatesSelected = activeTab == "templates"
                     val templatesScale by androidx.compose.animation.core.animateFloatAsState(
                         targetValue = if (isTemplatesSelected) 1.08f else 1.0f,
@@ -282,7 +290,7 @@ fun BotListScreen(
                             .clip(RoundedCornerShape(16.dp))
                             .background(if (isTemplatesSelected) Color(0x1FA78BFA) else Color.Transparent)
                             .clickable { activeTab = "templates" }
-                            .padding(horizontal = 12.dp, vertical = 6.dp)
+                            .padding(horizontal = 8.dp, vertical = 6.dp)
                             .graphicsLayer {
                                 scaleX = templatesScale
                                 scaleY = templatesScale
@@ -303,26 +311,35 @@ fun BotListScreen(
                         )
                     }
 
-                    // 5. Ayarlar Tab
+                    // 5. Kitaplar (books) Tab
+                    val isBooksSelected = activeTab == "books"
+                    val booksScale by androidx.compose.animation.core.animateFloatAsState(
+                        targetValue = if (isBooksSelected) 1.08f else 1.0f,
+                        label = "tabScale"
+                    )
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         modifier = Modifier
                             .clip(RoundedCornerShape(16.dp))
-                            .background(Color.Transparent)
-                            .clickable { showGlobalSettings = true }
-                            .padding(horizontal = 12.dp, vertical = 6.dp)
+                            .background(if (isBooksSelected) Color(0x1FA78BFA) else Color.Transparent)
+                            .clickable { activeTab = "books" }
+                            .padding(horizontal = 8.dp, vertical = 6.dp)
+                            .graphicsLayer {
+                                scaleX = booksScale
+                                scaleY = booksScale
+                            }
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Settings,
-                            contentDescription = "Ayarlar",
-                            tint = EmochiTextMuted,
+                            imageVector = Icons.Default.MenuBook,
+                            contentDescription = "Kitaplar",
+                            tint = if (isBooksSelected) EmochiPrimary else EmochiTextMuted,
                             modifier = Modifier.size(22.dp)
                         )
                         Text(
-                            text = "Ayarlar",
-                            color = EmochiTextMuted,
+                            text = "Kitaplar",
+                            color = if (isBooksSelected) EmochiPrimary else EmochiTextMuted,
                             fontSize = 10.5.sp,
-                            fontWeight = FontWeight.Medium,
+                            fontWeight = if (isBooksSelected) FontWeight.Bold else FontWeight.Medium,
                             modifier = Modifier.padding(top = 2.dp)
                         )
                     }
@@ -498,8 +515,6 @@ fun ChatsTabContent(
     onTogglePrivacy: ((BotEntity) -> Unit)? = null,
     onOpenAidenMenu: (() -> Unit)? = null
 ) {
-    val isEnglish = userSettings?.appLanguage == "en"
-
     Column(modifier = Modifier.fillMaxSize()) {
         // Search & Filters
         Column(
@@ -507,37 +522,74 @@ fun ChatsTabContent(
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 4.dp)
         ) {
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = onSearchQueryChange,
-                placeholder = {
-                    Text(
-                        text = if (isEnglish) "Search in my chats..." else "Sohbetlerimde ara...",
-                        color = EmochiTextMuted,
-                        fontSize = 13.sp
-                    )
-                },
-                singleLine = true,
+            // Search Input with glowing border & filter slider button
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .testTag("search_bot_field"),
-                shape = RoundedCornerShape(16.dp),
-                colors = customTextFieldColors(),
-                leadingIcon = {
-                    Icon(
-                        imageVector = Icons.Default.Search,
-                        contentDescription = "Ara",
-                        tint = EmochiTextMuted,
-                        modifier = Modifier.size(18.dp)
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(Color(0x900E061E))
+                    .border(
+                        BorderStroke(
+                            1.2.dp,
+                            Brush.linearGradient(listOf(Color(0x60C084FC), Color(0x203B0764)))
+                        ),
+                        RoundedCornerShape(18.dp)
+                    )
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Search,
+                    contentDescription = "Ara",
+                    tint = Color(0xFFA78BFA),
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                Box(modifier = Modifier.weight(1f)) {
+                    if (searchQuery.isEmpty()) {
+                        Text(
+                            text = "Bot veya evren ara...",
+                            color = Color(0xFF7E739B),
+                            fontSize = 14.sp
+                        )
+                    }
+                    androidx.compose.foundation.text.BasicTextField(
+                        value = searchQuery,
+                        onValueChange = onSearchQueryChange,
+                        singleLine = true,
+                        textStyle = androidx.compose.ui.text.TextStyle(
+                            color = Color.White,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("search_bot_field")
                     )
                 }
-            )
+                // Filter sliders icon box on the right
+                Box(
+                    modifier = Modifier
+                        .size(34.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(Color(0x601A1033))
+                        .border(1.dp, Color(0x40A855F7), RoundedCornerShape(10.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Speed,
+                        contentDescription = "Filtrele",
+                        tint = Color(0xFFC084FC),
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
             // Filters
             Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 val filters = listOf(
@@ -548,19 +600,45 @@ fun ChatsTabContent(
 
                 filters.forEach { (key, label, icon) ->
                     val isSelected = selectedFilter == key
-                    val contentColor = if (isSelected) Color.White else EmochiTextSecondary
+                    val shape = RoundedCornerShape(16.dp)
+
                     Box(
                         modifier = Modifier
                             .weight(1f)
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(if (isSelected) Color(0xFF8B5CF6) else EmochiCard)
+                            .then(
+                                if (isSelected) {
+                                    Modifier.border(3.dp, Color(0x30A855F7), shape)
+                                } else Modifier
+                            )
+                            .clip(shape)
+                            .background(
+                                if (isSelected) {
+                                    Brush.verticalGradient(
+                                        listOf(Color(0xFF38147A), Color(0xFF1B0842))
+                                    )
+                                } else {
+                                    Brush.verticalGradient(
+                                        listOf(Color(0x80140A28), Color(0x800E061E))
+                                    )
+                                }
+                            )
                             .border(
-                                1.5.dp,
-                                if (isSelected) Color(0xFFA78BFA) else EmochiBorder,
-                                RoundedCornerShape(16.dp)
+                                BorderStroke(
+                                    width = if (isSelected) 1.5.dp else 1.dp,
+                                    brush = if (isSelected) {
+                                        Brush.linearGradient(
+                                            listOf(Color(0xFFE9D5FF), Color(0xFFC084FC), Color(0xFF7C3AED))
+                                        )
+                                    } else {
+                                        Brush.linearGradient(
+                                            listOf(Color(0x306B21A8), Color(0x203B0764))
+                                        )
+                                    }
+                                ),
+                                shape = shape
                             )
                             .clickable { onFilterChange(key) }
-                            .padding(horizontal = 8.dp, vertical = 10.dp),
+                            .padding(horizontal = 6.dp, vertical = 11.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Row(
@@ -570,15 +648,15 @@ fun ChatsTabContent(
                             Icon(
                                 imageVector = icon,
                                 contentDescription = null,
-                                tint = contentColor,
-                                modifier = Modifier.size(15.dp)
+                                tint = if (isSelected) Color.White else Color(0xFFA78BFA),
+                                modifier = Modifier.size(16.dp)
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
                                 text = label,
-                                color = contentColor,
-                                fontSize = 11.sp,
-                                fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.SemiBold,
+                                color = if (isSelected) Color.White else Color(0xFFA78BFA),
+                                fontSize = 11.5.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
@@ -588,7 +666,7 @@ fun ChatsTabContent(
             }
         }
 
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(10.dp))
 
         val filteredBots = remember(botList, searchQuery, selectedFilter) {
             botList.filter { bot ->
@@ -651,7 +729,7 @@ fun ChatsTabContent(
                     .fillMaxWidth()
                     .weight(1f)
                     .padding(horizontal = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
                 items(filteredBots, key = { it.id }) { bot ->
                     BotCardItem(
@@ -797,21 +875,60 @@ fun BotCardItem(
     val isTemplate = bot.isTemplate || bot.id.startsWith("starter_") || bot.id.startsWith("preset_")
 
     var isMenuExpanded by remember { mutableStateOf(false) }
-    var isFavorited by remember { mutableStateOf(false) }
     var showDeleteConfirmDialog by remember { mutableStateOf(false) }
 
-    // Gorgeous, premium dark container
+    // --- Rich Card Animations ---
+    val infiniteTransition = rememberInfiniteTransition(label = "cardAnimations_${bot.id}")
+    
+    val cardGlowAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.25f,
+        targetValue = 0.75f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(2200, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "cardGlowAlpha"
+    )
+
+    val buttonPulseScale by infiniteTransition.animateFloat(
+        initialValue = 0.97f,
+        targetValue = 1.03f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1500, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "buttonPulseScale"
+    )
+
+    val cardShape = RoundedCornerShape(22.dp)
+
+    // Glassmorphic Card Container with multi-layered breathing neon glow
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
-            .background(com.example.ui.theme.EmochiGradients.cardBackground)
+            .border(3.5.dp, Color(0xA08B5CF6).copy(alpha = cardGlowAlpha * 0.5f), cardShape)
+            .clip(cardShape)
+            .background(
+                Brush.verticalGradient(
+                    colors = listOf(
+                        Color(0x8523104D), // Semi-transparent dark violet top
+                        Color(0x950E0620)  // Deep dark purple bottom
+                    )
+                )
+            )
             .border(
-                width = 1.dp,
-                brush = Brush.verticalGradient(
-                    colors = listOf(Color(0xFF221A4C), Color(0xFF100A25))
+                BorderStroke(
+                    width = 1.3.dp,
+                    brush = Brush.linearGradient(
+                        colors = listOf(
+                            Color(0xFFE9D5FF), // Crisp bright lila top-left
+                            Color(0xFFC084FC), // Glowing neon violet
+                            Color(0xFF8B5CF6), // Purple
+                            Color(0xFF5B21B6)  // Deep violet bottom-right
+                        )
+                    )
                 ),
-                shape = RoundedCornerShape(20.dp)
+                shape = cardShape
             )
             .clickable { onOpenBot(bot.id) }
             .testTag("bot_card_${bot.id}")
@@ -822,44 +939,70 @@ fun BotCardItem(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.Top
             ) {
-                // Avatar with a glowing neon gradient border
+                // Large Avatar with a glowing neon gradient border
                 Box(modifier = Modifier.padding(top = 2.dp)) {
-                    val neonBorderBrush = remember(isUniverse) {
-                        if (isUniverse) {
-                            Brush.sweepGradient(listOf(Color(0xFF8B5CF6), Color(0xFFD946EF), Color(0xFF8B5CF6)))
-                        } else {
-                            Brush.sweepGradient(listOf(Color(0xFF38BDF8), Color(0xFFA78BFA), Color(0xFF38BDF8)))
-                        }
-                    }
-
-                    val avatarShape = if (isUniverse) RoundedCornerShape(18.dp) else CircleShape
+                    val avatarShape = if (isUniverse) RoundedCornerShape(20.dp) else CircleShape
 
                     Box(
                         modifier = Modifier
-                            .size(68.dp)
+                            .size(76.dp)
                             .clip(avatarShape)
-                            .border(2.dp, neonBorderBrush, avatarShape)
-                            .padding(3.dp),
+                            .border(
+                                width = 2.dp,
+                                brush = Brush.sweepGradient(
+                                    listOf(
+                                        Color(0xFFE9D5FF),
+                                        Color(0xFFC084FC),
+                                        Color(0xFF7C3AED),
+                                        Color(0xFFE9D5FF)
+                                    )
+                                ),
+                                shape = avatarShape
+                            )
+                            .padding(2.5.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        if (bot.avatarUrl.isNotBlank()) {
-                            AsyncImage(
-                                model = bot.avatarUrl,
-                                contentDescription = displayName,
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .clip(avatarShape)
-                            )
-                        } else {
-                            OrbView(hue = hue, size = 56.dp)
+                        when {
+                            bot.id == "starter_ayla" || bot.aiName.equals("Ayla", ignoreCase = true) -> {
+                                Image(
+                                    painter = painterResource(id = R.drawable.img_ayla_avatar),
+                                    contentDescription = displayName,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .clip(avatarShape)
+                                )
+                            }
+                            bot.id == "starter_aetheria" || bot.universeName.contains("Aetheria", ignoreCase = true) || bot.aiName.contains("Aetheria", ignoreCase = true) -> {
+                                Image(
+                                    painter = painterResource(id = R.drawable.img_aetheria_universe),
+                                    contentDescription = displayName,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .clip(avatarShape)
+                                )
+                            }
+                            bot.avatarUrl.isNotBlank() -> {
+                                AsyncImage(
+                                    model = bot.avatarUrl,
+                                    contentDescription = displayName,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .clip(avatarShape)
+                                )
+                            }
+                            else -> {
+                                OrbView(hue = hue, size = 64.dp)
+                            }
                         }
                     }
                 }
 
                 Spacer(modifier = Modifier.width(14.dp))
 
-                // Title, Tags, Description Column (Redesigned horizontally matching screenshot)
+                // Title, Tags, Description Column
                 Column(modifier = Modifier.weight(1f)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -874,7 +1017,7 @@ fun BotCardItem(
                             Text(
                                 text = displayName,
                                 color = Color.White,
-                                fontSize = 17.5.sp,
+                                fontSize = 18.5.sp,
                                 fontWeight = FontWeight.Bold,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
@@ -882,27 +1025,27 @@ fun BotCardItem(
                             )
 
                             if (!isUniverse) {
-                                Spacer(modifier = Modifier.width(6.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
 
                                 // Character badge
                                 Box(
                                     modifier = Modifier
                                         .clip(RoundedCornerShape(8.dp))
-                                        .background(Color(0x3F38BDF8))
-                                        .border(1.dp, Color(0x7F38BDF8), RoundedCornerShape(8.dp))
-                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                        .background(Color(0x351F0E3D))
+                                        .border(1.dp, Color(0x808B5CF6), RoundedCornerShape(8.dp))
+                                        .padding(horizontal = 8.dp, vertical = 3.dp)
                                 ) {
                                     Text(
                                         text = "Karakter",
-                                        color = Color(0xFF38BDF8),
-                                        fontSize = 10.5.sp,
+                                        color = Color(0xFFC084FC),
+                                        fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold
                                     )
                                 }
                             }
                         }
 
-                        // Right side sparkle and more action items matching screenshot!
+                        // Right side sparkle and options button
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.End
@@ -911,19 +1054,19 @@ fun BotCardItem(
                                 modifier = Modifier
                                     .size(28.dp)
                                     .clip(RoundedCornerShape(8.dp))
-                                    .background(Color(0x208B5CF6))
-                                    .border(1.dp, Color(0x508B5CF6), RoundedCornerShape(8.dp)),
+                                    .background(Color(0x308B5CF6))
+                                    .border(1.dp, Color(0x608B5CF6), RoundedCornerShape(8.dp)),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.AutoAwesome,
                                     contentDescription = null,
                                     tint = Color(0xFFC084FC),
-                                    modifier = Modifier.size(13.dp)
+                                    modifier = Modifier.size(14.dp)
                                 )
                             }
 
-                            Spacer(modifier = Modifier.width(8.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
 
                             Box {
                                 IconButton(
@@ -933,7 +1076,7 @@ fun BotCardItem(
                                     Icon(
                                         imageVector = Icons.Default.MoreHoriz,
                                         contentDescription = "Daha Fazla",
-                                        tint = EmochiTextMuted,
+                                        tint = Color(0xFFA78BFA),
                                         modifier = Modifier.size(20.dp)
                                     )
                                 }
@@ -974,18 +1117,18 @@ fun BotCardItem(
 
                     if (isUniverse) {
                         Spacer(modifier = Modifier.height(4.dp))
-                        // Universe badge on its own row matching screenshot!
+                        // Universe badge on its own row matching screenshot
                         Box(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(8.dp))
-                                .background(Color(0x3F8B5CF6))
-                                .border(1.dp, Color(0x7F8B5CF6), RoundedCornerShape(8.dp))
-                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                                .background(Color(0x351F0E3D))
+                                .border(1.dp, Color(0x808B5CF6), RoundedCornerShape(8.dp))
+                                .padding(horizontal = 8.dp, vertical = 3.dp)
                         ) {
                             Text(
                                 text = "Evren",
                                 color = Color(0xFFC084FC),
-                                fontSize = 10.5.sp,
+                                fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold
                             )
                         }
@@ -995,16 +1138,16 @@ fun BotCardItem(
 
                     Text(
                         text = bot.scenario.ifBlank { bot.openingMessage },
-                        color = EmochiTextSecondary,
-                        fontSize = 13.sp,
+                        color = Color(0xFFE2D9F3),
+                        fontSize = 13.5.sp,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
-                        lineHeight = 17.sp
+                        lineHeight = 18.sp
                     )
 
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
 
-                    // Bottom info & Action Row (Horizontal alignment, no divider line, no favori star button)
+                    // Bottom info & Action Row
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -1013,7 +1156,7 @@ fun BotCardItem(
                         // Active time status on bottom left
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            horizontalArrangement = Arrangement.spacedBy(5.dp)
                         ) {
                             val stableActiveTime = remember(bot.id) {
                                 val raw = (bot.id.hashCode() % 24).let { if (it < 0) -it else it } + 1
@@ -1024,39 +1167,62 @@ fun BotCardItem(
                             Text("🕒", fontSize = 11.sp)
                             Text(
                                 text = stableActiveTime,
-                                color = EmochiTextMuted,
-                                fontSize = 11.5.sp,
+                                color = Color(0xFFA78BFA),
+                                fontSize = 12.sp,
                                 fontWeight = FontWeight.Medium
                             )
                         }
 
-                        // Play/Action Button on bottom right
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(com.example.ui.theme.EmochiGradients.primaryButton)
-                                .clickable { onOpenBot(bot.id) }
-                                .padding(horizontal = 14.dp, vertical = 8.dp)
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.PlayArrow,
-                                    contentDescription = null,
-                                    tint = Color.White,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = if (isUniverse) "Aç" else "Sohbete Devam Et",
-                                    color = Color.White,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.ExtraBold
-                                )
+                    // Play/Action Button on bottom right with multi-layered neon glow & pulse animation
+                    Box(
+                        modifier = Modifier
+                            .graphicsLayer {
+                                scaleX = buttonPulseScale
+                                scaleY = buttonPulseScale
                             }
+                            // Outer glowing halo
+                            .border(
+                                width = 3.dp,
+                                color = Color(0x70C084FC).copy(alpha = cardGlowAlpha * 0.8f),
+                                shape = RoundedCornerShape(14.dp)
+                            )
+                            .clip(RoundedCornerShape(14.dp))
+                            .border(
+                                BorderStroke(
+                                    width = 1.5.dp,
+                                    brush = Brush.linearGradient(
+                                        listOf(Color(0xFFE9D5FF), Color(0xFFC084FC), Color(0xFF9333EA))
+                                    )
+                                ),
+                                shape = RoundedCornerShape(14.dp)
+                            )
+                            .background(
+                                Brush.horizontalGradient(
+                                    listOf(Color(0xFF6B21A8), Color(0xFF3B0764))
+                                )
+                            )
+                            .clickable { onOpenBot(bot.id) }
+                            .padding(horizontal = 18.dp, vertical = 10.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.PlayArrow,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = if (isUniverse) "Aç" else "Sohbete Devam Et",
+                                color = Color.White,
+                                fontSize = 13.5.sp,
+                                fontWeight = FontWeight.Bold
+                            )
                         }
+                    }
                     }
                 }
             }
@@ -1203,160 +1369,231 @@ fun ExploreTabContent(
         }
     }
 
+    // Rich glow and pulse animations
+    val infiniteTransition = rememberInfiniteTransition(label = "exploreTabAnimations")
+    val glowAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.35f,
+        targetValue = 0.85f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(2000, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "exploreGlowAlpha"
+    )
+
+    val buttonPulseScale by infiniteTransition.animateFloat(
+        initialValue = 0.97f,
+        targetValue = 1.03f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1400, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "exploreButtonPulse"
+    )
+
     LazyColumn(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         item {
-            Column(modifier = Modifier.padding(vertical = 4.dp)) {
+            Column(modifier = Modifier.padding(top = 2.dp, bottom = 4.dp)) {
+                // Title and Subtitle matching the screenshot
                 Text(
                     text = if (isEnglish) "🔥 Ready Templates & Special Stories" else "🔥 Hazır Şablonlar & Özel Hikayeler",
-                    color = EmochiTextPrimary,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold
+                    color = Color.White,
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.ExtraBold
                 )
+                Spacer(modifier = Modifier.height(3.dp))
                 Text(
                     text = if (isEnglish) "Templates are private to you. Tap any to start chatting instantly." else "Şablonlar tamamen size özeldir. Birini seçip tek tıkla sohbetinizi başlatın.",
-                    color = EmochiTextSecondary,
-                    fontSize = 12.sp
+                    color = Color(0xFF94A3B8),
+                    fontSize = 12.sp,
+                    lineHeight = 16.sp
                 )
 
-                Spacer(modifier = Modifier.height(14.dp))
+                Spacer(modifier = Modifier.height(16.dp))
 
-                // Dedicated Aiden Hub Trigger Banner matching the user request photo
-                Card(
-                    shape = RoundedCornerShape(22.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF090616)),
+                // Category Filter Pills matching screenshot
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    val categories = listOf(
+                        Triple("all", if (isEnglish) "All" else "Tümü", "⭐"),
+                        Triple("universe", if (isEnglish) "Universes" else "Evrenler", "🪐"),
+                        Triple("personal", if (isEnglish) "Characters" else "Karakterler", "👤")
+                    )
+                    categories.forEach { (key, label, emoji) ->
+                        val isSelected = selectedCategory == key
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(22.dp))
+                                .background(
+                                    if (isSelected) {
+                                        Brush.horizontalGradient(
+                                            listOf(Color(0xFF3B1568), Color(0xFF220A45))
+                                        )
+                                    } else {
+                                        Brush.horizontalGradient(
+                                            listOf(Color(0xFF0D0821), Color(0xFF090518))
+                                        )
+                                    }
+                                )
+                                .border(
+                                    width = if (isSelected) 1.5.dp else 1.dp,
+                                    color = if (isSelected) Color(0xFFC084FC).copy(alpha = glowAlpha) else Color(0xFF1E143B),
+                                    shape = RoundedCornerShape(22.dp)
+                                )
+                                .clickable { selectedCategory = key }
+                                .padding(horizontal = 14.dp, vertical = 8.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Text(text = emoji, fontSize = 13.sp)
+                                Text(
+                                    text = label,
+                                    color = if (isSelected) Color.White else Color(0xFF94A3B8),
+                                    fontSize = 12.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Dedicated Aiden Hub Banner matching screenshot
+                val heroShape = RoundedCornerShape(22.dp)
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(22.dp))
-                        .border(1.dp, Color(0xFF2B1F54), RoundedCornerShape(22.dp))
+                        .border(
+                            width = 1.5.dp,
+                            brush = Brush.sweepGradient(
+                                listOf(
+                                    Color(0xFFE9D5FF),
+                                    Color(0xFFC084FC),
+                                    Color(0xFF6B21A8),
+                                    Color(0xFFE9D5FF)
+                                )
+                            ),
+                            shape = heroShape
+                        )
+                        .clip(heroShape)
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(Color(0x951D103D), Color(0x950C061E))
+                            )
+                        )
                         .clickable { onOpenAidenMenu?.invoke() }
                 ) {
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         // Left-side Image of Aiden
-                        Image(
-                            painter = painterResource(id = com.example.R.drawable.aiden_zoktay),
-                            contentDescription = "Aiden Blackwood Stories",
-                            contentScale = ContentScale.Crop,
+                        Box(
                             modifier = Modifier
-                                .width(120.dp)
+                                .width(130.dp)
                                 .height(100.dp)
-                                .clip(RoundedCornerShape(topStart = 22.dp, bottomStart = 22.dp))
-                        )
+                                .clip(RoundedCornerShape(16.dp))
+                                .border(1.dp, Color(0x40C084FC), RoundedCornerShape(16.dp))
+                        ) {
+                            Image(
+                                painter = painterResource(id = com.example.R.drawable.aiden_zoktay),
+                                contentDescription = "Aiden Blackwood Stories",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
 
                         Spacer(modifier = Modifier.width(14.dp))
 
                         Column(
                             modifier = Modifier
                                 .weight(1f)
-                                .padding(vertical = 12.dp)
+                                .padding(vertical = 4.dp)
                         ) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
                                 Text(
-                                    text = "Aiden Blackwood",
+                                    text = "Aiden Blackwood Stories",
                                     color = Color.White,
-                                    fontSize = 15.2.sp,
-                                    fontWeight = FontWeight.Bold
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
-                                // Verification Badge
+                                // Verified Badge
                                 Box(
                                     modifier = Modifier
-                                        .size(15.dp)
+                                        .size(16.dp)
                                         .clip(CircleShape)
-                                        .background(Color(0xFF8B5CF6)),
+                                        .background(Color(0xFF6366F1)),
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Text(
                                         text = "✓",
                                         color = Color.White,
                                         fontSize = 10.sp,
-                                        fontWeight = FontWeight.Bold
+                                        fontWeight = FontWeight.ExtraBold
                                     )
                                 }
                             }
+
+                            Spacer(modifier = Modifier.height(6.dp))
+
                             Text(
-                                text = "Stories",
-                                color = Color(0xFFA78BFA),
-                                fontSize = 11.5.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = if (isEnglish) "Tap to open the special stories hub" else "Özel hikaye menüsüne geçmek için dokun",
+                                text = if (isEnglish) "Tap to switch to the Special Aiden Blackwood Story Menu" else "Özel Aiden Blackwood Hikaye Menüsüne geçmek için dokun",
                                 color = Color(0xFF94A3B8),
-                                fontSize = 11.sp,
-                                lineHeight = 14.sp
+                                fontSize = 11.5.sp,
+                                lineHeight = 15.sp,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
 
-                        // Right-aligned beautiful circle arrow button
+                        Spacer(modifier = Modifier.width(8.dp))
+
+                        // Right-aligned glowing circle button with arrow
                         Box(
                             modifier = Modifier
-                                .padding(end = 16.dp)
-                                .size(34.dp)
+                                .size(42.dp)
+                                .graphicsLayer {
+                                    scaleX = buttonPulseScale
+                                    scaleY = buttonPulseScale
+                                }
                                 .clip(CircleShape)
-                                .background(Color(0xFF140E2D))
-                                .border(1.dp, Color(0xFF8B5CF6), CircleShape),
+                                .background(
+                                    Brush.radialGradient(
+                                        listOf(Color(0xFF3B0764), Color(0xFF140D2D))
+                                    )
+                                )
+                                .border(
+                                    width = 1.5.dp,
+                                    brush = Brush.sweepGradient(
+                                        listOf(Color(0xFFE9D5FF), Color(0xFFC084FC), Color(0xFF7C3AED), Color(0xFFE9D5FF))
+                                    ),
+                                    shape = CircleShape
+                                ),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
-                                imageVector = Icons.Default.ChevronRight,
+                                imageVector = Icons.AutoMirrored.Filled.ArrowForward,
                                 contentDescription = "Git",
                                 tint = Color.White,
-                                modifier = Modifier.size(18.dp)
+                                modifier = Modifier.size(20.dp)
                             )
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(14.dp))
-
-                // Beautiful custom Category Filter row matching the photo
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    val categories = listOf(
-                        Triple("all", if (isEnglish) "All" else "Tümü", "⭐️"),
-                        Triple("universe", if (isEnglish) "Universes" else "Evrenler", "🪐"),
-                        Triple("personal", if (isEnglish) "Characters" else "Karakterler", "👤"),
-                        Triple("new", if (isEnglish) "New" else "Yeni", "✨")
-                    )
-                    categories.forEach { (key, label, emoji) ->
-                        val isSelected = selectedCategory == key
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(20.dp))
-                                .background(if (isSelected) Color(0xFF2E1A5E) else Color(0xFF0C091C))
-                                .border(
-                                    width = 1.dp,
-                                    color = if (isSelected) Color(0xFFC084FC) else Color(0xFF1E163B),
-                                    shape = RoundedCornerShape(20.dp)
-                                )
-                                .clickable { selectedCategory = key }
-                                .padding(horizontal = 12.dp, vertical = 7.dp)
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                Text(text = emoji, fontSize = 12.sp)
-                                Text(
-                                    text = label,
-                                    color = if (isSelected) Color.White else Color(0xFF94A3B8),
-                                    fontSize = 11.5.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
                         }
                     }
                 }
@@ -1366,50 +1603,60 @@ fun ExploreTabContent(
         items(filteredPresets, key = { it.id }) { preset ->
             val isUniverse = preset.mode == "universe"
             val titleText = if (isUniverse) preset.universeName else preset.aiName
-            
-            // Map corresponding indicator colors and premium images to match photo perfectly
-            val (indicatorColor, cardImage, badgeText) = when (preset.id) {
+
+            // Indicator colors and badges matching screenshot
+            val (indicatorEmoji, cardImage, badgeText) = when (preset.id) {
                 "preset_aria" -> Triple(
-                    Color(0xFFFBBF24), // Yellow
+                    "🟡",
                     com.example.R.drawable.aiden_obsidian,
-                    if (isEnglish) "👤 Character Template" else "👤 Karakter Şablonu"
+                    if (isEnglish) "👤 Character (Detective)" else "👤 Karakter (Dedektif)"
                 )
                 "preset_eldoria" -> Triple(
-                    Color(0xFFEF4444), // Red
+                    "🔴",
                     com.example.R.drawable.aiden_joker,
-                    if (isEnglish) "🌌 Universe Template" else "🌌 Evren Şablonu"
+                    if (isEnglish) "🌐 Universe Template" else "🌐 Evren Şablonu"
                 )
                 "preset_tokyo" -> Triple(
-                    Color(0xFF3B82F6), // Blue
+                    "🔵",
                     com.example.R.drawable.aiden_dispatch,
-                    if (isEnglish) "🌌 Sci-Fi Universe" else "🌌 Bilim Kurgu Evreni"
+                    if (isEnglish) "🌐 Universe Template" else "🌐 Evren Şablonu"
                 )
                 else -> Triple(
-                    Color(0xFF8B5CF6), // Purple
+                    "🟣",
                     com.example.R.drawable.aiden_zoktay,
                     if (isEnglish) "👤 Template" else "👤 Şablon"
                 )
             }
 
-            Card(
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF090616)),
-                shape = RoundedCornerShape(18.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF1D143D)),
+            val cardShape = RoundedCornerShape(22.dp)
+
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .animateContentSize()
+                    .border(
+                        width = 1.2.dp,
+                        color = Color(0x60A78BFA).copy(alpha = glowAlpha * 0.7f),
+                        shape = cardShape
+                    )
+                    .clip(cardShape)
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(Color(0x851B0F3A), Color(0x950A051A))
+                        )
+                    )
             ) {
                 Row(
-                    modifier = Modifier.padding(14.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(14.dp),
                     verticalAlignment = Alignment.Top
                 ) {
-                    // Left image
+                    // Left Square Image with rounded corners
                     Box(
                         modifier = Modifier
-                            .size(76.dp)
-                            .clip(RoundedCornerShape(14.dp))
-                            .background(Color(0xFF140D2D))
-                            .border(1.dp, Color(0x30A78BFA), RoundedCornerShape(14.dp))
+                            .size(88.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                            .border(1.2.dp, Color(0x50C084FC), RoundedCornerShape(16.dp))
                     ) {
                         Image(
                             painter = painterResource(id = cardImage),
@@ -1421,18 +1668,15 @@ fun ExploreTabContent(
 
                     Spacer(modifier = Modifier.width(14.dp))
 
-                    Column(modifier = Modifier.weight(1f)) {
-                        // Title with colored indicator dot
+                    Column(
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        // Title row with sphere emoji
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(9.dp)
-                                    .clip(CircleShape)
-                                    .background(indicatorColor)
-                            )
+                            Text(text = indicatorEmoji, fontSize = 12.sp)
                             Text(
                                 text = titleText,
                                 color = Color.White,
@@ -1449,21 +1693,21 @@ fun ExploreTabContent(
                         Box(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(8.dp))
-                                .background(Color(0xFF150E2D))
-                                .border(1.dp, Color(0x30A78BFA), RoundedCornerShape(8.dp))
+                                .background(Color(0xFF1B0E38))
+                                .border(1.dp, Color(0x40A78BFA), RoundedCornerShape(8.dp))
                                 .padding(horizontal = 8.dp, vertical = 3.dp)
                         ) {
                             Text(
                                 text = badgeText,
-                                color = Color(0xFFA78BFA),
-                                fontSize = 10.5.sp,
+                                color = Color(0xFFC084FC),
+                                fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold
                             )
                         }
 
                         Spacer(modifier = Modifier.height(8.dp))
 
-                        // Description
+                        // Description text
                         Text(
                             text = preset.scenario,
                             color = Color(0xFF94A3B8),
@@ -1475,16 +1719,37 @@ fun ExploreTabContent(
 
                         Spacer(modifier = Modifier.height(12.dp))
 
-                        // Action Button "⚡ Sohbete Başla" aligned to bottom right
+                        // Action Button "⚡ Sohbete Başla" matching screenshot
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.End
                         ) {
                             Box(
                                 modifier = Modifier
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(Color(0xFF1D0E3D))
-                                    .border(1.dp, Color(0xFF8B5CF6), RoundedCornerShape(12.dp))
+                                    .graphicsLayer {
+                                        scaleX = buttonPulseScale
+                                        scaleY = buttonPulseScale
+                                    }
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .border(
+                                        BorderStroke(
+                                            width = 1.3.dp,
+                                            brush = Brush.sweepGradient(
+                                                listOf(
+                                                    Color(0xFFE9D5FF),
+                                                    Color(0xFFC084FC),
+                                                    Color(0xFF7C3AED),
+                                                    Color(0xFFE9D5FF)
+                                                )
+                                            )
+                                        ),
+                                        shape = RoundedCornerShape(14.dp)
+                                    )
+                                    .background(
+                                        Brush.horizontalGradient(
+                                            listOf(Color(0xFF581C87), Color(0xFF3B0764))
+                                        )
+                                    )
                                     .clickable {
                                         val newBot = preset.copy(
                                             id = java.util.UUID.randomUUID().toString(),
@@ -1493,14 +1758,23 @@ fun ExploreTabContent(
                                         )
                                         onImportPresetBot?.invoke(newBot)
                                     }
-                                    .padding(horizontal = 14.dp, vertical = 8.dp)
+                                    .padding(horizontal = 16.dp, vertical = 9.dp)
                             ) {
-                                Text(
-                                    text = if (isEnglish) "⚡ Start Chat" else "⚡ Sohbete Başla",
-                                    color = Color.White,
-                                    fontSize = 11.5.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Text(
+                                        text = "⚡",
+                                        fontSize = 13.sp
+                                    )
+                                    Text(
+                                        text = if (isEnglish) "Start Chat" else "Sohbete Başla",
+                                        color = Color.White,
+                                        fontSize = 12.5.sp,
+                                        fontWeight = FontWeight.ExtraBold
+                                    )
+                                }
                             }
                         }
                     }
@@ -2036,18 +2310,24 @@ fun AidenStoriesModal(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        // Glowing Orb representing football/globe with premium radial gradients
+                        // Styled App Logo Container
                         Box(
                             modifier = Modifier
                                 .size(44.dp)
-                                .clip(CircleShape)
-                                .background(
-                                    Brush.radialGradient(
-                                        colors = listOf(Color(0xFF38BDF8), Color(0xFF2563EB), Color(0xFF03001C))
-                                    )
-                                )
-                                .border(1.5.dp, Color(0xFF60A5FA), CircleShape)
-                        )
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(Color(0xFF130F2A))
+                                .border(1.5.dp, Color(0xFFA78BFA), RoundedCornerShape(12.dp)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Image(
+                                painter = painterResource(id = R.drawable.ic_app_logo),
+                                contentDescription = "App Logo",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .clip(RoundedCornerShape(12.dp))
+                            )
+                        }
                         Spacer(modifier = Modifier.width(12.dp))
                         Column {
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -2149,8 +2429,10 @@ fun AidenStoriesModal(
                                             .border(1.dp, Color(0x30A78BFA), RoundedCornerShape(12.dp))
                                             .clickable {
                                                 coroutineScope.launch {
-                                                    val targetIdx = aidenPresets.indexOfFirst { it.id == selectedPresetId }.coerceAtLeast(0)
-                                                    lazyListState.animateScrollToItem(1 + targetIdx)
+                                                    try {
+                                                        val targetIdx = aidenPresets.indexOfFirst { it.id == selectedPresetId }.coerceAtLeast(0)
+                                                        lazyListState.animateScrollToItem(1 + targetIdx)
+                                                    } catch (_: Exception) {}
                                                 }
                                             }
                                             .padding(horizontal = 10.dp, vertical = 5.dp)
@@ -2185,7 +2467,9 @@ fun AidenStoriesModal(
                                             .clickable {
                                                 selectedPresetId = id
                                                 coroutineScope.launch {
-                                                    lazyListState.animateScrollToItem(1 + index)
+                                                    try {
+                                                        lazyListState.animateScrollToItem(1 + index)
+                                                    } catch (_: Exception) {}
                                                 }
                                             }
                                             .padding(vertical = 10.dp, horizontal = 8.dp),
@@ -2291,12 +2575,11 @@ fun AidenStoriesModal(
                                                 .border(2.dp, Color(0xFFC084FC), CircleShape),
                                             contentAlignment = Alignment.Center
                                         ) {
-                                            AsyncImage(
-                                                model = imageResId,
+                                            Image(
+                                                painter = painterResource(id = imageResId),
                                                 contentDescription = "Aiden",
                                                 contentScale = ContentScale.Crop,
-                                                modifier = Modifier.fillMaxSize(),
-                                                error = painterResource(id = android.R.drawable.stat_notify_chat)
+                                                modifier = Modifier.fillMaxSize()
                                             )
                                         }
 
@@ -2492,7 +2775,7 @@ fun SafeAppLogo(modifier: Modifier = Modifier) {
             contentDescription = "Velora Ado AI Logo",
             contentScale = ContentScale.Crop,
             modifier = Modifier.fillMaxSize(),
-            error = painterResource(id = android.R.drawable.stat_notify_chat)
+            error = painterResource(id = R.drawable.ic_app_logo)
         )
     }
 }

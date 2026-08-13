@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.withLock
 import java.util.Locale
 import java.util.UUID
 
@@ -197,33 +198,37 @@ class EmochiViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    suspend fun ensureOpeningMessage(botId: String) {
-        var bot = repository.getBot(botId)
-        var retryCount = 0
-        while (bot == null && retryCount < 5) {
-            kotlinx.coroutines.delay(100)
-            bot = repository.getBot(botId)
-            retryCount++
-        }
+    private val openingMutex = kotlinx.coroutines.sync.Mutex()
 
-        if (bot != null) {
-            val existingMsgs = repository.getMessageListForBot(botId)
-            if (existingMsgs.isEmpty()) {
-                val openingText = bot.openingMessage.ifBlank {
-                    if (bot.mode == "universe") {
-                        "*Sahne başlar. Çevre sakin ve atmosferik bir havaya bürünmüştür.*\n\n\"Hikayemize nereden başlamak istersin?\""
-                    } else {
-                        "Merhaba! Seni seve seve dinliyorum, ne hakkında konuşmak istersin?"
+    suspend fun ensureOpeningMessage(botId: String) {
+        openingMutex.withLock {
+            var bot = repository.getBot(botId)
+            var retryCount = 0
+            while (bot == null && retryCount < 5) {
+                kotlinx.coroutines.delay(100)
+                bot = repository.getBot(botId)
+                retryCount++
+            }
+
+            if (bot != null) {
+                val existingMsgs = repository.getMessageListForBot(botId)
+                if (existingMsgs.isEmpty()) {
+                    val openingText = bot.openingMessage.ifBlank {
+                        if (bot.mode == "universe") {
+                            "*Sahne başlar. Çevre sakin ve atmosferik bir havaya bürünmüştür.*\n\n\"Hikayemize nereden başlamak istersin?\""
+                        } else {
+                            "Merhaba! Seni seve seve dinliyorum, ne hakkında konuşmak istersin?"
+                        }
                     }
+                    val openingMsg = MessageEntity(
+                        id = UUID.randomUUID().toString(),
+                        botId = bot.id,
+                        role = "assistant",
+                        text = openingText,
+                        timestamp = System.currentTimeMillis()
+                    )
+                    repository.saveMessage(openingMsg)
                 }
-                val openingMsg = MessageEntity(
-                    id = UUID.randomUUID().toString(),
-                    botId = bot.id,
-                    role = "assistant",
-                    text = openingText,
-                    timestamp = System.currentTimeMillis()
-                )
-                repository.saveMessage(openingMsg)
             }
         }
     }
@@ -271,12 +276,13 @@ class EmochiViewModel(application: Application) : AndroidViewModel(application) 
 
     fun sendMessage(text: String) {
         val botId = _activeBotId.value ?: return
-        if (text.isBlank() || _isSending.value) return
+        val trimmedText = text.trim()
+        if (trimmedText.isBlank() || _isSending.value) return
         _isSending.value = true
 
         viewModelScope.launch {
             if (!sendMutex.tryLock()) {
-                // Already sending via mutex
+                _isSending.value = false
                 return@launch
             }
             val currentBot = activeBot.value ?: repository.getBot(botId) ?: run {
@@ -287,12 +293,13 @@ class EmochiViewModel(application: Application) : AndroidViewModel(application) 
             try {
                 _errorMessage.value = null
 
+                val now = System.currentTimeMillis()
                 val userMsg = MessageEntity(
                     id = UUID.randomUUID().toString(),
                     botId = botId,
                     role = "user",
-                    text = text.trim(),
-                    timestamp = System.currentTimeMillis()
+                    text = trimmedText,
+                    timestamp = now
                 )
                 repository.saveMessage(userMsg)
 
@@ -305,7 +312,7 @@ class EmochiViewModel(application: Application) : AndroidViewModel(application) 
                     botId = botId,
                     role = "assistant",
                     text = replyText,
-                    timestamp = System.currentTimeMillis()
+                    timestamp = (now + 10L).coerceAtLeast(System.currentTimeMillis())
                 )
                 repository.saveMessage(aiMsg)
 
@@ -318,7 +325,9 @@ class EmochiViewModel(application: Application) : AndroidViewModel(application) 
             } catch (e: Exception) {
                 _errorMessage.value = e.message ?: "Yanıt oluşturulamadı."
             } finally {
-                sendMutex.unlock()
+                if (sendMutex.isLocked) {
+                    sendMutex.unlock()
+                }
                 _isSending.value = false
             }
         }
@@ -331,6 +340,7 @@ class EmochiViewModel(application: Application) : AndroidViewModel(application) 
 
         viewModelScope.launch {
             if (!sendMutex.tryLock()) {
+                _isSending.value = false
                 return@launch
             }
             val currentBot = activeBot.value ?: repository.getBot(botId) ?: run {
@@ -342,7 +352,9 @@ class EmochiViewModel(application: Application) : AndroidViewModel(application) 
                 _errorMessage.value = null
 
                 val msgs = repository.getMessageListForBot(botId)
-                if (msgs.isEmpty()) return@launch
+                if (msgs.isEmpty()) {
+                    return@launch
+                }
 
                 val lastIsUser = msgs.lastOrNull()?.role == "user"
                 val (remainingMsgs, targetMsg) = if (lastIsUser) {
@@ -359,7 +371,7 @@ class EmochiViewModel(application: Application) : AndroidViewModel(application) 
                     reverted
                 } else currentBot
 
-                // Generate first before deleting targetMsg to prevent wiping message on failure
+                // Generate first before deleting targetMsg to prevent wiping message on network error
                 val replyText = repository.generateAiReply(botToUse, remainingMsgs)
 
                 if (targetMsg != null) {
@@ -377,7 +389,9 @@ class EmochiViewModel(application: Application) : AndroidViewModel(application) 
             } catch (e: Exception) {
                 _errorMessage.value = e.message ?: "Yeniden oluşturulamadı."
             } finally {
-                sendMutex.unlock()
+                if (sendMutex.isLocked) {
+                    sendMutex.unlock()
+                }
                 _isSending.value = false
             }
         }
@@ -385,11 +399,13 @@ class EmochiViewModel(application: Application) : AndroidViewModel(application) 
 
     fun editMessage(msgId: String, newText: String) {
         val botId = _activeBotId.value ?: return
-        if (_isSending.value) return
+        val trimmedNewText = newText.trim()
+        if (trimmedNewText.isBlank() || _isSending.value) return
         _isSending.value = true
 
         viewModelScope.launch {
             if (!sendMutex.tryLock()) {
+                _isSending.value = false
                 return@launch
             }
             val currentBot = activeBot.value ?: repository.getBot(botId) ?: run {
@@ -404,12 +420,7 @@ class EmochiViewModel(application: Application) : AndroidViewModel(application) 
                 if (idx == -1) return@launch
 
                 val isUserMsg = msgs[idx].role == "user"
-                for (i in (idx + 1) until msgs.size) {
-                    repository.deleteMessage(msgs[i].id)
-                }
-
-                val editedMsg = msgs[idx].copy(text = newText, timestamp = System.currentTimeMillis())
-                repository.saveMessage(editedMsg)
+                val editedMsg = msgs[idx].copy(text = trimmedNewText, timestamp = System.currentTimeMillis())
 
                 if (isUserMsg) {
                     val botToUse = if (currentBot.previousEmotionState.isNotBlank()) {
@@ -421,19 +432,30 @@ class EmochiViewModel(application: Application) : AndroidViewModel(application) 
                     val truncatedList = msgs.subList(0, idx) + editedMsg
                     val replyText = repository.generateAiReply(botToUse, truncatedList)
 
+                    // Delete old trailing messages ONLY after generation succeeds
+                    for (i in (idx + 1) until msgs.size) {
+                        repository.deleteMessage(msgs[i].id)
+                    }
+                    repository.saveMessage(editedMsg)
+
                     val newAiMsg = MessageEntity(
                         id = UUID.randomUUID().toString(),
                         botId = botId,
                         role = "assistant",
                         text = replyText,
-                        timestamp = System.currentTimeMillis()
+                        timestamp = (editedMsg.timestamp + 10L).coerceAtLeast(System.currentTimeMillis())
                     )
                     repository.saveMessage(newAiMsg)
+                } else {
+                    // Directly edit assistant message
+                    repository.saveMessage(editedMsg)
                 }
             } catch (e: Exception) {
                 _errorMessage.value = e.message ?: "Mesaj düzenlenemedi."
             } finally {
-                sendMutex.unlock()
+                if (sendMutex.isLocked) {
+                    sendMutex.unlock()
+                }
                 _isSending.value = false
             }
         }
@@ -487,7 +509,16 @@ class EmochiViewModel(application: Application) : AndroidViewModel(application) 
             val botToSave = preset.copy(
                 id = UUID.randomUUID().toString(),
                 isPublic = false,
-                isTemplate = false
+                isTemplate = false,
+                totalPromptTokens = 0L,
+                totalCandidateTokens = 0L,
+                needsSummarization = false,
+                storyNotes = "",
+                memoryNotes = "",
+                emotionState = """{"mood":"nötr","intensity":5,"affection":50,"trust":50,"tension":10}""",
+                previousEmotionState = """{"mood":"nötr","intensity":5,"affection":50,"trust":50,"tension":10}""",
+                worldAtmosphere = """{"mood":"sakin","intensity":5,"currentEvent":""}""",
+                updatedAt = System.currentTimeMillis()
             )
             repository.saveBot(botToSave)
             openBot(botToSave.id)
@@ -502,7 +533,16 @@ class EmochiViewModel(application: Application) : AndroidViewModel(application) 
 
     fun updateSettings(settings: UserSettingsEntity) {
         viewModelScope.launch {
-            repository.updateUserSettings(settings)
+            val sanitized = settings.copy(
+                customApiKey = settings.customApiKey.trim(),
+                groqApiKey = settings.groqApiKey.trim(),
+                claudeApiKey = settings.claudeApiKey.trim(),
+                openaiApiKey = settings.openaiApiKey.trim(),
+                backupApiKey = settings.backupApiKey.trim(),
+                ttsSpeed = settings.ttsSpeed.coerceIn(0.5f, 2.0f),
+                ttsPitch = settings.ttsPitch.coerceIn(0.5f, 2.0f)
+            )
+            repository.updateUserSettings(sanitized)
         }
     }
 

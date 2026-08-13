@@ -12,6 +12,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -1496,21 +1497,36 @@ fun BotSettingsModal(
                             Text("Sohbet Arka Plan Resmi", color = EmochiTextPrimary, fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
                             Text("Sohbet içi özel duvar kağıdı belirleyin", color = EmochiTextMuted, fontSize = 11.sp)
                             
-                            Row(modifier = Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Row(
+                                modifier = Modifier.padding(top = 6.dp),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Button(
+                                    onClick = { chatBgUrl = "USE_AVATAR" },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E1B4E), contentColor = Color(0xFFC084FC)),
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.height(30.dp),
+                                    contentPadding = PaddingValues(horizontal = 8.dp)
+                                ) {
+                                    Text("👤 Avatar Yap", fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
+                                }
                                 Button(
                                     onClick = { bgPhotoPickerLauncher.launch("image/*") },
                                     colors = ButtonDefaults.buttonColors(containerColor = EmochiPrimary, contentColor = Color(0xFF1A1B2E)),
                                     shape = RoundedCornerShape(8.dp),
-                                    modifier = Modifier.height(30.dp)
+                                    modifier = Modifier.height(30.dp),
+                                    contentPadding = PaddingValues(horizontal = 8.dp)
                                 ) {
-                                    Text("Galeri", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    Text("Galeri", fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
                                 }
                                 if (chatBgUrl.isNotBlank()) {
                                     TextButton(
                                         onClick = { chatBgUrl = "" },
-                                        modifier = Modifier.height(30.dp)
+                                        modifier = Modifier.height(30.dp),
+                                        contentPadding = PaddingValues(horizontal = 4.dp)
                                     ) {
-                                        Text("Kaldır", fontSize = 11.sp, color = EmochiError)
+                                        Text("Sıfırla", fontSize = 10.5.sp, color = EmochiError)
                                     }
                                 }
                             }
