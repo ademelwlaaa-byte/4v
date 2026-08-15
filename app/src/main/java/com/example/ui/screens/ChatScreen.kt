@@ -1667,13 +1667,11 @@ fun ChapterSummaryModal(
     DisposableEffect(Unit) {
         var player: android.media.MediaPlayer? = null
         try {
-            player = android.media.MediaPlayer.create(context, com.example.R.raw.bolumsonu)?.apply {
-                setAudioAttributes(
-                    android.media.AudioAttributes.Builder()
-                        .setContentType(android.media.AudioAttributes.CONTENT_TYPE_MUSIC)
-                        .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
-                        .build()
-                )
+            val audioAttrs = android.media.AudioAttributes.Builder()
+                .setContentType(android.media.AudioAttributes.CONTENT_TYPE_MUSIC)
+                .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+                .build()
+            player = android.media.MediaPlayer.create(context, com.example.R.raw.bolumsonu, audioAttrs, 0)?.apply {
                 isLooping = true
                 setVolume(0f, 0f)
                 start()
@@ -1709,14 +1707,185 @@ fun ChapterSummaryModal(
     val lastAssistantMsg = remember(messages) {
         messages.lastOrNull { it.role == "assistant" || it.role == "model" }
     }
+    val isChapter3 = remember(messages, lastAssistantMsg) {
+        userMsgs.size >= 11 || (lastAssistantMsg?.text?.contains("BÖLÜM 3") == true)
+    }
     val isChapter2 = remember(messages, lastAssistantMsg) {
-        userMsgs.size >= 5 || (lastAssistantMsg?.text?.contains("BÖLÜM 2") == true)
+        !isChapter3 && (userMsgs.size >= 5 || (lastAssistantMsg?.text?.contains("BÖLÜM 2") == true))
     }
 
-    val choices = remember(messages, isChapter2) {
+    val choices = remember(messages, isChapter2, isChapter3) {
         val items = mutableListOf<ChapterChoiceItem>()
 
-        if (isChapter2) {
+        if (isChapter3) {
+            if (userMsgs.size >= 11) {
+                val c1Msg = userMsgs.getOrNull(10)?.text ?: ""
+                val isUnconditional = c1Msg.contains("2") || c1Msg.contains("Tereddütsüz")
+                val isShort = c1Msg.contains("3") || c1Msg.contains("kısa")
+                items.add(
+                    ChapterChoiceItem(
+                        id = 1,
+                        title = "1. OTUZ GÜNLÜK TEKLİFE CEVAP",
+                        selectedOption = if (isUnconditional) "Tereddütsüz 30 günlük deneme süresini kabul ettin."
+                                        else if (isShort) "30 günü çok uzun bulup birkaç günlük kısa süre önerdin."
+                                        else "30 günlük süreyi kendi çıkış şartlarınla kabul ettin.",
+                        impactText = if (isUnconditional) "Steve Rogers memnun kaldı, sana karşı güveni arttı."
+                                    else if (isShort) "Steve anlayış gösterdi ama ekibin temkinli yaklaşımı sürdü."
+                                    else "Özgürlüğünden ödün vermeden ilk adımı attın.",
+                        icon = if (isUnconditional) "💫" else "💭",
+                        isBranching = false,
+                        isRelationship = isUnconditional
+                    )
+                )
+            }
+
+            if (userMsgs.size >= 12) {
+                val c2Msg = userMsgs.getOrNull(11)?.text ?: ""
+                val isEager = c2Msg.contains("2") || c2Msg.contains("İstekli")
+                val isRefuse = c2Msg.contains("3") || c2Msg.contains("Reddet")
+                items.add(
+                    ChapterChoiceItem(
+                        id = 2,
+                        title = "2. ANTRENMAN SALONU DEĞERLENDİRMESİ",
+                        selectedOption = if (isEager) "Steve Rogers ile antrenmana istekli katıldın."
+                                        else if (isRefuse) "Fiziksel testi reddedip teorik anlatım istedin."
+                                        else "Sınırlarını kendin belirlemek şartıyla temkinli kabul ettin.",
+                        impactText = if (isEager) "Ekip üyelerinde büyük merak ve olumlu izlenim uyandırdın."
+                                    else if (isRefuse) "Gizemli kaldın ama Steve seni yine de antrenman ortamına davet etti."
+                                    else "Kontrolü elinde tutarak antrenman alanına adım attın.",
+                        icon = if (isEager) "💫" else "💭",
+                        isBranching = false,
+                        isRelationship = isEager
+                    )
+                )
+            }
+
+            if (userMsgs.size >= 13) {
+                val c3Msg = userMsgs.getOrNull(12)?.text ?: ""
+                val isFullPower = c3Msg.contains("3") || c3Msg.contains("Hiç geri tutma")
+                val isPushHard = c3Msg.contains("2") || c3Msg.contains("zorla")
+                items.add(
+                    ChapterChoiceItem(
+                        id = 3,
+                        title = "3. STEVE'E KARŞI GÜÇ GÖSTERİMİ",
+                        selectedOption = if (isFullPower) "Hiç geri tutmadın, Kırmızı Göz ivmesiyle kazandın."
+                                        else if (isPushHard) "Steve'in savunmasını zorladın ama sınırda durdun."
+                                        else "Kendini tamamen kontrol ettin, Steve'e zarar vermedin.",
+                        impactText = if (isFullPower) "Bruce Banner dehşete düştü, Steve gücüne takdirle yaklaştı."
+                                    else if (isPushHard) "Natasha ve Steve hızından ve kontrolünden etkilendi."
+                                    else "Hızlı iyileşme gücün ve kontrolün Natasha'dan takdir gördü.",
+                        icon = if (isFullPower) "🔀" else "💫",
+                        isBranching = isFullPower,
+                        isRelationship = !isFullPower
+                    )
+                )
+            }
+
+            if (userMsgs.size >= 14) {
+                val c4Msg = userMsgs.getOrNull(13)?.text ?: ""
+                val isMin = c4Msg.contains("2") || c4Msg.contains("Minimum")
+                val isMax = c4Msg.contains("3") || c4Msg.contains("tam kapasite")
+                items.add(
+                    ChapterChoiceItem(
+                        id = 4,
+                        title = "4. ENERJİ TESTİ GÖSTERİMİ",
+                        selectedOption = if (isMin) "Minimum kıvılcım seviyesinde güç uyguladın."
+                                        else if (isMax) "Neredeyse tam kapasitede devasa enerji patlaması yarattın."
+                                        else "Orta seviyede kontrollü enerji dalgası fırlattın.",
+                        impactText = if (isMin) "Sınırlarını gizli tuttun, merak uyandırdın."
+                                    else if (isMax) "Stark sayılara hayran kaldı, Wanda bina seviyesi potansiyelini not etti."
+                                    else "Bruce Banner senin kozmik imzanın benzersiz olduğunu belirtti.",
+                        icon = if (isMax) "💫" else "💭",
+                        isBranching = false,
+                        isRelationship = isMax
+                    )
+                )
+            }
+
+            if (userMsgs.size >= 15) {
+                val c5Msg = userMsgs.getOrNull(14)?.text ?: ""
+                val isSerious = c5Msg.contains("3") || c5Msg.contains("ciddiye")
+                val isSilent = c5Msg.contains("2") || c5Msg.contains("Sessiz")
+                items.add(
+                    ChapterChoiceItem(
+                        id = 5,
+                        title = "5. SAM WILSON'IN ŞAKASINA TEPKİ",
+                        selectedOption = if (isSerious) "Şakayı ciddiye alıp soğuk durdun."
+                                        else if (isSilent) "Sessiz kalıp sadece gülümsedin."
+                                        else "Kuru bir espriyle masayı kahkahaya boğdun.",
+                        impactText = if (isSerious) "Mesafeli tavrını korudun."
+                                    else if (isSilent) "Saygıyla karşılanan mesafeli bir gülümseme bıraktın."
+                                    else "Yıllar sonra ilk kez bir ekiple masada gülmenin tadını çıkardın.",
+                        icon = if (!isSerious && !isSilent) "💫" else "💭",
+                        isBranching = false,
+                        isRelationship = !isSerious && !isSilent
+                    )
+                )
+            }
+
+            if (userMsgs.size >= 16) {
+                val c6Msg = userMsgs.getOrNull(15)?.text ?: ""
+                val isShort = c6Msg.contains("2") || c6Msg.contains("çatıya") || c6Msg.contains("Kısa")
+                val isBig = c6Msg.contains("3") || c6Msg.contains("uzağa") || c6Msg.contains("Büyük")
+                items.add(
+                    ChapterChoiceItem(
+                        id = 6,
+                        title = "6. S.H.I.E.L.D. ALARM ALARMINDA KARAR",
+                        selectedOption = if (isBig) "Tümünü geride bırakıp başka bir şehre ışınlandın (Büyük Kaçış)."
+                                        else if (isShort) "Refleksle çatıya ışınlandın, sonra geri döndün (Kısa Kaçış)."
+                                        else "Kule'de kaldın ve ekibe güvenmeyi seçtin (Normal Akış).",
+                        impactText = if (isBig) "Thor seni 3 gün sonra buldu, kaçış ve dönüş deneyimin olgunlaştı."
+                                    else if (isShort) "Çatıdan izledikten sonra adımlayarak aşağı indin, Wanda cesaretini övdü."
+                                    else "Wanda ve Steve ile güven bağını güçlendirdin, kalmanın cesaret olduğunu hissettin.",
+                        icon = "🔀",
+                        isBranching = true,
+                        isRelationship = !isBig
+                    )
+                )
+            }
+
+            if (userMsgs.size >= 17) {
+                val c7Msg = userMsgs.getOrNull(16)?.text ?: ""
+                val isSincere = c7Msg.contains("1") || c7Msg.contains("Tam dürüst") || c7Msg.contains("Korkutucu")
+                val isJoking = c7Msg.contains("2") || c7Msg.contains("Yarım")
+                items.add(
+                    ChapterChoiceItem(
+                        id = 7,
+                        title = "7. NATASHA İLE ÇATI DİYALOGU",
+                        selectedOption = if (isSincere) "Kalmanın kaybedecek bir şey biriktirmek olduğunu dürüstçe söyledin."
+                                        else if (isJoking) "Manzaradan bahsettiğini söyleyerek durumu şakaya vurdun."
+                                        else "Kapanıp sadece hava aldığını söyledin.",
+                        impactText = if (isSincere) "Natasha Kızıl Oda geçmişini paylaşarak derin bir bağ kurdu."
+                                    else if (isJoking) "Natasha hafifçe gülümsedi ve 30 günlük süreni hatırlattı."
+                                    else "Natasha mesafene saygı duyarak iyi geceler diledi.",
+                        icon = if (isSincere) "💫" else "💭",
+                        isBranching = false,
+                        isRelationship = isSincere
+                    )
+                )
+            }
+
+            if (userMsgs.size >= 18) {
+                val c8Msg = userMsgs.getOrNull(17)?.text ?: ""
+                val isSuppress = c8Msg.contains("2") || c8Msg.contains("cebine") || c8Msg.contains("bastır")
+                val isFlashback = c8Msg.contains("3") || c8Msg.contains("flashback") || c8Msg.contains("bak")
+                items.add(
+                    ChapterChoiceItem(
+                        id = 8,
+                        title = "8. KOLYE ANI & İÇ SES",
+                        selectedOption = if (isSuppress) "Kolyeyi cebine koyup duygusal zayıflığı bastırdın."
+                                        else if (isFlashback) "Kolyeye bakıp 20 yıl önceki patlamayı hatırladın."
+                                        else "Kolyeyi elinde tutup umutla New York ışıklarını izledin.",
+                        impactText = if (isSuppress) "Soğukkanlı zırhını korumaya devam ettin."
+                                    else if (isFlashback) "Geçmişin yükünü kabullenerek kulede yeni bir sayfa açtın."
+                                    else "Yıllar sonra ilk kez bir şeyleri kaybetmeden tutabileceğine inandın.",
+                        icon = if (!isSuppress) "💫" else "💭",
+                        isBranching = false,
+                        isRelationship = false
+                    )
+                )
+            }
+        } else if (isChapter2) {
             // Chapter 2 Choices (Indices 4, 5, 6, 7, 8)
             if (userMsgs.size >= 5) {
                 val c1Msg = userMsgs.getOrNull(4)?.text ?: ""
@@ -1941,8 +2110,10 @@ fun ChapterSummaryModal(
         items
     }
 
-    val relationshipTease = remember(userMsgs, isChapter2) {
-        if (isChapter2) {
+    val relationshipTease = remember(userMsgs, isChapter2, isChapter3) {
+        if (isChapter3) {
+            "Otuz günlük deneme süresinde Avengers Tower'da yerini almaya başladın. Steve ile karşılıklı saygı, Natasha ile derin geçmiş anlayışı ve Wanda ile duygusal empati geliştirdin."
+        } else if (isChapter2) {
             val c3Msg = userMsgs.getOrNull(6)?.text ?: ""
             val c4Msg = userMsgs.getOrNull(7)?.text ?: ""
             val natashaBond = c3Msg.contains("1") || c3Msg.contains("2") || c3Msg.contains("Sözlü") || c3Msg.contains("Sessiz")
@@ -2249,8 +2420,8 @@ fun ChapterSummaryModal(
                                     Button(
                                         onClick = {
                                             safeExitWithFade {
-                                                if (isChapter2) {
-                                                    android.widget.Toast.makeText(context, "Bölüm 3 yapım aşamasındadır. Çok yakında yayınlanacak!", android.widget.Toast.LENGTH_LONG).show()
+                                                if (isChapter3) {
+                                                    android.widget.Toast.makeText(context, "Bölüm 4 yapım aşamasındadır. Çok yakında yayınlanacak!", android.widget.Toast.LENGTH_LONG).show()
                                                 } else {
                                                     onDismiss()
                                                     onNextChapter?.invoke()
@@ -2265,7 +2436,7 @@ fun ChapterSummaryModal(
                                     ) {
                                         Row(verticalAlignment = Alignment.CenterVertically) {
                                             Text(
-                                                if (isChapter2) "✨ Bölüm 2 Tamamlandı (Bölüm 3 Yakında)" else "🚀 Bölüm 2'ye Geç",
+                                                if (isChapter3) "✨ Bölüm 3 Tamamlandı (Bölüm 4 Yakında)" else if (isChapter2) "🚀 Bölüm 3'e Geç" else "🚀 Bölüm 2'ye Geç",
                                                 color = Color.White,
                                                 fontWeight = FontWeight.ExtraBold,
                                                 fontSize = 15.sp
@@ -2291,7 +2462,11 @@ fun ChapterSummaryModal(
                                             .fillMaxWidth()
                                             .height(50.dp)
                                     ) {
-                                        Text("🔄 Bölüm 1'i Tekrar Oyna (Farklı Seçimler Yap)", fontWeight = FontWeight.Bold, fontSize = 13.5.sp)
+                                        Text(
+                                            if (isChapter3) "🔄 Bölüm 3'ü Tekrar Oyna" else if (isChapter2) "🔄 Bölüm 2'yi Tekrar Oyna" else "🔄 Bölüm 1'i Tekrar Oyna",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 13.5.sp
+                                        )
                                     }
 
                                     Spacer(modifier = Modifier.height(32.dp))
@@ -2905,6 +3080,7 @@ fun BookReaderView(
     onResetChat: (Boolean) -> Unit,
     onClearError: () -> Unit
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     var fontSizeSp by remember { mutableStateOf(16.sp) }
     var showSummaryModal by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
@@ -2925,7 +3101,25 @@ fun BookReaderView(
 
     val isChapterCompleted = remember(lastAssistantMsg?.text) {
         val txt = lastAssistantMsg?.text ?: ""
-        txt.contains("BÖLÜM 1 SONU") || txt.contains("BÖLÜM 2 SONU") || txt.contains("BÖLÜM TAMAMLANDI") || txt.contains("Tebrikler! Bölüm")
+        txt.contains("BÖLÜM 1 SONU") || txt.contains("BÖLÜM 2 SONU") || txt.contains("BÖLÜM 3 SONU") || txt.contains("BÖLÜM TAMAMLANDI") || txt.contains("Tebrikler! Bölüm")
+    }
+
+    val completedChapterTitle = remember(lastAssistantMsg?.text) {
+        val txt = lastAssistantMsg?.text ?: ""
+        when {
+            txt.contains("BÖLÜM 3 SONU") -> "📖 BÖLÜM 3 TAMAMLANDI"
+            txt.contains("BÖLÜM 2 SONU") -> "📖 BÖLÜM 2 TAMAMLANDI"
+            else -> "📖 BÖLÜM 1 TAMAMLANDI"
+        }
+    }
+
+    val completedChapterDesc = remember(lastAssistantMsg?.text) {
+        val txt = lastAssistantMsg?.text ?: ""
+        when {
+            txt.contains("BÖLÜM 3 SONU") -> "Tebrikler! Verdiğin kararlarla Bölüm 3'ün sonuna ulaştın."
+            txt.contains("BÖLÜM 2 SONU") -> "Tebrikler! Verdiğin kararlarla Bölüm 2'nin sonuna ulaştın."
+            else -> "Tebrikler! Verdiğin kararlarla Bölüm 1'in sonuna ulaştın."
+        }
     }
 
     if (showSummaryModal) {
@@ -2935,7 +3129,15 @@ fun BookReaderView(
             onRestartChapter = { onResetChat(true) },
             onNextChapter = {
                 showSummaryModal = false
-                onSendMessage("Bölüm 2: Şartlar'a başla")
+                val userCount = messages.filter { it.role == "user" }.size
+                val lastMsgText = lastAssistantMsg?.text ?: ""
+                if (lastMsgText.contains("BÖLÜM 3 SONU") || userCount >= 19) {
+                    android.widget.Toast.makeText(context, "Bölüm 4 yapım aşamasındadır. Çok yakında yayınlanacak!", android.widget.Toast.LENGTH_LONG).show()
+                } else if (lastMsgText.contains("BÖLÜM 2 SONU") || userCount in 5..10) {
+                    onSendMessage("Bölüm 3: Deneme Süresi'ne başla")
+                } else {
+                    onSendMessage("Bölüm 2: Şartlar'a başla")
+                }
             }
         )
     }
@@ -3299,10 +3501,10 @@ fun BookReaderView(
                                     modifier = Modifier.padding(18.dp),
                                     horizontalAlignment = Alignment.CenterHorizontally
                                 ) {
-                                    Text("📖 BÖLÜM 1 TAMAMLANDI", color = Color(0xFF34D399), fontSize = 17.sp, fontWeight = FontWeight.ExtraBold)
+                                    Text(completedChapterTitle, color = Color(0xFF34D399), fontSize = 17.sp, fontWeight = FontWeight.ExtraBold)
                                     Spacer(modifier = Modifier.height(8.dp))
                                     Text(
-                                        text = "Tebrikler! Verdiğin kararlarla Bölüm 1'in sonuna ulaştın.",
+                                        text = completedChapterDesc,
                                         color = Color(0xFFE2E8F0),
                                         fontSize = 13.5.sp,
                                         textAlign = androidx.compose.ui.text.style.TextAlign.Center
