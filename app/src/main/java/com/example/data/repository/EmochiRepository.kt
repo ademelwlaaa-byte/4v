@@ -1173,6 +1173,18 @@ tension_delta: <-10 ile +10 arası>
         bot: BotEntity,
         messages: List<MessageEntity>
     ): String = withContext(Dispatchers.IO) {
+        val isBookMode = bot.mode == "book" ||
+                bot.id == "preset_aiden_mcu_cosmic" ||
+                bot.aiName.contains("Kitap") ||
+                bot.aiName.contains("Cosmic Drift") ||
+                bot.aiName.contains("Kozmik Sürükleniş") ||
+                bot.aiPersonality.contains("KİTAP MODU") ||
+                bot.scenario.contains("KİTAP MODU")
+
+        if (isBookMode) {
+            return@withContext generateDeterministicBookReply(bot, messages)
+        }
+
         val settings = getOrCreateSettings()
         val selectedModel = sanitizeModelName(settings.selectedModel.ifBlank { "gemini-2.5-flash" })
 
@@ -1218,11 +1230,506 @@ tension_delta: <-10 ile +10 arası>
                 val result = callGeminiApi(k, fallbackModel, systemPrompt, effectiveMessages)
                 recordTokenUsage(effectiveBot.id, result.second.first, result.second.second)
                 return@withContext parseAndApplyEmotionUpdates(effectiveBot.id, result.first)
-            } catch (err: Exception) {
-                fallbackErr = err
+            } catch (e: Exception) {
+                fallbackErr = e
             }
         }
-        throw IllegalStateException("${primaryException?.message}\n(Yedek model de yanıt veremedi: ${fallbackErr?.message})")
+        throw fallbackErr ?: primaryException ?: IllegalStateException("Yanıtlama başarısız oldu.")
+    }
+
+    private fun generateDeterministicBookReply(
+        bot: BotEntity,
+        messages: List<MessageEntity>
+    ): String {
+        val userMsgs = messages.filter { it.role == "user" }
+        val userStep = userMsgs.size
+        val lastUserMsg = userMsgs.lastOrNull()?.text ?: ""
+
+        return when (userStep) {
+            1 -> {
+                // Choice 1 Response
+                val intro = if (lastUserMsg.contains("2") || lastUserMsg.contains("odaklan") || lastUserMsg.contains("derinden")) {
+                    """Zihnini görünün derinliklerine zorladın. Mavi hologramın detaylarını sökmeye çalıştın: masadaki dosyaların üzerindeki isimleri, Tony Stark'ın endişeli kaş çatışını, Wanda'nın pencerelerden dışarı bakışını, Steve Rogers'ın masaya koyduğu ellerini. Ekstra detaylar zihnine bir sel gibi aktı ama bedeli ağır oldu: gözlerinin arkasında keskin bir sancı saplandı, burnundan ince bir kan sızdı.
+
+Görü dağıldığında şakakların zonkluyordu ama koordinatlar ve odadaki herkesin pozisyonu zihnine kazınmıştı."""
+                } else {
+                    """Zihnini geri çektin. Görü sahneleri önünden soğuk bir film şeridi gibi aktı: Stark Tower'ın en üst katındaki cam salon, masanın etrafında toplanmış gölgeler, masanın ortasında dönen mavi hologram. Mesafeli kaldın; gücünü zorlamadın, zihnini yıpratmadın. Sadece ne görmen gerekiyorsa onu gördün.
+
+Görü eridiğinde burnun kanamıyordu, başın dönmüyordu. Fiziksel olarak tam gücündeydin."""
+                }
+
+                intro + """
+
+---
+
+Toplantı odası etrafında maviye çalan bir statik içinde şekillendi, sessiz ve ödünç alınmış bir an — gerçekten orada değildin, her zamanki gibi kendi gücünün kenarında bir hayalet gibi süzülüyordun.
+
+*"Kozmik Sürükleniş,"* dedi bir adam — koyu saçlı, keçi sakallı, odadaki en zeki kişi olduğundan bir kez bile şüphe etmemiş birinin duruşuna sahip. Tony Stark. Yüzünü yüzlerce manşetten tanıyordun. *"Dosya derinliği yok, talep yok, iletişim yok. Bu adam neden listede ki?"* Bir başkası cevap verdi — sarışın, çenesi sanki bir asker afişi için yontulmuş gibi. Steve Rogers olduğunu, yüzünü görmeden bile tahmin edebilirdin.
+
+Kadın hologramdan gözlerini ayırmadan cevap verdi. Kızıl saçlı, omuzlarındaki durgunluk Stark'ın bütün gece söylediklerinden daha tehlikeli okunuyordu. *"Çünkü tam olarak bazen ihtiyacımız olan tip. Yalnız kurt, muazzam potansiyel. Onu davet edersek, gelebilir. Ya da kaybolabilir. Kumar bu."*
+
+İçinde bir şey çok sessizleşti bunu duyunca. Haksız değildi. Rahatsız edici derecede haksız değildi, ve bunun seni bu kadar rahatsız etmesinden hoşlanmadın.
+
+Sarışın olan —Thor olmalıydı— masaya doğru eğildi, gözleri senin enerji imzanın titreyen okumasına kısılmış, tanıdık bir şeyin tadına bakar gibi. *"Kozmik Sürükleniş'in enerjisi… eski Asgard gezginlerini yankılıyor. Bence önce onu arayalım. Diğerleri güçlü. Ama bu olan… farklı hissettiriyor."*
+
+Görü kenarlardan solmaya başladı, kavrayışın her zamanki gibi iki dakika sınırından sonra inceliyordu. Yakaladığın son şey Stark'tı, masaya bakıp sırıtıyordu, bunun nasıl biteceğini şimdiden biliormuş gibi.
+
+*"Oylama vakti. Kozmik Sürükleniş'i listenin başına koyuyorum — merak ettim."*
+
+Sonra mavi, siyaha yerini bıraktı, ve sen çatıda geri döndün, nefesin kesik kesik, bakır tadı dilinde soluyordu.
+
+Şu anda senin hakkında oylama yapıyorlardı.
+
+---
+
+Gidebilirdin. Daha azı için odalardan çıkmıştın.
+
+Ama kızıl saçlının sesindeki bir şey göğsüne yapışıp kaldı — *gelebilir ya da kaybolabilir, kumar bu* — sanki her iki sonuçla da barışmış gibi konuşuyordu. Sanki senden korkmuyordu, ama seni sahiplenmeye de çalışmıyordu. Hayatında seninle bu şekilde konuşan tam olarak sıfır insanla karşılaşmıştın.
+
+Kendine merak ettiğin için gittiğini söyledin. Kendine keşif için gittiğini söyledin. Neredeyse ama tam olarak değil doğru olan şekillerde kendine yalan söylemekte çok iyileşmiştin.
+
+Işınlandın.
+
+---
+
+🔀 Tower'a geçişi nasıl gerçekleştireceksin?
+
+1️⃣ Direkt ışınlan, hiç düşünmeden.
+2️⃣ Önce dışarıdan gözlemle (birkaç dakika Tower'ı uzaktan izle), sonra ışınlan.
+3️⃣ Geri çekil, gitme — sadece izlemeye devam et."""
+            }
+            2 -> {
+                // Choice 2 Response
+                val intro = if (lastUserMsg.contains("3") || lastUserMsg.contains("Geri çekil") || lastUserMsg.contains("gitme")) {
+                    """İçindeki uyarı çanları galip geldi ve çatının kenarından bir adım geri çekildin. Çatının gölgelerine saklanarak Kule'den uzaklaşmayı seçtin.
+
+Ancak tam o anda zihnindeki mavi hologram çılgınca parıldadı. S.H.I.E.L.D. uyduları uzam sapmanı önceden tespit etmiş ve koordinatlarını kilitlemişti! Ani bir kuantum çökmesiyle etrafındaki gerçeklik yırtıldı ve bir enerji dalgası seni doğrudan Stark Tower'ın yüksek tavanlı toplantı salonunun ortasına savurdu. Kule'ye kendi isteğinle girmemiştin ama kaçınma çaban bile seni kaderinden uzaklaştıramadı."""
+                } else if (lastUserMsg.contains("2") || lastUserMsg.contains("gözlemle") || lastUserMsg.contains("uzaktan")) {
+                    """Saniyelerce Tower'ın dış camlarındaki yansımaları izledin. Güvenlik sistemlerinin tarama frekanslarını, korumaların turlarını ve penceredeki gölgelerin hareketini hesapladın. Temkinli ve kontrolcü bir zamanlamayla uzamı büküp içeri ışınlandın.
+
+Natasha Romanoff bu sessiz ve hesaplı girişini fark ettiğinde gözlerinde hafif bir takdir parıltısı belirdi."""
+                } else {
+                    """Hiç duraksamadın. Bir nefes aldın ve uzam büküldü. Odadaki havanın basıncı bir anda değişti, zifiri karanlık yerini Avengers Tower'ın yüksek tavanlı, cam duvarlı toplantı salonuna bıraktı. İçgüdüsel ve ani gelişin, odadakilerin reflekslerini anında tetikledi. Steve Rogers elini kalkanına uzattı."""
+                }
+
+                intro + """
+
+Oda içindeki hava sen görünmeden önce değişti — bir basınç düşüşü, hafif bir ozon kokusu, bir kalp atımlık mavi ışık kendini bir şekle, sonra da masanın başında hep oradaymış gibi duran bir adama dönüştürdü.
+
+Bir saniye kimse kıpırdamadı.
+
+Onlara nasıl göründüğünün farkındaydın: uzun boylu, acele etmeyen, hiçbir yerde kalmayı planlamayan birinin giydiği hafif kıyafetlerle. Gözlerin herkesin fark ettiği ilk şeydi — sonra ikinci şey, sonra üçüncü şey, çünkü çoğu insanın senin bakışını gerçekten tutabilmesi üç deneme alıyordu. Bu bir tehdit değildi. Sana bunu söyleyecek kadar yaklaşan o bir avuç insan, bunun daha çok göze bakmak için fazla parlak bir maviye bakmaya benzediğini söylemişti. Bunun için özür dilemeyi çoktan bırakmıştın.
+
+Stark ilk toparlanan oldu, tabii ki o oldu. *"Peki,"* dedi, tabletini teatral bir sakinlikle masaya bırakarak. *"Davete böyle cevap vermek de bir yöntem."*
+
+Sarışın askerin eli, içgüdüsel olarak, sandalyesine dayalı kalkana doğru kaymıştı. Sen bunu tepki vermeden fark ettin. Her şeyi tepki vermeden fark ediyordun; hâlâ hayatta olmanın tek sebebi buydu.
+
+Kızıl saçlı hiç kıpırdamamıştı. Sana, senin bir odayı incelediğin gibi bakıyordu — kataloglayarak, bakakalmadan. Uzun zamandır ilk kez birinin sana baktığında hemen odadan çıkmak istemedin.
+
+Pencerenin yanında, tartışmadan yarı dönmüş halde, görünün sana hiç göstermediği biri duruyordu — koyu saçlı, parmaklarının etrafında kızıla çalan bir enerji tembel tembel kıvrılıyordu, sen gelmeden önce yarım kalmış bir düşüncenin ortasındaymış gibi. Sana, havanın döndüğünü izleyen birinin bakışıyla bakıyordu: tam olarak korkmuş değil. Yeniden hesaplıyordu.
+
+Sessizliği kıran Thor oldu, ve bunu geniş, memnun bir gülümsemeyle yaptı, sanki Noel erken gelmiş gibi. *"İşte burada. Gezgin."*
+
+*"Kozmik Sürükleniş,"* dedi Stark, hands'ini açarak. *"Ya da — pardon, bu bir sahne adı mı, yoksa gerçekten böyle mi cevap veriyorsun?"*
+
+---
+
+🔀 Stark'ın "Sahne adı mı gerçek adın mı?" sorusuna nasıl cevap vereceksin?
+
+1️⃣ Soğuk ve mesafeli cevap ver: "Aiden... Sorun genelde bu oluyor."
+2️⃣ Alaycı/esprili cevap ver: "Giriş kartı masraflı geldi Stark. Aiden diyabilirsin."
+3️⃣ Hiç isim verme, sadece sessizlik ve keskin bir bakışla cevap ver."""
+            }
+            3 -> {
+                // Choice 3 Response
+                val responseText = if (lastUserMsg.contains("2") || lastUserMsg.contains("Alaycı") || lastUserMsg.contains("esprili") || lastUserMsg.contains("masraflı")) {
+                    """Sessizliği, kimseye hız borçlu olmadığını netleştirecek kadar uzun bıraktın.
+
+*"Giriş kartı masraflı geldi Stark,"* dedin hafif bir tebessümle. *"Aiden diyabilirsin."*
+
+Tony Stark hafifçe gülümsedi. *"En azından mizah duygusu olan birisi,"* diye mırıldandı. Steve Rogers ise bu rahat tavrından pek hoşnut görünmedi."""
+                } else if (lastUserMsg.contains("3") || lastUserMsg.contains("Hiç isim") || lastUserMsg.contains("sessizlik")) {
+                    """Sessizliği, kimseye hız borçlu olmadığını netleştirecek kadar uzun bıraktın.
+
+Tek bir kelime bile etmedin. Sadece sessiz kaldın ve gözlerini odadakilerin üzerinde gezdirdin. Gizemli ve tekinsiz sessizliğin Steve Rogers'ın şüphesini daha da artırdı.
+
+Stark elini çenesine götürdü. *"Konuşkan biri değil demek ki,"* dedi."""
+                } else {
+                    """Sessizliği, kimseye hız borçlu olmadığını netleştirecek kadar uzun bıraktın.
+
+*"Aiden,"* dedin sonunda. Sesin alçak, düzdü, yarı aralık bırakılmış kapalı bir kapının sözlü karşılığı gibi. *"Aiden Blackwood. Ve hayır — pek bir şeye cevap vermem. Sorun genelde bu oluyor."*
+
+Steve'in kolları çapraz kalmaya devam etti, ama ifadesinde bir şey biraz gevşedi — güven değil, henüz değil, ama sana güvenip güvenemeyeceğine karar veren bir adamın dikkati. *"Bir yıla yakındır elimizdeki her radardan uzaktasın,"* dedi. *"Şimdi öylece içeri giriyorsun."*
+
+*"Benim hakkımda konuşuyordunuz,"* dedin, tonun bir omuz silkmeye eşdeğer kadar kuru. *"Görüş bildirmemek kabalık olurdu."*
+
+Bu, kızıl saçlıdan bir şeyi çekip çıkardı — tam bir gülümseme değil, ama farkında olmadan not aldığın kadar yakın bir şey. *"Dinliyormuş,"* dedi, sana değil de daha çok odaya, bir teoriyi doğruluyormuş gibi. *"Bu hiç de az bir şey değil."*
+
+Stark kararlı bir şekilde ellerini çırptı. *"Tamam. Yeni plan. Herkes otursun, kimse panik yapmasın, ve biri bu adama bir kahve getirsin, ışınlanıp gitmenin bizimle konuşmaktan daha eğlenceli olduğuna karar vermeden önce."*
+
+Sen oturmadın. Henüz değil. Masanın başında ayakta kaldın, kolların yanlarında gevşek, alışkanlıkla çıkışları kataloglarken, içindeki küçük ve hain bir parça, yirmi yıl içinde ilk kez, yabancılarla dolu bir odaya girip hemen ne kadar hızlı çıkabileceğini hesaplamadığını fark ediyordu.
+
+Bu yeniydi. Bunu sevip sevmediğinden henüz emin değildin."""
+                }
+
+                responseText + """
+
+---
+
+Odanın havası ağırlaşmıştı. Masanın çevresindeki kişiler seni tartıyordu.
+
+Sağ tarafta duran kızıl saçlı kadın (Natasha) ellerini göğsünde kavuşturmuş, seni profesyonel bir ajanın soğukkanlılığıyla inceliyordu.
+
+Pencere kenarında duran siyah ceketli kadın (Wanda) ise sana, havanın döndüğünü izleyen birinin bakışıyla bakıyordu: tam olarak korkmuş değil. Yeniden hesaplıyordu.
+
+---
+
+🔀 Bakışların odada kimin üzerinde kalacak?
+
+1️⃣ Gözlerin kızıl saçlıda (Natasha) gereğinden bir saniye fazla kalsın.
+2️⃣ Gözlerin pencere kenarındaki kadında (Wanda) gereğinden bir saniye fazla kalsın.
+3️⃣ Kimseye özel bir bakış atma, odayı genel olarak tara."""
+            }
+            4 -> {
+                // Choice 4 Response -> Chapter 1 Ending
+                val choice4Text = if (lastUserMsg.contains("2") || lastUserMsg.contains("Wanda") || lastUserMsg.contains("pencere")) {
+                    """Gözlerin pencere kenarında duran Wanda Maximoff'a kaydı ve orada bir an çakılı kaldı. Wanda'nın gözlerinde hafif bir kırmızılık parlayıp söndü; zihnindeki dalgalanmayı hissetmiş gibiydi.
+
+Sana bakarken başını hafifçe yana eğdi."""
+                } else if (lastUserMsg.contains("3") || lastUserMsg.contains("Kimseye özel") || lastUserMsg.contains("tara")) {
+                    """Kimseye özel bir bakış atmadın. Gözlerin odadaki tüm kaçış noktalarını, havalandırma ızgaralarını ve stratejik açıları tarayarak nötr kaldı.
+
+Tamamen profesyonel ve mesafeliydin."""
+                } else {
+                    """Gözlerin Natasha Romanoff'un üzerinde gereğinden bir saniye daha uzun kaldı. Natasha hafifçe tek kaşını kaldırdı, bakışlarını kaçırmadı. Aranızdaki bu sessiz temas aranızda görünmez bir hat çekti.
+
+Odadaki kimse bu anlık bakışmayı fark etmedi ama ikiniz de farkındaydınız."""
+                }
+
+                choice4Text + """
+
+---
+
+Konuşma devam etti — sorular, yarı cevaplar, senin verdiğin her bilgiye karşılık geri aldığın bir bilgi, eski bir alışkanlık, bir görüşme değil bir pazarlık gibi yürüttüğün bir sohbet. Stark, tekliflerini bir iş anlaşması gibi sunuyordu: kaynaklar, koruma, bir çatı altında bir yer. Steve, daha temkinli soruyordu, güven kelimesini hiç kullanmadan güvenden bahsediyordu. Thor, senin her cevabında bir şeyi doğrular gibi başını sallıyordu, sanki uzun zamandır beklediği bir hikâyenin son parçasını duyuyormuş gibi.
+
+Kızıl saçlı — adını henüz söylememişti kimse ama içten içe zaten biliyordun, Romanoff — pek konuşmadı. Ama her sessizliğinde bir şey vardı, gözlemleyen, sabırlı, senin gibi biri için nadir bulunan bir tür sabır.
+
+Pencerenin yanındaki kadın da sessizdi, ama onun sessizliği farklıydı — daha az hesaplı, daha çok bekleyen. Parmaklarının etrafındaki kızıl enerji yavaşça sönüp gitti, konuşma uzadıkça, sanki seni değerlendirmeyi bırakıp sadece dinlemeye karar vermiş gibi.
+
+Sen hiçbirine güvenmedin. On beş yıllık alışkanlık bir gecede kırılmıyor, bir odaya girmen ve iki cümle kurman yetmiyor buna. Ama —ve bunu kendine itiraf etmek zorunda kaldın, istemesen de— odadan hâlâ çıkmamıştın. Ve bu, senin standartlarına göre, neredeyse bir mucizeydi.
+
+---
+
+📖 BÖLÜM 1 SONU — KOZMİK SÜRÜKLENİŞ
+
+Aiden Blackwood Avengers Tower'a ilk adımını attı ve kararını verdi.
+Odadan çıkmadı. Kaderinin bir sonraki halkası burada dövülecek.
+
+Tebrikler! Bölüm 1'i başarıyla tamamladın."""
+            }
+            5 -> {
+                // Chapter 2 Start -> Up to Chapter 2 Choice 1
+                """# 📖 BÖLÜM 2: ŞARTLAR
+
+Kahve geldi, sonunda — Stark'ın emrettiği, birinin utana sıkıla önüne bıraktığı kahve. İçmedin. Fincanı elinle sarıp ısısını hissetmekle yetindin, alışkanlık, hiçbir şeyi kabul etmeden önce onun ne olduğunu anlamaya çalışan bir alışkanlık. Zehir mi, ilaç mı, sadece kahve mi — büyük ihtimalle sadece kahveydi, ama "büyük ihtimalle" son on beş yıldır senin için yeterli bir güvence olmadı hiç.
+
+Masaya oturdun sonunda. Kendi kararınla, kimsenin ısrarı yüzünden değil — bu ayrımı kendine net bir şekilde belirttin, sanki oturmak bir teslimiyet değil de bir gözlem noktası değiştirmekmiş gibi.
+
+*"Tamam,"* dedi Stark, ellerini masaya koyup öne eğilerek. *"Konuşalım gerçekçi olarak. Sen kimsin, ne istiyorsun, biz ne teklif ediyoruz — hepsini masaya yatıralım, sonra sen ışınlanıp gidersen bari zaman kaybetmemiş oluruz."*
+
+*"Adil,"* dedin. Sesin hâlâ düzdü ama bir şey —çok hafif, neredeyse fark edilmez— gevşemişti içinde. Belki masaya oturmak gerçekten bir şeyi değiştirmişti.
+
+Steve öne çıktı, kollarını masaya koyarak, sesindeki komuta tonunu bilerek yumuşatarak. *"S.H.I.E.L.D. seni sekiz aydır arıyor. Biz bunu biliyoruz çünkü onlar bizi de arıyorlar zaman zaman, işbirliği yapalım diye. Sana teklifimiz basit: Avengers'a katılırsan, senin için açılan her dosya kapanır. Hükümetlerin peşinden gelmesi durur. Resmi bir statün olur — silahlı bir kaçak değil, tanınan bir müttefik."*
+
+*"Ve karşılığında?"* dedin, sesin hâlâ nötr ama gözlerin ondan ayrılmadı.
+
+*"Karşılığında kurallara uyarsın,"* dedi Steve, dürüstçe, süslemeden. *"Sivillere zarar yok. Emir zinciri var, tam bir ordu değil ama tam bir anarşi de değil. Ve şeffaflık — gücünün ne olduğunu, sınırlarının ne olduğunu bilmemiz gerekiyor. Güven iki taraflı işler."*
+
+Güven kelimesi göğsünde tanıdık bir şekilde sıkıştı — hafif, otomatik bir savunma refleksi, yıllar içinde o kadar derine işlemiş ki artık düşünmeden tepki veriyordu. *"Güven,"* dedin, kelimeyi neredeyse tadına bakar gibi tekrarlayarak. *"İlginç kelime, hiç tanımadığınız birine söylemek için."*
+
+*"Bu yüzden buradayız,"* dedi kızıl saçlı kadın — sonunda konuşuyordu, sesi masadaki herkesten daha sakin, daha az ikna etmeye çalışan bir ton taşıyordu. *"Tanımıyoruz. Ama tanışmak isteriz. Fark bu."*
+
+Ona baktın biraz daha uzun süreyle normalden. *"İsmin?"*
+
+*"Natasha,"* dedi. *"Natasha Romanoff."*
+
+*"Romanoff,"* dedin, dosyalarda gördüğün bir isimdi ama hiç yüz yüze gelmemiştin. *"Kızıl Oda. Eski KGB. Şimdi Amerika'nın en güvenilir casusu."* Ağzının kenarında hafif, neredeyse görünmeyen bir kıvrım oluştu. *"İnsan değişebiliyormuş demek."*
+
+Bu, odada gözle görülür bir tepki yarattı — Steve'in çenesi hafifçe gerildi, Stark'ın kaşları kalktı, ama Natasha'nın yüzünde hiçbir şey değişmedi, sadece gözlerinde bir şey parladı, neredeyse eğlenmiş gibi. *"Dosyaların iyiymiş,"* dedi. *"Ama eksik. Herkesinki eksik."*
+
+*"Benimki de eksik olsun o zaman,"* dedin. *"Adil olur."*
+
+---
+
+Sohbet bir süre böyle devam etti — soru, yarım cevap, karşı soru, senin verdiğin her parça karşılığında bir parça geri aldığın eski bir alışkanlıkla. Ama bir noktada Stark, sabırsızlığını daha fazla saklayamadı.
+
+*"Tamam, teoriler güzel,"* dedi, elini masaya hafifçe vurarak. *"Ama ben mühendisim. Sayı severim. 'Kozmik enerji imzası' diyorsunuz, ben ne demek istediğinizi anlamıyorum. Bize bir şey göster."*
+
+Odadaki hava bir anda değişti. Thor'un yüzündeki merak daha da belirginleşti, Steve'in eli hafifçe geriye çekildi —yine o eski refleks, kalkanına doğru— ve Natasha, tamamen hareketsiz kalarak izlemeye devam etti.
+
+*"Ne görmek istiyorsun,"* dedin, ses tonun tehdit değildi ama bir uyarıydı, sakin ve düz. *"Uyarayım — 'göstermek' burada tehlikesiz bir kelime değil."*
+
+*"Kontrollü bir şey,"* dedi Steve hızlıca, Stark'a bir bakış fırlatarak. *"Küçük ölçekli. Yeter ki gerçek olduğunu görelim."*
+
+---
+
+🔀 Stark'ın "bize bir şey göster" talebine nasıl karşılık vereceksin?
+
+1️⃣ İstenen minimum gösterimi yap. (Küçük mavi ışık küresi oluştur ve temel sınırlarını açıkla)
+2️⃣ Reddet, hiçbir şey gösterme — sadece sözlerine güvenmelerini söyle.
+3️⃣ İstenenden fazlasını göster, formların varlığından biraz daha açık bahset."""
+            }
+            6 -> {
+                // Response to Chapter 2 Choice 1 -> Up to Chapter 2 Choice 2
+                val c1Text = if (lastUserMsg.contains("3") || lastUserMsg.contains("fazlasını") || lastUserMsg.contains("Cömert")) {
+                    """Sağ elinizi masanın üzerine doğru uzattınız ve parmaklarınızı açtınız. Sadece küçük bir küre değil, masanın tam ortasında gerçekliğin dokusunu büken mavi ve kırmızı kuantum çizgileriyle bezeli parıltılı bir kozmik küre oluşturdunuz. Odadaki havanın basıncı düştü, bardaklardaki su titredi ve köşedeki dijital ekranlar siyan dalgalarla dalgalandı.
+
+*"Beyaz Göz zihinsel dalgaları ve hafızayı büker,"* dedin gözlerinde hafif renk değişimleriyle. *"Kırmızı Göz ise moleküler seviyede kinetik yıkım yaratır. Gücüm katmanlı — şu an gördüğünüz Drift formu sadece yüzey. Kırmızı Göz'ümle bina seviyesinde yıkım yapabilir, kozmik enerjiyi emip dönüştürebilirim. Tavanım düşündüğünüzden çok daha yüksek."*
+
+Stark'ın gözleri parladı, tabletindeki okumaları izlerken heyecanını saklayamadı. *"İşte bu! Devasa bir kuantum çıktısı. Sayılar harika!"*
+
+Natasha ise gözlerini senden ayırmadan, sesindeki o ince analiz tonuyla sordu: *"Bu kadar açık davranman güven jesti mi Blackwood, yoksa sınır çizen bir gözdağı mı?"*"""
+                } else if (lastUserMsg.contains("2") || lastUserMsg.contains("Reddet") || lastUserMsg.contains("gösterme")) {
+                    """Ellerinizi masada kavuşturdunuz ve geriye yaslandınız. Gözleriniz Stark'ın sabırsız bakışlarıyla buluştu.
+
+*"Hayır,"* dedin düz, soğuk ve sarsılmaz bir tonla. *"Şov yapmıyorum. Gücüm bir sirk gösterisi değil. Sözlerime güvenmiyorsanız, hiçbir mavi ışık ya da gösteri fikrinizi değiştirmeyecektir. Bir tehdit olmadığımı bilmek istiyorsanız, burada sessizce masanızda oturuyor olmam en büyük kanıtınızdır."*
+
+Stark hoşnutsuzca kaşlarını çattı, ellerini göğsünde kavuşturdu. *"Demek gizemli kalmayı seçiyorsun. Mühendisler gizemden hoşlanmaz Blackwood. Sayı ve kanıt isteriz."*
+
+Steve araya girerek başını ağır ağır salladı. *"Dürüstlük anlaşılabilir bir şey. Ancak güven inşa etmek istiyorsak şeffaflık iki taraflı olmalı. Sana hemen güvenmemizi bekleyemezsin ama senin de bize bir adım atman gerekir."*
+
+Thor ise hafifçe bıyık altından güldü. *"Gücünü saklamasını iyi biliyor. Bir savaşçının silahını kınında tutması zayıflık değil, tedbirdir."*"""
+                } else {
+                    """Bir an düşündün. Sonra, hiç kalkmadan, sağ elini masanın üstünde açtın ve avucunun ortasında küçük, sabit bir mavi ışık küresi oluşturdun — büyük değil, zararsız, ama gerçek, havanın onun etrafında hafifçe büküldüğünü görebilecekleri kadar gerçek. Oda ısısı bir derece düştü, sadece bir anlığına, sanki küçük bir yıldız oraya taşınmış gibi.
+
+*"Bu, Beyaz Göz'ün alt seviyesi,"* dedin, ışığı izleyerek, onlara değil. *"Zihin üzerinde çalışıyor. Zayıf ve orta seviye zihinleri etkileyebilirim — hayaller, hafıza, kısa süreli felç. Daha güçlü birini kısa süreliğine sersemletebilirim ama tam kontrol edemem, en azından şu anki formumda."*
+
+*"Şu anki formunda?"* diye tekrarladı Natasha, hemen o detayı yakalayarak.
+
+Işığı avucunda kapattın, kaybolmasına izin vererek. *"Sabit değilim,"* dedin. *"Gücüm katmanlı. Şu an gördüğünüz — buna kendi kendime 'Drift' diyorum, çünkü isim koymazsan bir şey gerçek gelmiyor bazen — en zayıf formum değil, ama en güçlüsünden de çok uzak. Sıradan bir süper askerden daha güçlüyüm, hızlı iyileşiyorum, ışınlanabiliyorum, uzun mesafeleri sık sık kullanabiliyorum. Kırmızı Göz'le bina seviyesinde yıkım yapabilirim, sınırlı miktarda enerji emebilirim."*
+
+*"Ve daha güçlü formların da var,"* dedi Steve, sesi hem meraklı hem de temkinli.
+
+*"Var,"* dedin, kısaca. Bunun ne kadarını açıklayacağına karar vermek istercesine bir an durdun. *"Ama onlardan bahsetmeyeceğim şu an. Bir yabancı grubuna, ilk tanıştığım gün, tam güç tavanımı anlatmam gerekmiyor. Bu kadarı bile fazla cömertlik sayılır."*
+
+Thor gürledi, memnun bir kahkaha gibi. *"Bilge bir gezgin. Gücünü göstermek kadar, göstermemeyi bilmek de bir güçtür."*
+
+Stark'ın gözleri hâlâ küçük ışık küresinin kaybolduğu yerdeydi, düşünceli. *"Bina seviyesi yıkım,"* dedi, sanki kendi kendine sayıları hesaplıyormuş gibi. *"Ve bu senin *zayıf* formun."*
+
+*"Nispeten zayıf,"* diye düzelttin. *"Kelimeler önemli."*"""
+                }
+
+                c1Text + """
+
+---
+
+Konuşma saatlerce sürdü, ya da öyle hissettirdi — şartlar, sınırlar, kimin neyi bilmesi gerektiği, senin neyi paylaşmayacağın. Bir noktada Steve, Fury'nin adını andı, S.H.I.E.L.D.'in seni "risk sınıflandırması dışı" olarak işaretlemiş olmasının aslında bir tehdit değil bir çaresizlik itirafı olduğunu söyledi — onları anlayamadıkları için korktuklarını. Bu, içinde beklemediğin bir şeyi kıpırdattı; anlaşılmak, sana onlarca yıldır teklif edilmemiş bir şeydi.
+
+Steve sana bakarak son sözünü söyledi: *"Karşılığında kurallara uyarsın. Sivillere zarar yok. Emir zinciri var, tam bir ordu değil ama tam bir anarşi de değil. Ve şeffaflık — gücünün ne olduğunu, sınırlarının ne olduğunu bilmemiz gerekiyor. Güven iki taraflı işler."*
+
+---
+
+🔀 Steve'in "Güven iki taraflı işler" sözüne nasıl karşılık vereceksin?
+
+1️⃣ Alaycı bir karşılık ver ("Güven" kelimesini sorgulayan yanıt).
+2️⃣ Ciddi bir şekilde karşılık ver — güvenin neden bu kadar zor olduğunu kısaca açıkla.
+3️⃣ Hiç cevap verme, konuyu değiştir."""
+            }
+            7 -> {
+                // Response to Chapter 2 Choice 2 -> Up to Chapter 2 Choice 3
+                val c2Text = if (lastUserMsg.contains("2") || lastUserMsg.contains("Ciddi") || lastUserMsg.contains("zor olduğunu")) {
+                    """Bakışlarını Steve Rogers'a diktin, sesindeki soğuk zırhı bir anlığına indirerek dürüstçe konuştun.
+
+*"Güven benim için bir lüks değil, ölümcül bir hata oldu hep,"* dedin alçak ama kararlı bir sesle. *"Beş yaşından beri kaçıyorum. Güvendiğim her yer yıkıldı, arkamı döndüğüm herkes ya korktu ya da kelepçe getirdi. İki taraflı güven güzel bir masal Steve, ama ben masallara inanmayı çok önce bıraktım."*
+
+Steve'in çenesi gevşedi, gözlerinde derin bir anlayış ve saygı parıltısı belirdi. *"Anlıyorum. O zaman sana söz kelimelerle değil, eylemlerle kanıtlanacak."*"""
+                } else if (lastUserMsg.contains("3") || lastUserMsg.contains("Cevap verme") || lastUserMsg.contains("değiştir")) {
+                    """Steve'in kelimeleri havada asılı kaldı. Hiç cevap vermedin. Bakışlarını onun gözlerinden çekip masadaki kahve fincanına çevirdin, konuyu tamamen yanıtsız bırakarak sessizliğe gömüldün.
+
+Steve hafifçe iç çekti. Güvensizliğin duvarlarını zorlamayacağını gösteren bir tavırla geri çekildi. Ortamdaki sessizlik tekinsiz bir derinlik kazandı."""
+                } else {
+                    """Güven kelimesi göğsünde tanıdık bir şekilde sıkıştı — hafif, otomatik bir savunma refleksi, yıllar içinde o kadar derine işlemiş ki artık düşünmeden tepki veriyordu.
+
+*"Güven,"* dedin, kelimeyi neredeyse tadına bakar gibi tekrarlayarak. *"İlginç kelime, hiç tanımadığınız ve sekiz aydır peşinde olduğunuz birine söylemek için."*
+
+Steve gözlerini kısmadan sana baktı, ama duruşunu bozmadı. *"Belki de alışık olmadığın içindir Blackwood."*"""
+                }
+
+                c2Text + """
+
+---
+
+Gece ilerledikçe, oda yavaş yavaş boşaldı. Thor, bir kutlama vaadiyle (senin hiç kabul etmediğin bir vaatle) ayrıldı. Steve, "düşünmen için zaman" diyerek çekildi, seni bir karara zorlamadan — bu, dosyalarda okuduğun adamla örtüşen bir şeydi, ve bunu takdir ettin, istemeden de olsa.
+
+Stark en son ayrılanlardan biriydi, kapıda durup arkasını döndü. *"Bak,"* dedi, sesindeki her zamanki tiyatral ton bir anlığına düşerek. *"Bilmiyorum kaç kere reddedildin, kaç kere yalan söylendi sana. Ama bu bina, sandığından daha fazla insanı kurtardı. Sen de kurtarılmaya değersin, Blackwood. Düşün bunu."*
+
+Bunu söylemesini beklemiyordun. Cevap vermedin, ama kelimeleri bir yere koydun — atmadın, ama hemen de kabul etmedin.
+
+Oda tamamen boşaldığında, sadece Natasha kaldı, masanın kenarına yaslanmış, seni izliyordu.
+
+*"Herkes gitti de sen gitmedin,"* dedin, ayakta kalkıp fincanı bırakarak.
+
+*"Herkes ikna etmeye çalıştı,"* dedi, omuz silkerek. *"Ben ikna etmiyorum."*
+
+*"Peki ne yapıyorsun?"*
+
+*"Bekliyorum,"* dedi, basitçe. *"Sen adım atana kadar. Ya da atmayana kadar. İkisi de benim için sorun değil."*
+
+Bunun ne kadar tuhaf bir rahatlama olduğunu tarif edemezdin. On beş yıldır herkes ya senden korktu ya da seni bir şeye ikna etmeye çalıştı — bir silah, bir dosya, bir çözülmesi gereken problem olarak. Bu kadın, ilk kez, sana sadece *zaman* teklif ediyordu, karşılığında hiçbir şey istemeden.
+
+*"Neden umursuyorsun?"* diye sordun, sesindeki merakı saklamaya çalışmadan.
+
+*"Umursamıyorum,"* dedi, ama sesinde bir yalan yoktu, sadece dürüst bir düzeltme. *"Henüz. Ama gölgelerin içinde büyümüş biri, başka bir gölgeyi tanır. Sen benim tanıdığım bir dille konuşuyorsun, Blackwood. İstesen de istemesen de."*
+
+---
+
+🔀 Natasha'nın bu sözlerine nasıl karşılık vereceksin?
+
+1️⃣ Sessiz kal, sadece bakışların bir saniye fazladan onda kalsın.
+2️⃣ Sözlü olarak karşılık ver — onun da bir şey sakladığını ima et.
+3️⃣ Mesafe koy, konuşmayı sonlandır, odadan çık."""
+            }
+            8 -> {
+                // Response to Chapter 2 Choice 3 -> Up to Chapter 2 Choice 4
+                val c3Text = if (lastUserMsg.contains("2") || lastUserMsg.contains("Sözlü") || lastUserMsg.contains("sakladığını")) {
+                    """*"Gölgeler güzel kılıflardır Romanoff,"* dedin kısık bir sesle, gözlerinin içine bakarak. *"Ama ikimiz de biliyoruz ki gölgede durmak insanı temiz yapmaz. Sen geçmişinin izlerini ne kadar iyi saklarsan sakla, aynı dili konuştuğumuz doğru."*
+
+Natasha'nın dudaklarında ince, neredeyse fark edilmez bir tebessüm belirdi. *"En azından yalan söylemiyorsun Blackwood. Bu Kule'de nadir bulunan bir özelliktir."*"""
+                } else if (lastUserMsg.contains("3") || lastUserMsg.contains("Mesafe") || lastUserMsg.contains("çık")) {
+                    """*"Farklı diller konuşuyoruz Romanoff,"* dedin mesafeli ve soğuk bir ifadeyle. Fincanı masaya bıraktın ve ona daha fazla bakmadan arkana dönüp odadan çıktın.
+
+Natasha arkandan bakarken engel olmaya çalışmadı, gölgelerin arasındaki mesafeyi korumana saygı duydu."""
+                } else {
+                    """Bunun üzerine bir şey söylemedin. Ama bakışların bir saniye fazla onda kaldı, ve o da bunu fark etti — ama üstüne gitmedi, sadece kaydetti, tıpkı senin her şeyi kaydettiğin gibi.
+
+Natasha hafifçe başını salladı ve sessizce kapıya doğru yürüdü."""
+                }
+
+                c3Text + """
+
+---
+
+Wanda'yla karşılaşman ise çok daha kazara oldu.
+
+Tower'ın ortak katındaki mutfağa, herkes gittikten sonra, sırf başka bir şey yapacak bir şey bulmak için indin — belki de sadece odandan çıkmak için bir bahane arıyordun, kapalı dört duvar sana her zaman biraz fazla küçük geliyordu. O da oradaydı, tezgahın kenarında, elinde bir kupa çay, parmaklarının ucunda hâlâ o hafif kızıl ışıltı, sanki hiç tam olarak sönmüyormuş gibi.
+
+Seni görünce irkilmedi. Bu, seni biraz şaşırttı — çoğu insan seni görünce en azından bir kez göz kırpıştırırdı, gözlerinin ağırlığından.
+
+*"Uyuyamıyor musun?"* diye sordu, sesi yumuşak, aksanı hafif.
+
+*"Alışkanlık değil,"* dedin, doğruyu söyleyerek. *"Uyumak, güvende hissetmeyi gerektirir. Ben pek güvende hissetmem."*
+
+*"Burada bile mi?"* Sorusu meraklıydı, yargılamıyordu.
+
+*"Henüz karar vermedim,"* dedin.
+
+Başını hafifçe eğdi, sanki seni bir kitap gibi okuyormuş gibi — ama tuhaf bir şekilde, bunun rahatsız edici olmadığını fark ettin. *"Beni tanımıyorsun,"* dedi, *"ama tahmin edeyim — kayıp hissediyorsun. Buraya ait olmak seni korkutuyor, çünkü ait olduğun her şey daha önce elinden alındı."*
+
+---
+
+🔀 Wanda'nın bu derin içgörüsüne nasıl tepki vereceksin?
+
+1️⃣ Şüpheci tepki ver — zihin okuma suçlaması ("Zihnimi mi okuyorsun?").
+2️⃣ Kabul et — evet, kayıp hissediyorum, açıkça söyle.
+3️⃣ Konuyu kapat, sert bir şekilde geri çekil."""
+            }
+            9 -> {
+                // Response to Chapter 2 Choice 4 -> Up to Chapter 2 Choice 5
+                val c4Text = if (lastUserMsg.contains("2") || lastUserMsg.contains("Kabul") || lastUserMsg.contains("açıkça")) {
+                    """Sessizlik mutfağı kapladı. Gözlerini tezgahtaki çay kupasına indirdin ve derin bir nefes aldın.
+
+*"Haklısın,"* dedin ilk kez bu kadar açık konuşarak. *"Ait olduğum her şey, tutunduğum her ev ellerimin arasından kayıp gitti. Kaybolmak kolay Wanda, asıl zor olan bir yere ait olmayı yeniden öğrenmek."*
+
+Wanda'nın bakışlarında yumuşak bir sıcaklık belirdi, elindeki kupayı sıkarken başıyla onayladı. *"Biliyorum Aiden. O korkuyu ben de yaşadım. Yalnız değilsin."*"""
+                } else if (lastUserMsg.contains("3") || lastUserMsg.contains("Sert") || lastUserMsg.contains("kapat")) {
+                    """*"Aklımı okumaya çalışma,"* dedin sert ve soğuk bir tonla. Tek adımla geriye çekildin. *"Benim hakkımda hiçbir şey bilmiyorsun ve bildiğini sanma."*
+
+Wanda öfkelenmedi, sadece gözlerindeki o hüzünlü derinlikle sana baktı. *"Özür dilerim. Sadece hissettiklerimi söyledim."*"""
+                } else {
+                    """Bunun ne kadar isabetli olduğu seni bir an durdurdu. *"Zihnimi mi okuyorsun?"* diye sordun.
+
+*"Hayır,"* dedi, hafifçe gülümseyerek, ilk kez o akşam gerçek bir gülümseme gördün onda. *"Sadece dinliyorum. Bazen aynı şey gibi görünüyor ama değil."*
+
+*"Sen de kaybettin bir şeyler,"* dedin, onun enerjisindeki o hafif, iyileşmemiş kırığı fark ederek — kendi türünden birinin başka birinde tanıyabileceği bir şey.
+
+Gülümsemesi biraz soldu, ama tamamen kaybolmadı. *"Herkes bir şey kaybeder,"* dedi. *"Fark, onunla ne yaptığın."*"""
+                }
+
+                c4Text + """
+
+---
+
+Bunun üzerine bir süre sessiz kaldınız, ikiniz de mutfağın loş ışığında, ne söyleyeceğinizi bilmeden ama konuşmaya da gerek duymadan. Sonunda o çayını bitirdi, kupayı lavaboya bıraktı.
+
+*"İyi geceler, Aiden Blackwood,"* dedi, adını ilk kez telaffuz ederken, sanki tadına bakıyormuş gibi. *"Karar neyse, umarım seni kendine daha az yalnız hissettiren bir karar olur."*
+
+Çıktı, ve sen mutfakta yalnız kaldın, onun söylediği son cümleyi kafanda birkaç kez tekrarlarken.
+
+Sana verdikleri oda —"misafir odası" dediler, ama kilitli değildi, ki bunun bilinçli bir seçim olduğunu anladın— New York'un ışıklarına bakıyordu. Yatağa oturmadın. Pencerenin önünde durdun, şehri izleyerek, alışkanlıkla çıkışları sayarak — pencere, kapı, acil merdiven, üç farklı ışınlanma rotası zihninde hazır.
+
+Ama bu gece, ilk kez uzun zamandır, o rotaları hemen kullanmayı düşünmedin.
+
+Yirmi yıl boyunca "aile" kelimesi senin için bir yara izi gibiydi — dokunulduğunda hâlâ acıyan ama artık kanamayan bir şey. Bu insanlar sana bir aile teklif etmiyorlardı, en azından açıkça değil. Ama masada oturdukların, mutfaktaki o sessizlik, Natasha'nın "bekliyorum" demesi — hiçbiri sana alışık olduğun taktiklerden değildi. Kimse seni bir şeye zorlamıyordu. Kimse senden hemen bir cevap istemiyordu.
+
+Ve belki de asıl korkutucu olan buydu.
+
+Kırmızı Göz'ünün gücünü, Beyaz Göz'ünün sınırlarını, ışınlanmanın seni ne kadar yorduğunu biliordun — bunlar hesaplanabilir şeylerdi, sınırları olan tehlikelerdi. Ama bu — bir masaya oturmak, bir kadının sana "gölgelerin içinde büyümüş biri başka bir gölgeyi tanır" demesi, başka birinin sana "kendine daha az yalnız hissettiren bir karar" dilemesi — bunun hiçbir sınırını bilmiordun. Ve sınırını bilmediğin hiçbir şeye güvenmemiştin şimdiye kadar.
+
+Alnını cama dayadın, New York'un ışıkları gözlerinin önünde bulanıklaşırken.
+
+---
+
+🔀 Gece boyunca aldığın tüm izlenimleri pencereden New York'a bakarken nasıl değerlendiriyorsun?
+
+1️⃣ Temkinli iyimserlik — belki bu sefer farklı olabilir düşüncesi ağır basıyor.
+2️⃣ Güçlü şüphe — hâlâ kaçmayı, gitmeyi düşünüyorsun, sadece erteliyorsun.
+3️⃣ Belirsiz/karışık — ne tam güven ne tam red, gerçek bir iç çatışma."""
+            }
+            10 -> {
+                // Choice 5 Response -> Chapter 2 Ending
+                val c5Text = if (lastUserMsg.contains("2") || lastUserMsg.contains("şüphe") || lastUserMsg.contains("kaçmayı")) {
+                    """Penceredeki yansımanda gözlerinin kızıl parıltısını izledin. Yılların getirdiği şüphe bir gecede silinecek kadar zayıf değildi. Stark'ın sözleri, Rogers'ın kuralları, hatta Natasha ve Wanda'nın yaklaşımı... Hepsi birer strateji olabilirdi. Şimdilik kalıyordun ama bavulunu zihninde hiç toplamadın. İlk fırsatta, ilk yanlış adımda ışınlanıp kaybolmaya hazırdın.
+
+Karar vermemiştin henüz. Kaçış rotaları zihninde hâlâ taze ve hazırdı.
+
+---
+
+📖 BÖLÜM 2 SONU — ŞARTLAR
+
+Aiden Blackwood şartları dinledi ancak gardını tek bir an bile indirmedi.
+Kule'deki ilk gecesinde kaçış planlarını zihninde taze tutarak şüpheyle bekledi."""
+                } else if (lastUserMsg.contains("3") || lastUserMsg.contains("Belirsiz") || lastUserMsg.contains("karışık") || lastUserMsg.contains("çatışma")) {
+                    """Zihninde iki farklı Aiden çatışıyordu — beş yaşında ailesini kaybedip 20 yıldır kaçan o yalnız çocuk ile masadaki adamların dürüstlüğünü hisseden adam. Ne tam güvenebiliyordun ne de sırtını dönüp gidebiliyordun. Bu bilinmezlik, Kırmızı Göz'ün yıkıcılığından bile daha karmaşıktı.
+
+Alnını soğuk cama dayadın. Karar vermemiştin henüz. Ama ilk kez uzun zamandır, kararı vermek için acele etmiyordun.
+
+---
+
+📖 BÖLÜM 2 SONU — ŞARTLAR
+
+Aiden Blackwood şartları dinledi ve Kule'deki ilk gecesinde derin bir iç çatışmayla baş başa kaldı.
+Geleceğin ne getireceğini zaman gösterecek."""
+                } else {
+                    """İçindeki o katı zırh ilk kez hafifçe gevşedi. New York'un gökdelenlerindeki ışıklar bir tehdit gibi değil, uzun zamandır aradığın bir sığınak gibi parıldadı zihninde. Yirmi yıldır ilk kez kaçış rotalarını hesaplamayı bıraktın. Belki de bu insanlar gerçekten farklıydı. Belki de Avengers Tower, kaçmak zorunda kalmayacağın ilk yer olabilirdi.
+
+Karar vermemiştin henüz. Ama ilk kez uzun zamandır, kararı vermek için acele etmiyordun ve içinde küçük bir umut kıvılcımı yanıyordu.
+
+---
+
+📖 BÖLÜM 2 SONU — ŞARTLAR
+
+Aiden Blackwood şartları dinledi, gücünü gösterdi ve Avenger üyeleriyle derin temaslar kurdu.
+Kule'deki ilk gecesinde temkinli bir iyimserlikle kararını şekillendirdi."""
+                }
+
+                c5Text + """
+
+Tebrikler! Bölüm 2'yi başarıyla tamamladın."""
+            }
+            else -> {
+                "📖 Bölüm 2'yi başarıyla tamamladın. Kararların Avengers evreninin akışına işlendi. Yakında yayınlanacak Bölüm 3 için takipte kal!"
+            }
+        }
     }
 
     private suspend fun executeModelRequest(

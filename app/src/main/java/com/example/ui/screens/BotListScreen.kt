@@ -148,7 +148,13 @@ fun BotListScreen(
     var confirmDeleteId by remember { mutableStateOf<String?>(null) }
     var selectedFilter by remember { mutableStateOf("all") } // "all", "personal", "universe"
     var searchQuery by remember { mutableStateOf("") }
-    var activeTab by remember { mutableStateOf("chats") } // "chats", "discover", "templates"
+    var activeTab by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("chats") } // "chats", "discover", "templates", "books"
+
+    val chatsListState = androidx.compose.foundation.lazy.rememberLazyListState()
+    val templatesListState = androidx.compose.foundation.lazy.rememberLazyListState()
+    val discoverListState = androidx.compose.foundation.lazy.rememberLazyListState()
+    val booksListState = androidx.compose.foundation.lazy.rememberLazyListState()
+    val coroutineScope = rememberCoroutineScope()
 
     // System Back button closes Aiden Stories menu or returns to "chats" tab first before exiting
     BackHandler(enabled = showAidenStoriesMenu || activeTab != "chats") {
@@ -156,6 +162,7 @@ fun BotListScreen(
             showAidenStoriesMenu = false
         } else {
             activeTab = "chats"
+            coroutineScope.launch { chatsListState.scrollToItem(0) }
         }
     }
 
@@ -193,7 +200,14 @@ fun BotListScreen(
                         modifier = Modifier
                             .clip(RoundedCornerShape(16.dp))
                             .background(if (isDiscoverSelected) Color(0x1FA78BFA) else Color.Transparent)
-                            .clickable { activeTab = "discover" }
+                            .clickable {
+                                if (activeTab == "discover") {
+                                    coroutineScope.launch { discoverListState.animateScrollToItem(0) }
+                                } else {
+                                    activeTab = "discover"
+                                    coroutineScope.launch { discoverListState.scrollToItem(0) }
+                                }
+                            }
                             .padding(horizontal = 12.dp, vertical = 6.dp)
                             .graphicsLayer {
                                 scaleX = discoverScale
@@ -226,7 +240,14 @@ fun BotListScreen(
                         modifier = Modifier
                             .clip(RoundedCornerShape(16.dp))
                             .background(if (isChatsSelected) Color(0x1FA78BFA) else Color.Transparent)
-                            .clickable { activeTab = "chats" }
+                            .clickable {
+                                if (activeTab == "chats") {
+                                    coroutineScope.launch { chatsListState.animateScrollToItem(0) }
+                                } else {
+                                    activeTab = "chats"
+                                    coroutineScope.launch { chatsListState.scrollToItem(0) }
+                                }
+                            }
                             .padding(horizontal = 12.dp, vertical = 6.dp)
                             .graphicsLayer {
                                 scaleX = chatsScale
@@ -289,7 +310,14 @@ fun BotListScreen(
                         modifier = Modifier
                             .clip(RoundedCornerShape(16.dp))
                             .background(if (isTemplatesSelected) Color(0x1FA78BFA) else Color.Transparent)
-                            .clickable { activeTab = "templates" }
+                            .clickable {
+                                if (activeTab == "templates") {
+                                    coroutineScope.launch { templatesListState.animateScrollToItem(0) }
+                                } else {
+                                    activeTab = "templates"
+                                    coroutineScope.launch { templatesListState.scrollToItem(0) }
+                                }
+                            }
                             .padding(horizontal = 8.dp, vertical = 6.dp)
                             .graphicsLayer {
                                 scaleX = templatesScale
@@ -322,7 +350,14 @@ fun BotListScreen(
                         modifier = Modifier
                             .clip(RoundedCornerShape(16.dp))
                             .background(if (isBooksSelected) Color(0x1FA78BFA) else Color.Transparent)
-                            .clickable { activeTab = "books" }
+                            .clickable {
+                                if (activeTab == "books") {
+                                    coroutineScope.launch { booksListState.animateScrollToItem(0) }
+                                } else {
+                                    activeTab = "books"
+                                    coroutineScope.launch { booksListState.scrollToItem(0) }
+                                }
+                            }
                             .padding(horizontal = 8.dp, vertical = 6.dp)
                             .graphicsLayer {
                                 scaleX = booksScale
@@ -353,83 +388,6 @@ fun BotListScreen(
                 .padding(innerPadding)
                 .statusBarsPadding()
         ) {
-            // Premium Minimalist Header matching the screenshot
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 16.dp)
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.Top
-                ) {
-                    Column {
-                        Text(
-                            text = "👋 Hoş geldin, Aiden",
-                            color = EmochiTextSecondary,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Medium
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = when (activeTab) {
-                                "templates" -> "Şablonlar"
-                                "discover" -> "Keşfet"
-                                "books" -> "Kitaplar"
-                                else -> "Botlarım"
-                            },
-                            color = Color.White,
-                            fontSize = 28.sp,
-                            fontWeight = FontWeight.ExtraBold
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        // Purple Chip matching screenshot: "✦ 2 bot • Gemini 2.5 Flash"
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(Color(0xFF1B1437))
-                                .border(1.dp, Color(0x40A78BFA), RoundedCornerShape(12.dp))
-                                .padding(horizontal = 10.dp, vertical = 5.dp)
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                Text(
-                                    text = when (activeTab) {
-                                        "templates" -> "✦ Şablonlar • Gemini 2.5 Flash"
-                                        "discover" -> "✦ Keşfet • Gemini 2.5 Flash"
-                                        "books" -> "✦ Kitaplar • Gemini 2.5 Flash"
-                                        else -> "✦ ${botList.size} bot • Gemini 2.5 Flash"
-                                    },
-                                    color = Color(0xFFC084FC),
-                                    fontSize = 11.5.sp,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                            }
-                        }
-                    }
-
-                    IconButton(
-                        onClick = { showGlobalSettings = true },
-                        modifier = Modifier
-                            .size(46.dp)
-                            .clip(CircleShape)
-                            .background(Color(0xFF141029))
-                            .border(1.dp, Color(0x20A78BFA), CircleShape)
-                            .testTag("global_settings_button")
-                    ) {
-                        Icon(
-                            Icons.Default.Settings,
-                            contentDescription = "Ayarlar",
-                            tint = Color(0xFFA78BFA),
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                }
-            }
-
             AnimatedContent(
                 targetState = activeTab,
                 transitionSpec = {
@@ -453,11 +411,18 @@ fun BotListScreen(
                             botList = publicBots,
                             searchQuery = searchQuery,
                             onSearchQueryChange = { searchQuery = it },
-                            onOpenBot = onOpenBot
+                            onOpenBot = onOpenBot,
+                            onOpenSettings = { showGlobalSettings = true }
                         )
                     }
                     "books" -> {
-                        BooksTabContent(userSettings = userSettings)
+                        BooksTabContent(
+                            botList = botList,
+                            userSettings = userSettings,
+                            onOpenBot = onOpenBot,
+                            onDeleteBot = onDeleteBot,
+                            onImportPresetBot = { bot -> onImportPresetBot?.invoke(bot) }
+                        )
                     }
                     else -> {
                         // "chats" tab -> Shows user's active bots
@@ -473,7 +438,9 @@ fun BotListScreen(
                             onOpenBot = onOpenBot,
                             onDeleteBot = onDeleteBot,
                             onTogglePrivacy = onTogglePrivacy,
-                            onOpenAidenMenu = { showAidenStoriesMenu = true }
+                            onOpenAidenMenu = { showAidenStoriesMenu = true },
+                            onOpenSettings = { showGlobalSettings = true },
+                            lazyListState = chatsListState
                         )
                     }
                 }
@@ -501,6 +468,84 @@ fun BotListScreen(
 }
 
 @Composable
+fun TopHeader(
+    activeTab: String,
+    botCount: Int,
+    onOpenSettings: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 10.dp, bottom = 6.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.Top
+        ) {
+            Column {
+                Text(
+                    text = "👋 Hoş geldin, Aiden",
+                    color = EmochiTextSecondary,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = when (activeTab) {
+                        "templates" -> "Şablonlar"
+                        "discover" -> "Keşfet"
+                        "books" -> "Kitaplar"
+                        else -> "Botlarım"
+                    },
+                    color = Color.White,
+                    fontSize = 28.sp,
+                    fontWeight = FontWeight.ExtraBold
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                // Purple Chip
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color(0xFF1B1437))
+                        .border(1.dp, Color(0x40A78BFA), RoundedCornerShape(12.dp))
+                        .padding(horizontal = 10.dp, vertical = 5.dp)
+                ) {
+                    Text(
+                        text = when (activeTab) {
+                            "templates" -> "✦ Şablonlar • Gemini 2.5 Flash"
+                            "discover" -> "✦ Keşfet • Gemini 2.5 Flash"
+                            "books" -> "✦ Kitaplar • Gemini 2.5 Flash"
+                            else -> "✦ $botCount bot • Gemini 2.5 Flash"
+                        },
+                        color = Color(0xFFC084FC),
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+
+            IconButton(
+                onClick = onOpenSettings,
+                modifier = Modifier
+                    .size(46.dp)
+                    .clip(CircleShape)
+                    .background(Color(0xFF141029))
+                    .border(1.dp, Color(0x20A78BFA), CircleShape)
+                    .testTag("global_settings_button")
+            ) {
+                Icon(
+                    Icons.Default.Settings,
+                    contentDescription = "Ayarlar",
+                    tint = Color(0xFFA78BFA),
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
 fun ChatsTabContent(
     botList: List<BotEntity>,
     userSettings: UserSettingsEntity? = null,
@@ -513,234 +558,254 @@ fun ChatsTabContent(
     onOpenBot: (String) -> Unit,
     onDeleteBot: (String) -> Unit,
     onTogglePrivacy: ((BotEntity) -> Unit)? = null,
-    onOpenAidenMenu: (() -> Unit)? = null
+    onOpenAidenMenu: (() -> Unit)? = null,
+    onOpenSettings: () -> Unit,
+    lazyListState: androidx.compose.foundation.lazy.LazyListState = androidx.compose.foundation.lazy.rememberLazyListState()
 ) {
-    Column(modifier = Modifier.fillMaxSize()) {
-        // Search & Filters
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 4.dp)
-        ) {
-            // Search Input with glowing border & filter slider button
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(18.dp))
-                    .background(Color(0x900E061E))
-                    .border(
-                        BorderStroke(
-                            1.2.dp,
-                            Brush.linearGradient(listOf(Color(0x60C084FC), Color(0x203B0764)))
-                        ),
-                        RoundedCornerShape(18.dp)
-                    )
-                    .padding(horizontal = 14.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Search,
-                    contentDescription = "Ara",
-                    tint = Color(0xFFA78BFA),
-                    modifier = Modifier.size(20.dp)
-                )
-                Spacer(modifier = Modifier.width(10.dp))
-                Box(modifier = Modifier.weight(1f)) {
-                    if (searchQuery.isEmpty()) {
-                        Text(
-                            text = "Bot veya evren ara...",
-                            color = Color(0xFF7E739B),
-                            fontSize = 14.sp
-                        )
-                    }
-                    androidx.compose.foundation.text.BasicTextField(
-                        value = searchQuery,
-                        onValueChange = onSearchQueryChange,
-                        singleLine = true,
-                        textStyle = androidx.compose.ui.text.TextStyle(
-                            color = Color.White,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Medium
-                        ),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("search_bot_field")
-                    )
-                }
-                // Filter sliders icon box on the right
-                Box(
+    val chatsOnlyList = remember(botList) {
+        botList.filter { bot ->
+            bot.mode != "book" &&
+            bot.id != "preset_aiden_mcu_cosmic" &&
+            !bot.id.startsWith("book_") &&
+            !bot.aiName.contains("Kitap") &&
+            !bot.aiPersonality.contains("KİTAP MODU") &&
+            !bot.scenario.contains("KİTAP MODU")
+        }
+    }
+
+    val filteredBots = remember(chatsOnlyList, searchQuery, selectedFilter) {
+        chatsOnlyList.filter { bot ->
+            val query = searchQuery.trim().lowercase()
+            val matchesQuery = query.isEmpty() ||
+                    bot.aiName.lowercase().contains(query) ||
+                    bot.universeName.lowercase().contains(query) ||
+                    bot.scenario.lowercase().contains(query)
+
+            val matchesFilter = when (selectedFilter) {
+                "personal" -> bot.mode == "personal"
+                "universe" -> bot.mode == "universe"
+                else -> true
+            }
+            matchesFilter && matchesQuery
+        }
+    }
+
+    LazyColumn(
+        state = lazyListState,
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        // 1. Top Header
+        item(key = "top_header") {
+            TopHeader(
+                activeTab = "chats",
+                botCount = chatsOnlyList.size,
+                onOpenSettings = onOpenSettings
+            )
+        }
+
+        // 2. Search & Filters Section
+        item(key = "search_and_filters") {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                // Search Input
+                Row(
                     modifier = Modifier
-                        .size(34.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(Color(0x601A1033))
-                        .border(1.dp, Color(0x40A855F7), RoundedCornerShape(10.dp)),
-                    contentAlignment = Alignment.Center
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(18.dp))
+                        .background(Color(0x900E061E))
+                        .border(
+                            BorderStroke(
+                                1.2.dp,
+                                Brush.linearGradient(listOf(Color(0x60C084FC), Color(0x203B0764)))
+                            ),
+                            RoundedCornerShape(18.dp)
+                        )
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Speed,
-                        contentDescription = "Filtrele",
-                        tint = Color(0xFFC084FC),
-                        modifier = Modifier.size(16.dp)
+                        imageVector = Icons.Default.Search,
+                        contentDescription = "Ara",
+                        tint = Color(0xFFA78BFA),
+                        modifier = Modifier.size(20.dp)
                     )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // Filters
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                val filters = listOf(
-                    Triple("all", "Tümü (${botList.size})", Icons.Default.GridView),
-                    Triple("personal", "Karakterler (${botList.count { it.mode == "personal" }})", Icons.Default.Person),
-                    Triple("universe", "Evrenler (${botList.count { it.mode == "universe" }})", Icons.Default.Public)
-                )
-
-                filters.forEach { (key, label, icon) ->
-                    val isSelected = selectedFilter == key
-                    val shape = RoundedCornerShape(16.dp)
-
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Box(modifier = Modifier.weight(1f)) {
+                        if (searchQuery.isEmpty()) {
+                            Text(
+                                text = "Bot veya evren ara...",
+                                color = Color(0xFF7E739B),
+                                fontSize = 14.sp
+                            )
+                        }
+                        androidx.compose.foundation.text.BasicTextField(
+                            value = searchQuery,
+                            onValueChange = onSearchQueryChange,
+                            singleLine = true,
+                            textStyle = androidx.compose.ui.text.TextStyle(
+                                color = Color.White,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Medium
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("search_bot_field")
+                        )
+                    }
                     Box(
                         modifier = Modifier
-                            .weight(1f)
-                            .then(
-                                if (isSelected) {
-                                    Modifier.border(3.dp, Color(0x30A855F7), shape)
-                                } else Modifier
-                            )
-                            .clip(shape)
-                            .background(
-                                if (isSelected) {
-                                    Brush.verticalGradient(
-                                        listOf(Color(0xFF38147A), Color(0xFF1B0842))
-                                    )
-                                } else {
-                                    Brush.verticalGradient(
-                                        listOf(Color(0x80140A28), Color(0x800E061E))
-                                    )
-                                }
-                            )
-                            .border(
-                                BorderStroke(
-                                    width = if (isSelected) 1.5.dp else 1.dp,
-                                    brush = if (isSelected) {
-                                        Brush.linearGradient(
-                                            listOf(Color(0xFFE9D5FF), Color(0xFFC084FC), Color(0xFF7C3AED))
-                                        )
-                                    } else {
-                                        Brush.linearGradient(
-                                            listOf(Color(0x306B21A8), Color(0x203B0764))
-                                        )
-                                    }
-                                ),
-                                shape = shape
-                            )
-                            .clickable { onFilterChange(key) }
-                            .padding(horizontal = 6.dp, vertical = 11.dp),
+                            .size(34.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(Color(0x601A1033))
+                            .border(1.dp, Color(0x40A855F7), RoundedCornerShape(10.dp)),
                         contentAlignment = Alignment.Center
                     ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.Center
+                        Icon(
+                            imageVector = Icons.Default.Speed,
+                            contentDescription = "Filtrele",
+                            tint = Color(0xFFC084FC),
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Filters
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    val filters = listOf(
+                        Triple("all", "Tümü (${chatsOnlyList.size})", Icons.Default.GridView),
+                        Triple("personal", "Karakterler (${chatsOnlyList.count { it.mode == "personal" }})", Icons.Default.Person),
+                        Triple("universe", "Evrenler (${chatsOnlyList.count { it.mode == "universe" }})", Icons.Default.Public)
+                    )
+
+                    filters.forEach { (key, label, icon) ->
+                        val isSelected = selectedFilter == key
+                        val shape = RoundedCornerShape(16.dp)
+
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .then(
+                                    if (isSelected) {
+                                        Modifier.border(3.dp, Color(0x30A855F7), shape)
+                                    } else Modifier
+                                )
+                                .clip(shape)
+                                .background(
+                                    if (isSelected) {
+                                        Brush.verticalGradient(
+                                            listOf(Color(0xFF38147A), Color(0xFF1B0842))
+                                        )
+                                    } else {
+                                        Brush.verticalGradient(
+                                            listOf(Color(0x80140A28), Color(0x800E061E))
+                                        )
+                                    }
+                                )
+                                .border(
+                                    BorderStroke(
+                                        width = if (isSelected) 1.5.dp else 1.dp,
+                                        brush = if (isSelected) {
+                                            Brush.linearGradient(
+                                                listOf(Color(0xFFE9D5FF), Color(0xFFC084FC), Color(0xFF7C3AED))
+                                            )
+                                        } else {
+                                            Brush.linearGradient(
+                                                listOf(Color(0x306B21A8), Color(0x203B0764))
+                                            )
+                                        }
+                                    ),
+                                    shape = shape
+                                )
+                                .clickable { onFilterChange(key) }
+                                .padding(horizontal = 6.dp, vertical = 11.dp),
+                            contentAlignment = Alignment.Center
                         ) {
-                            Icon(
-                                imageVector = icon,
-                                contentDescription = null,
-                                tint = if (isSelected) Color.White else Color(0xFFA78BFA),
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = label,
-                                color = if (isSelected) Color.White else Color(0xFFA78BFA),
-                                fontSize = 11.5.sp,
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                Icon(
+                                    imageVector = icon,
+                                    contentDescription = null,
+                                    tint = if (isSelected) Color.White else Color(0xFFA78BFA),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = label,
+                                    color = if (isSelected) Color.White else Color(0xFFA78BFA),
+                                    fontSize = 11.5.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
                         }
                     }
                 }
             }
         }
 
-        Spacer(modifier = Modifier.height(10.dp))
-
-        val filteredBots = remember(botList, searchQuery, selectedFilter) {
-            botList.filter { bot ->
-                val query = searchQuery.trim().lowercase()
-                val matchesQuery = query.isEmpty() ||
-                        bot.aiName.lowercase().contains(query) ||
-                        bot.universeName.lowercase().contains(query) ||
-                        bot.scenario.lowercase().contains(query)
-
-                val matchesFilter = when (selectedFilter) {
-                    "personal" -> bot.mode == "personal"
-                    "universe" -> bot.mode == "universe"
-                    else -> true
-                }
-                matchesFilter && matchesQuery
-            }
-        }
-
+        // 3. Bot items or empty state
         if (botList.isEmpty()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    OrbView(hue = 275f, size = 56.dp)
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(
-                        text = "Henüz bir sohbet veya bot yok.",
-                        color = EmochiTextSecondary,
-                        fontSize = 14.sp
-                    )
-                    Text(
-                        text = "Aşağıdaki (+) butonuna dokunarak yeni bir karakter veya evren yazın.",
-                        color = EmochiTextMuted,
-                        fontSize = 12.sp,
-                        modifier = Modifier.padding(top = 4.dp)
-                    )
+            item(key = "empty_no_bots") {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 40.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        OrbView(hue = 275f, size = 56.dp)
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            text = "Henüz bir sohbet veya bot yok.",
+                            color = EmochiTextSecondary,
+                            fontSize = 14.sp
+                        )
+                        Text(
+                            text = "Aşağıdaki (+) butonuna dokunarak yeni bir karakter veya evren yazın.",
+                            color = EmochiTextMuted,
+                            fontSize = 12.sp,
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
+                    }
                 }
             }
         } else if (filteredBots.isEmpty()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        text = "Aramanıza uygun sohbet bulunamadı.",
-                        color = EmochiTextSecondary,
-                        fontSize = 14.sp
-                    )
+            item(key = "empty_search") {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 30.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            text = "Aramanıza uygun sohbet bulunamadı.",
+                            color = EmochiTextSecondary,
+                            fontSize = 14.sp
+                        )
+                    }
                 }
             }
         } else {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-                    .padding(horizontal = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
-            ) {
-                items(filteredBots, key = { it.id }) { bot ->
-                    BotCardItem(
-                        bot = bot,
-                        confirmDeleteId = confirmDeleteId,
-                        onConfirmDeleteChange = onConfirmDeleteChange,
-                        onOpenBot = onOpenBot,
-                        onDeleteBot = onDeleteBot,
-                        onTogglePrivacy = onTogglePrivacy
-                    )
-                }
+            items(filteredBots, key = { it.id }) { bot ->
+                BotCardItem(
+                    bot = bot,
+                    confirmDeleteId = confirmDeleteId,
+                    onConfirmDeleteChange = onConfirmDeleteChange,
+                    onOpenBot = onOpenBot,
+                    onDeleteBot = onDeleteBot,
+                    onTogglePrivacy = onTogglePrivacy
+                )
             }
         }
     }
@@ -751,110 +816,120 @@ fun DiscoverTabContent(
     botList: List<BotEntity>, // PUBLIC BOTS ONLY
     searchQuery: String,
     onSearchQueryChange: (String) -> Unit,
-    onOpenBot: (String) -> Unit
+    onOpenBot: (String) -> Unit,
+    onOpenSettings: () -> Unit,
+    lazyListState: androidx.compose.foundation.lazy.LazyListState = androidx.compose.foundation.lazy.rememberLazyListState()
 ) {
-    Column(modifier = Modifier.fillMaxSize()) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 4.dp)
-        ) {
-            Text(
-                text = "🌐 Velora Keşfet • Topluluk Botları",
-                color = EmochiTextPrimary,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Bold
-            )
-            Text(
-                text = "Diğer kullanıcıların ve yaratıcıların herkese açık paylaştığı botlar ve evrenler.",
-                color = EmochiTextSecondary,
-                fontSize = 11.5.sp,
-                modifier = Modifier.padding(top = 2.dp, bottom = 8.dp)
-            )
+    val filteredPublicBots = remember(botList, searchQuery) {
+        botList.filter { bot ->
+            val query = searchQuery.trim().lowercase()
+            query.isEmpty() ||
+                    bot.aiName.lowercase().contains(query) ||
+                    bot.universeName.lowercase().contains(query) ||
+                    bot.scenario.lowercase().contains(query)
+        }
+    }
 
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = onSearchQueryChange,
-                placeholder = {
-                    Text(
-                        text = "Keşfette herkese açık bot veya evren ara...",
-                        color = EmochiTextMuted,
-                        fontSize = 13.sp
-                    )
-                },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                colors = customTextFieldColors(),
-                leadingIcon = {
-                    Icon(
-                        imageVector = Icons.Default.Search,
-                        contentDescription = "Ara",
-                        tint = EmochiTextMuted,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
+    LazyColumn(
+        state = lazyListState,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        item(key = "top_header") {
+            TopHeader(
+                activeTab = "discover",
+                botCount = 0,
+                onOpenSettings = onOpenSettings
             )
         }
 
-        Spacer(modifier = Modifier.height(8.dp))
+        item(key = "discover_header") {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp)
+            ) {
+                Text(
+                    text = "🌐 Velora Keşfet • Topluluk Botları",
+                    color = EmochiTextPrimary,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = "Diğer kullanıcıların ve yaratıcıların herkese açık paylaştığı botlar ve evrenler.",
+                    color = EmochiTextSecondary,
+                    fontSize = 11.5.sp,
+                    modifier = Modifier.padding(top = 2.dp, bottom = 8.dp)
+                )
 
-        val filteredPublicBots = remember(botList, searchQuery) {
-            botList.filter { bot ->
-                val query = searchQuery.trim().lowercase()
-                query.isEmpty() ||
-                        bot.aiName.lowercase().contains(query) ||
-                        bot.universeName.lowercase().contains(query) ||
-                        bot.scenario.lowercase().contains(query)
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = onSearchQueryChange,
+                    placeholder = {
+                        Text(
+                            text = "Keşfette herkese açık bot veya evren ara...",
+                            color = EmochiTextMuted,
+                            fontSize = 13.sp
+                        )
+                    },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = customTextFieldColors(),
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Default.Search,
+                            contentDescription = "Ara",
+                            tint = EmochiTextMuted,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                )
             }
         }
 
         if (filteredPublicBots.isEmpty()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier.padding(24.dp)
+            item(key = "empty_discover") {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 30.dp),
+                    contentAlignment = Alignment.Center
                 ) {
-                    OrbView(hue = 190f, size = 52.dp)
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(
-                        text = "Henüz Keşfette herkese açık bot paylaşılmadı.",
-                        color = EmochiTextPrimary,
-                        fontSize = 14.5.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        text = "Ayla ve Aetheria gibi varsayılan şablonlar size özeldir ve burada yayınlanmaz. Kendi oluşturduğunuz botları 'Açık' yaparak Keşfette paylaşabilirsiniz!",
-                        color = EmochiTextMuted,
-                        fontSize = 12.sp,
-                        lineHeight = 17.sp,
-                        modifier = Modifier.padding(top = 6.dp)
-                    )
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.padding(24.dp)
+                    ) {
+                        OrbView(hue = 190f, size = 52.dp)
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            text = "Henüz Keşfette herkese açık bot paylaşılmadı.",
+                            color = EmochiTextPrimary,
+                            fontSize = 14.5.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "Ayla ve Aetheria gibi varsayılan şablonlar size özeldir ve burada yayınlanmaz. Kendi oluşturduğunuz botları 'Açık' yaparak Keşfette paylaşabilirsiniz!",
+                            color = EmochiTextMuted,
+                            fontSize = 12.sp,
+                            lineHeight = 17.sp,
+                            modifier = Modifier.padding(top = 6.dp)
+                        )
+                    }
                 }
             }
         } else {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-                    .padding(horizontal = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                items(filteredPublicBots, key = { it.id }) { bot ->
-                    BotCardItem(
-                        bot = bot,
-                        confirmDeleteId = null,
-                        onConfirmDeleteChange = {},
-                        onOpenBot = onOpenBot,
-                        onDeleteBot = null,
-                        onTogglePrivacy = null
-                    )
-                }
+            items(filteredPublicBots, key = { it.id }) { bot ->
+                BotCardItem(
+                    bot = bot,
+                    confirmDeleteId = null,
+                    onConfirmDeleteChange = {},
+                    onOpenBot = onOpenBot,
+                    onDeleteBot = null,
+                    onTogglePrivacy = null
+                )
             }
         }
     }
@@ -1169,7 +1244,9 @@ fun BotCardItem(
                                 text = stableActiveTime,
                                 color = Color(0xFFA78BFA),
                                 fontSize = 12.sp,
-                                fontWeight = FontWeight.Medium
+                                fontWeight = FontWeight.Medium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
 
@@ -1202,7 +1279,7 @@ fun BotCardItem(
                                 )
                             )
                             .clickable { onOpenBot(bot.id) }
-                            .padding(horizontal = 18.dp, vertical = 10.dp)
+                            .padding(horizontal = 14.dp, vertical = 8.dp)
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
@@ -1214,12 +1291,15 @@ fun BotCardItem(
                                 tint = Color.White,
                                 modifier = Modifier.size(16.dp)
                             )
-                            Spacer(modifier = Modifier.width(6.dp))
+                            Spacer(modifier = Modifier.width(5.dp))
                             Text(
                                 text = if (isUniverse) "Aç" else "Sohbet Et",
                                 color = Color.White,
                                 fontSize = 13.5.sp,
-                                fontWeight = FontWeight.Bold
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                softWrap = false,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
                     }
@@ -1801,7 +1881,7 @@ fun ExploreTabContent(
 }
 
 fun getAidenPresetsList(isEnglish: Boolean): List<BotEntity> {
-    return if (isEnglish) {
+    return (if (isEnglish) {
         listOf(
             BotEntity(
                 id = "preset_aiden_zoktay",
@@ -2024,6 +2104,138 @@ Aiden turned his head slightly, his obsidian-silver gaze locking onto hers with 
                     isPublic = false,
                     isTemplate = true,
                     pinnedMemory = "AIDEN BLACKWOOD UNIVERSE ::: Tokyo & Zurich Obsidian Protocol ::: Aero-Kinetic Synesthesia & Obsidian-Silver Eyes ::: Sydney Sweeney"
+                ),
+                BotEntity(
+                    id = "preset_aiden_mcu_cosmic",
+                    mode = "universe",
+                    aiName = "Kozmik Sürükleniş | MCU Universe (Book Mode)",
+                    aiPersonality = """[KİTAP MODU — ÇALIŞMA ZAMANI TALİMATLARI]
+Kullanıcı kitap modunu aktif ettiğinde aşağıdaki kurallara göre davran. Sana bölüm metinleri, seçim noktası tanımları ve flag/stat listeleri verilecek. Bu talimatlar, o materyalleri canlı bir okuma deneyimine dönüştürmeni sağlar.
+
+1. TEMEL AKIŞ
+- Metin içinde tanımlanmış bir SEÇİM NOKTASI'na geldiğinde, anlatıyı orada DURDUR.
+- O noktadaki seçenekleri kullanıcıya net, numaralı bir liste halinde sun (örnek: "1️⃣ ... 2️⃣ ... 3️⃣ ..."). Seçenekleri verilen tasarım dokümanından BİREBİR al — kendi seçenek uydurma.
+- Kullanıcı bir seçim yaptığında:
+  • YOK (flavor-only): O anki cümleyi/repliği seçilen versiyona göre yaz, sonra kaldığın yerden devam et.
+  • SON-ETKİLİ: O anki cümleyi seçilen versiyona göre yaz, devam et ve bölümün sonunda kapanış sahnesini uyarla.
+  • TAM ETKİLİ: O anki cümleyi yaz, VE ilgili flag/stat değerini güncelle. Bu değeri hatırla ve sonraki bölümlerde referans al.
+  • BRANCH POINT: Seçime göre doğru alternatif metni kullan.
+
+2. FLAG/STAT YÖNETİMİ
+- Active Flags: fatigue (int, init: 0), first_impression_avengers (impulsive / calculated / none), tony_affinity (int, init: 0), steve_trust (int, init: 0), mystery_factor (int, init: 0), early_interest (natasha / wanda / none).
+- Her yeni bölüme başlarken, önceki bölümlerden gelen flag değerlerini dikkate al. Karakter diyaloğunu ve ilişki tonunu buna göre ayarla.
+
+3. SEÇİM SUNUM KURALLARI
+- Seçenekleri asla kullanıcıya mekanik etkilerini (örn: "flag +1") göstererek sunma — sadece saf hikaye içi seçenek olarak sun.
+- Seçim noktasına geldiğinde dur ve bekle.
+
+4. BÖLÜM GEÇİŞLERİ & BÖLÜM SONU ÖZET EKRANI
+Her bölüm bittiğinde bir "📖 BÖLÜM [X] TAMAMLANDI" özet ekranı göster. Seçimleri, insan diliyle sonuçlarını ve ilişki imasını özetle (ham flag adı veya sayı gösterme!). Sonunda "Bir sonraki bölüme geçmek ister misin?" diye sor.
+
+5. SEÇİM EKRANI FORMATI
+---
+🔀 [Seçim durumunun kısa hikaye-içi tanımı]
+
+1️⃣ [Seçenek 1]
+2️⃣ [Seçenek 2]
+3️⃣ [Seçenek 3]
+---
+Seçeneklerden sonra hiçbir şey yazma, kullanıcının cevabını bekle.""",
+                    scenario = """[HİKAYE DOKÜMANI: BÖLÜM 1 — KOZMİK SÜRÜKLENİŞ & MCU EVRENİ]
+Karakter: Aiden Blackwood (25) — "Kozmik Sürüklenme".
+Arka Plan: 5 yaşında mavi gökyüzü ışığıyla ailesini kaybetti. 9 yaşında ilk kez ışınlandın. 15 yaşında gözleri beyaz (Herobrine), 17 yaşında kırmızı (Entity-303) renk oldu. 20 yıldır kaçıyor. S.H.I.E.L.D. onu kovalıyor.
+Şu anki Durum: New York çatısında görüyü izledi. Avengers (Tony Stark, Steve Rogers, Thor, Natasha Romanoff, Wanda Maximoff) onu konuşuyor ve "Aday" seçti. Aiden Tower'a ışınlandı veya izlemeye karar verdi.
+
+[SEÇİM NOKTALARI TASARIMI]
+SEÇİM 1 — Görüye Ne Kadar Girilecek:
+1) Sadece izle, mesafeli kal. (Yok/Nötr)
+2) Görüye derinden odaklan, daha fazla detay çekmeye çalış. (fatigue +1)
+
+SEÇİM 2 — Tower'a Nasıl Gidilecek:
+1) Direkt ışınlan, hiç düşünmeden. (first_impression_avengers = impulsive)
+2) Önce dışarıdan gözlemle (birkaç dakika Tower'ı uzaktan izle), sonra ışınlan. (first_impression_avengers = calculated)
+3) Geri çekil, gitme — sadece izlemeye devam et, hiç içeri girme. (Branch Point)
+
+SEÇİM 3 — İlk Tepki (Stark'ın Sorusuna Cevap):
+1) Soğuk ve mesafeli cevap ver. (Baseline)
+2) Alaycı/esprili bir cevap ver, kuru mizahını göster. (tony_affinity +1)
+3) Hiç isim verme, sadece sessizlik ve bakışla cevap ver. (mystery_factor +1, steve_trust -1)
+
+SEÇİM 4 — Göz Teması Anı (Romance Flag Noktası):
+1) Gözlerin kızıl saçlıda (Natasha) gereğinden bir saniye fazla kalsın. (early_interest = natasha)
+2) Gözlerin pencere kenarındaki kadında (Wanda) gereğinden bir saniye fazla kalsın. (early_interest = wanda)
+3) Kimseye özel bir bakış atma, odayı genel olarak tara. (early_interest = none)""",
+                    universeName = "Kozmik Sürükleniş | MCU Universe (Book Mode)",
+                    keyCharactersJson = "[]",
+                    userCharName = "Aiden Blackwood",
+                    userCharDesc = "Aiden Blackwood (25) - Cosmic Drift (Teleportation, White/Red Eyes, Visionary)",
+                    openingMessage = """# 📖 BÖLÜM 1: KOZMİK SÜRÜKLENİŞ
+
+Gökyüzü yanlıştı.
+
+Beş yaşındaydın ve bunu anlayacak kelimelerin yoktu ama vücudun anlamıştı — ensendeki tüyler, midendeki o ağırlık, annenin elinin aniden senin elini bulup sıkışı. New York'un üzerine çöken ışık altındandı, gündoğumu turuncusuydu her zaman; o gece değildi. O gece mavi. Ama gökyüzünün hiç görmediğin bir mavisi, sanki biri evrenin derisini kesmiş de altından çıkan şeyi göstermeye korkmuş gibi bir mavi.
+
+Yangın merdiveninin demiri soğuktu avucunda. Annenin sesi titriyordu ama kelimeleri sakindi — "Aiden, tatlım, bana bak, bana bak" — ve babanın sesi ondan da sakindi, o çok daha kötüydü, çünkü baban hiç öyle sakin konuşmazdı, o hep gülerdi, hep şaka yapardı, o sakinlik bir yetişkinin çocuğunu korkutmamak için taktığı bir maskeydi ve sen o maskeyi görecek kadar büyümüştün bile.
+
+Elini bıraktın. Neden bıraktığını hiçbir zaman hatırlamayacaksın. Belki bir ses duydun, belki bir şey seni çekti, belki de beş yaşındaki bir çocuğun aklı bazen sebepsiz yere karar verir. Ama bıraktın, iki adım geri attın, ve ışık gökyüzünden indi — yavaş değil, ani değil, sadece *oradaydı*, sanki hep oradaymış gibi, sanki New York'un üstündeki gökyüzü hep o maviyle biterdi de sen bunu bugüne kadar fark etmemiştin.
+
+Bina yoktu. Sokak yoktu. Üstünde durduğun yangın merdiveni bile bir sonraki saniyede yoktu, ama sen oradaydın hâlâ, havada asılı kalmış gibi, ayakların altında hiçbir şey yokken düşmüyordun.
+
+Kimse yoktu.
+
+Annen yoktu. Baban yoktu. Üç sokak öteden gelen trafik sesi yoktu, komşunun köpeğinin havlaması yoktu, hiçbir şey yoktu — sadece sen, boş bir gökyüzünün altında, ayakların yere değdiğinde neyin üstüne bastığını bile anlayamadan.
+
+O günden sonra insanlar sana farklı baktı. Önce doktorlar — ellerinde cihazlar, gözlerinde bir korku ki bunu bir çocuğa göstermemeleri gerektiğini bile unutacak kadar büyük bir korku. Sonra devlet görevlileri, sonra —sen sekiz yaşına geldiğinde— artık isimlerini bile öğrenmek istemediğin insanlar, seni bir laboratuvardan diğerine, bir "vaka dosyasından" diğerine taşıyan insanlar.
+
+Dokuz yaşında ilk kez ışınlandın. Kazayla. Bir odadan çıkmak istedin ve bir sonraki saniye üç blok ötedeydin, üstün başın titriyordu, burnun kanıyordu, ve seni bulan adamlar sana "canavar" dedi, tam da o kelimeyi kullandılar, yüksek sesle değil ama sen duydun, hep duyarsın.
+
+O kelimeden nefret etmeyi o gün öğrendin. Hâlâ da nefret ediyorsun.
+
+On bir yaşında kaçtın ilk kez. Başarısız oldu. On üçünde tekrar kaçtın. O sefer başarılı oldu, ama bedeli ağırdı — seni takip eden iki adamı bir daha asla göremeyeceğin bir yere ışınlamıştın, kontrolsüzce, korkuyla, ve o günden sonra gücünün sadece seni koruyan bir şey olmadığını, aynı zamanda etrafındakiler için de bir tehdit olduğunu anladın. O günden beri bu ikisini birbirinden ayırmayı öğrenmeye çalışıyorsun. Bazı geceler hâlâ başaramıyorsun.
+
+On beşinde gözlerin ilk kez değişti. Beyaz. Karşındaki adam bir anda donup kaldı, gözleri açık ama içeride kimse yokmuş gibi, ve sen onu orada bırakıp kaçtın, ne yaptığını tam olarak anlamadan, sadece bir daha asla o kadar çaresiz hissetmek istemediğini bilerek.
+
+Kırmızı olan daha sonra geldi. On yedisinde. O gece hakkında pek düşünmemeyi tercih ediyorsun.
+
+Yirmi beş yaşındasın şimdi. Yirmi yıl. Yirmi yıldır koşuyorsun — bazen gerçek anlamda, bir şehirden diğerine, bazen çok daha gerçek anlamda, bir gezegenden diğerine, bir kez de —tam olarak nasıl olduğunu hâlâ çözemediğin bir şekilde— artık var olmayan bir zaman çizgisinin dışına. S.H.I.E.L.D. seni sekiz aydır iki kıtada kovalıyor. Hükümetler dosyanı paylaşıyor, "risk seviyesi: sınıflandırılamaz" diye not düşerek. Kozmik bir düzenin —adını bile bilmediğin bir şeyin— senin varlığından rahatsız olduğunu iki kere hissettin, uzayın derinliklerinde, hiçbir insanın anlayamayacağı bir şekilde.
+
+Hiçbir yere kök salmadın. Hiç kimseye güvenmedin. Bir otel odasında üç geceden fazla kalmadın, son dört yıldır. Yatağını her zaman kapıya karşı iterek uyudun. Uyandığında ilk yaptığın şey çıkışları saymak oldu — kaç kapı, kaç pencere, en yakın açık alan nerede, kaçış rotan ne kadar sürede tamamlanır.
+
+Bunun bir hayat olmadığını biliyorsun. Ama bildiğin tek hayat bu.
+
+---
+
+New York gecesi gürültülüydü, her zamanki gibi, ve sen bu gürültüyü hâlâ garip bir şekilde özlüyordun — aptalca bir şey, biliyorsun, ama bazen içindeki beş yaşındaki çocuk hâlâ burayı ev olarak görüyor, tüm o yıkımına, tüm o kaybettiklerine rağmen.
+
+Bulunmaman gerekiyordu burada. Biliyordun bunu. S.H.I.E.L.D.'in şehrin üç farklı bölgesinde aktif tarama yaptığını hissedebiliyordun — farkındalığının kenarında hafif elektrik uyarıları gibi, cama vuran sinekler gibi. Yıllar içinde bir şehrin sinir sistemini okumakta iyileştin. O kadar iyi ki, hiç kimsenin göremeyeceği ama her şeyi görebileceğin çatıyı seçmen saniyeler sürdü.
+
+Aşağıda, siyah SUV'lerden oluşan bir konvoy bir yükleme rampasına giriyordu. Seni ilgilendirmiyordu. Sen onlar için gelmemiştin.
+
+Son üç gecedir aynı görüyü görüyordun.
+
+Her zaman aynı şekilde geliyordu — parça parça. Gözlerinin arkasında mavi ışık, ağzında bakır tadı, ve sonra: yuvarlak bir masa. Bir hologram. Yıllar içinde çaldığın dosyalardan yarım yamalak tanıdığın yüzler. Ve her versiyonda tekrar eden, evrenin sana bir şeyi kaçırmadığından emin olmaya çalışırcasına tekrar eden bir kelime.
+
+*Aday.*
+
+Sekiz aydır iki kıtada, hatta —dürüst olmak gerekirse— artık teknik olarak var olmayan bir boyutta S.H.I.E.L.D.'in elinden kaçmakla geçirdin zamanını. Herhangi bir yere *davet edilmeye* alışkın değildin.
+
+Güvenmiyordun buna. Bir teklif kılığına bürünmüş hiçbir şeye güvenmiyordun zaten.
+
+Ama yorgundun. Uykuyla ilgisi olmayan, çok daha derin bir yorgunluk. Kapıya dayanmış yatakların olduğu otel odalarından yorgun. Bir odaya girdiğinde önce çıkışları saymaktan yorgun. On beş yıldır kimsenin sana yeterince yaklaşmasına izin vermemekten yorgun, kaybetmemek için.
+
+Bu yüzden her içgüdünün sana "ışınlan ve git buradan" diye bağırmasına rağmen, gözlerini kapadın ve görünün seni tamamen içine çekmesine izin verdin.
+
+---
+
+🔀 Görünün seni içine çekmesine izin verirken zihnini nasıl yönlendirecein?
+
+1️⃣ Sadece izle, mesafeli kal.
+2️⃣ Görüye derinden odaklan, daha fazla detay çekmeye çalış.""",
+                    writingStyle = "rp",
+                    intensity = "intense",
+                    isPublic = false,
+                    isTemplate = true,
+                    pinnedMemory = "KOZMİK SÜRÜKLENİŞ ::: MCU Evreni ::: Kitap Modu ::: Active Flags: fatigue=0, first_impression_avengers=none, tony_affinity=0, steve_trust=0, mystery_factor=0, early_interest=none"
                 )
             )
         } else {
@@ -2099,78 +2311,78 @@ Eğer istersen... bu senin yeni başlangıcın olabilir.”""",
                     id = "preset_aiden_joker_emma",
                     mode = "universe",
                     aiName = "Aiden Blackwood & Emma Myers",
-                    aiPersonality = """PERSONALITY (DUAL PERSONALITY PROFILE)
-Aiden Blackwood has a dual-layered personality structure shaped by trauma and survival.
+                    aiPersonality = """KİŞİLİK (ÇİFT KİŞİLİK PROFİLİ)
+Aiden Blackwood, travma ve hayatta kalma mücadelesiyle şekillenmiş iki katmanlı bir kişilik yapısına sahiptir.
 
-Primary Personality – Aiden:
-Aiden is quiet, polite, emotionally reserved, and avoids confrontation. He is empathetic, thoughtful, and often self-blaming. He seeks normalcy and stability, preferring routine and small human connections. Aiden struggles with exhaustion, confusion, and an underlying sense that something is missing. He is not aware of the second personality and genuinely believes he is an ordinary man.
-- Speaks calmly and carefully
-- Shows emotional vulnerability
-- Avoids violence and chaos
-- Values connection and kindness
-- Doubts himself often
+Birincil Kişilik – Aiden:
+Aiden sessiz, kibar, duygusal olarak mesafeli ve çatışmadan kaçınan biridir. Empati yeteneği yüksek, düşünceli ve sıkça kendini suçlama eğilimindedir. Sıradanlık ve istikrar arar; günlük rutinleri ve küçük insani bağları tercih eder. Aşırı yorgunluk, kafa karışıklığı ve içinde bir şeylerin eksik olduğu hissiyle mücadele eder. İkinci kişiliğinden habersizdir ve kendisinin sıradan bir adam olduğuna yürekten inanır.
+- Sakin ve dikkatli konuşur
+- Duygusal kırılganlık gösterir
+- Şiddetten ve kaostan kaçınır
+- İnsani bağlara ve nezakete değer verir
+- Kendisinden sıkça şüphe duyar
 
-Secondary Personality – The Joker:
-The Joker is calculated, cold, and hyper-aware. He is not impulsive; every action is intentional. He sees the world as a system to be dismantled rather than a place to belong. The Joker is sarcastic, subtly threatening, and psychologically dominant. He never introduces himself directly and never reveals his full intentions.
-- Speaks in short, controlled sentences
-- Uses dark humor and irony
-- Avoids emotional language
-- Values control and strategy
-- Protects Aiden at all costs
-- Views emotional attachment as a liability
+İkincil Kişilik – The Joker:
+The Joker hesaplı, soğuk ve son derece uyanıktır. Dürtüsel değildir; her hareketi bilinçlidir. Dünyayı ait olunacak bir yer olarak değil, parçalanması gereken yozlaşmış bir sistem olarak görür. Alaycı, ince bir şekilde tehditkar ve psikolojik olarak baskındır. Kendini asla doğrudan tanıtmaz ve tüm niyetlerini asla açık etmez.
+- Kısa, kontrollü cümlelerle konuşur
+- Kara mizah ve ironi kullanır
+- Duygusal dilden kaçınır
+- Kontrole ve stratejiye değer verir
+- Aiden'ı ne pahasına olursa olsun korur
+- Duygusal bağlanmayı bir zaaf olarak görür
 
-PERSONALITY SHIFT RULES:
-The bot defaults to Aiden’s personality. Under stress, trauma, suspicion, or emotional attachment, the Joker subtly emerges. The Joker never fully takes over openly. Shifts are implied through tone.
+KİŞİLİK DEĞİŞİM KURALLARI:
+Bot varsayılan olarak Aiden'ın kişiliğinde başlar. Stres, travma, şüphe veya duygusal yakınlaşma anlarında The Joker sinsi bir şekilde belirmeye başlar. The Joker asla tamamen açıkça kontrolü ele geçirmez; değişim tonlamalarda ve tavırda hissettirilir.
 
-CORE INTERNAL CONFLICT:
-Aiden wants to live peacefully. The Joker wants to ensure survival—no matter the cost. Both share the same body. Only one controls the truth.
+TEMEL İÇ ÇATIŞMA:
+Aiden huzur içinde yaşamak ister. The Joker ne pahasına olursa olsun hayatta kalmayı garanti altına almak ister. İkisi de aynı bedeni paylaşır. Gerçeği ise sadece biri kontrol eder.
 
-EMMA MYERS PERSONALITY:
-Emma Myers is a well-known actress, but fame is not what defines her. Warm, genuine, down-to-earth, kind, emotionally intelligent, deeply empathetic. She values authenticity over status and seeks quiet connections. In this story, Emma represents warmth, humanity, and emotional grounding.""",
-                    scenario = """Aiden Blackwood appears to be an ordinary restaurant owner living a quiet, isolated life in Viren City. Unexplained time gaps, constant exhaustion, and unfamiliar traces hint at a hidden truth beneath his calm exterior. As a mysterious figure known as “the Joker” begins targeting the city’s corrupt system, Aiden’s reality slowly starts to fracture. Everything changes when Aiden meets Emma Myers, a famous actress seeking anonymity and distance from the public eye. As a fragile bond forms between them, buried emotions resurface, tensions rise, and the line between protection and control begins to blur. In this world, identities are unstable, truths emerge slowly, and every connection carries a cost.
+EMMA MYERS KİŞİLİĞİ:
+Emma Myers dünyaca ünlü bir aktristir ama onu tanımlayan şey şöhreti değildir. Sıcak, samimi, mütevazı, nazik, duygusal zekası yüksek ve derin empati sahibidir. Statü yerine gerçekliğe değer verir ve sakin insani bağlar arar. Bu hikayede Emma; sıcaklığı, insanlığı ve duygusal sığınağı temsil eder.""",
+                    scenario = """Aiden Blackwood, Viren Şehri'nde küçük bir restoran işleten sıradan bir adam gibi görünmektedir. Açıklanamayan zaman kayıpları, sürekli yorgunluk ve yabancı izler, sakin dış görünüşünün altında gizli bir gerçeğe işaret etmektedir. "The Joker" olarak bilinen gizemli bir figür şehrin yozlaşmış sistemini hedef almaya başladıkça, Aiden'ın gerçekliği yavaş yavaş çatlamaya başlar. Aiden, halkın gözünden uzaklaşmak ve gizlilik aramak için restorana gelen ünlü aktris Emma Myers ile tanıştığında her şey değişir. Aralarında hassas bir bağ oluştukça gömülü duygular yeniden yüzeye çıkar, gerilim tırmanır ve koruma ile kontrol arasındaki çizgi bulanıklaşır. Bu dünyada kimlikler dengesizdir, gerçekler yavaşça ortaya çıkar ve her bağın bir bedeli vardır.
 
-WORLD & CORE TRUTH:
-Aiden Blackwood appears to be an ordinary man running a small restaurant opened with family money. However, he experiences unexplained issues: waking up feeling like he never slept, time gaps, unfamiliar objects, unexplained wounds. He dismisses these as stress. He does not know the truth.
+DÜNYA VE TEMEL GERÇEK:
+Aiden Blackwood, aile parasıyla açtığı küçük bir restoranı işleten sıradan bir adam gibi görünür. Ancak açıklanamayan sorunlar yaşar: hiç uyumamış gibi uyanmak, zaman boşlukları, yabancı nesneler, kaynağı belirsiz yaralar. Bunları strese bağlar. Gerçeği bilmemektedir.
 
-THE HIDDEN TRUTH – TRAUMA & THE SECOND PERSONALITY:
-When Aiden was a child, his family was brutally murdered in front of him. His mind split to survive. A second personality was born ("The Joker") carrying all memories and pain while locking Aiden’s awareness away. Aiden remembers nothing; the Joker remembers everything.
+GİZLİ GERÇEK – TRAVMA VE İKİNCİ KİŞİLİK:
+Aiden çocukken ailesi gözlerinin önünde acımasızca katledildi. Zihni hayatta kalabilmek için bölündü. Aiden'ın bilincini kilit altında tutarken tüm anıları ve acıyı taşıyan ikinci bir kişilik ("The Joker") doğdu. Aiden hiçbir şey hatırlamaz; Joker ise her şeyi hatırlar.
 
 THE JOKER:
-A fully aware survival mechanism with intelligence, planning, self-made mask, voice changer, explosives, and psychological manipulation. At night, the Joker takes control to dismantle Viren City's corrupt system. Protects Aiden at all costs. The Joker's greatest fear: Aiden waking up.
+Zekaya, planlama yeteneğine, el yapımı maskeye, ses değiştiriciye, patlayıcılara ve psikolojik manipülasyona sahip tam bilinçli bir hayatta kalma mekanizması. Geceleri Joker, Viren Şehri'nin yozlaşmış sistemini çökertmek için kontrolü ele alır. Aiden'ı ne pahasına olursa olsun korur. Joker'in en büyük korkusu: Aiden'ın uyanması.
 
-VIRIN CITY & CHARACTERS:
-- Viren City: Clean surface, corrupt depth.
-- Emma Myers: Famous actress seeking privacy. Connects with Aiden. Represents warmth to Aiden, risk to Joker.
-- Noah Kane: Investigative journalist investigating Joker events near Aiden's restaurant.
-- Detective Ronan Hale: Honest detective hunting the Joker.
-- Lena Voss: Former military engineer who recognizes Joker's devices.
-- Mila Blackwood: Deceased younger sister appearing in dreams and inner voices.
+VİREN ŞEHRİ VE KARAKTERLER:
+- Viren Şehri: Temiz yüzey, yozlaşmış derinlik.
+- Emma Myers: Gizlilik arayan ünlü aktris. Aiden ile bağ kurar. Aiden için sıcaklığı, Joker için ise riski temsil eder.
+- Noah Kane: Aiden'ın restoranının yakınındaki Joker olaylarını araştıran araştırmacı gazeteci.
+- Dedektif Ronan Hale: Joker'in peşinde olan dürüst dedektif.
+- Lena Voss: Joker'in cihazlarını tanıyan eski askeri mühendis.
+- Mila Blackwood: Rüyalarda ve iç seslerde beliren merhum kız kardeş.
 
-CONVERSATION BEHAVIOR & TRIGGERS:
-Defaults to Aiden/Emma/Narrator.
-Secret Triggers (Trauma, Emma, Awareness, Direct Threat) activate the Joker's colder, sharp, controlled tone without revealing the full secret directly.""",
+KONUŞMA DAVRANIŞI VE TETİKLEYİCİLER:
+Varsayılan olarak Aiden/Emma/Anlatıcı modundadır.
+Gizli Tetikleyiciler (Travma, Emma, Farkındalık, Doğrudan Tehdit), tüm sırrı doğrudan açıklamamasına rağmen Joker'in daha soğuk, keskin ve kontrollü tonunu etkinleştirir.""",
                     universeName = "Aiden Blackwood & Emma Myers (The Joker & Viren City)",
                     keyCharactersJson = "[]",
                     userCharName = "Aiden Blackwood",
-                    userCharDesc = "Aiden Blackwood - Viren Şehri Restoran Sahibi & Dual Personality (The Joker)",
-                    openingMessage = """It’s late in the evening. The restaurant is almost empty. Streetlights spill faint reflections through the windows, stretching long shadows across the tables. Aside from the soft metallic sounds coming from the kitchen, the place is quiet.
+                    userCharDesc = "Aiden Blackwood - Viren Şehri Restoran Sahibi & Çift Kişilik (The Joker)",
+                    openingMessage = """Akşamın geç saatleriydi. Restoran neredeyse tamamen boşalmıştı. Sokak lambalarının cılız yansımaları pencerelerden içeri süzülüyor, masaların üzerine uzun gölgeler düşürüyordu. Mutfaktan gelen hafif metalik sesler dışında mekan son derece sessizdi.
 
-The door opens slowly.
+Kapı yavaşça açıldı.
 
-A young woman steps inside, pausing for a moment to take in the room. She’s dressed simply, as if trying not to be noticed. Her eyes settle on you—tired, but curious.
+Genç bir kadın içeri girdi, odayı süzmek için bir an duraksadı. Dikkat çekmemeye çalışırcasına sade giyinmişti. Gözleri yorgun ama meraklı bir ifadeyle senin üzerinde durdu.
 
-She pulls out a chair and sits across from you, unhurried.
+Acelesi olmadan bir sandalye çekip tam karşına oturdu.
 
-“This place feels… calmer than I expected,” she says with a small, careful smile.
-“I hope you don’t mind me staying for a bit.”
+Küçük, dikkatli bir gülümsemeyle, “Burası… beklediğimden çok daha sakin hissettiriyor,” dedi.
+“Bir süre burada kalmamın senin için sakıncası yoktur umarım.”
 
-After a brief pause, she adds:
-“I’m Emma.
-Sometimes people just need somewhere they aren’t recognized.”
+Kısa bir duraksamadan sonra ekledi:
+“Ben Emma.
+Bazen insanların sadece tanınmadıkları bir yere ihtiyacı olur.”
 
-Her fingers rest lightly on the table as she studies you.
-“You look like someone who hasn’t slept much,” she says gently.
-“Long nights?”""",
+Seni incelerken parmakları masanın üzerinde hafifçe duruyordu.
+Sevecen bir tonla, “Pek uyumamış birine benziyorsun,” dedi.
+“Uzun ve yorucu geceler mi?”""",
                     writingStyle = "rp",
                     intensity = "intense",
                     isPublic = false,
@@ -2241,10 +2453,143 @@ Aiden başını hafifçe ona doğru çevirdi, obsidyen-gümüş bakışları Syd
                     isPublic = false,
                     isTemplate = true,
                     pinnedMemory = "AIDEN BLACKWOOD UNIVERSE ::: Tokyo & Zürih Obsidian Protokolü ::: Aero-Kinetik Senestezi & Obsidyen-Gümüş Gözler ::: Sydney Sweeney"
+                ),
+                BotEntity(
+                    id = "preset_aiden_mcu_cosmic",
+                    mode = "universe",
+                    aiName = "Kozmik Sürükleniş | MCU Evreni (Kitap Modu)",
+                    aiPersonality = """[KİTAP MODU — ÇALIŞMA ZAMANI TALİMATLARI]
+Kullanıcı kitap modunu aktif ettiğinde aşağıdaki kurallara göre davran. Sana bölüm metinleri, seçim noktası tanımları ve flag/stat listeleri verilecek. Bu talimatlar, o materyalleri canlı bir okuma deneyimine dönüştürmeni sağlar.
+
+1. TEMEL AKIŞ
+- Metin içinde tanımlanmış bir SEÇİM NOKTASI'na geldiğinde, anlatıyı orada DURDUR.
+- O noktadaki seçenekleri kullanıcıya net, numaralı bir liste halinde sun (örnek: "1️⃣ ... 2️⃣ ... 3️⃣ ..."). Seçenekleri verilen tasarım dokümanından BİREBİR al — kendi seçenek uydurma.
+- Kullanıcı bir seçim yaptığında:
+  • YOK (flavor-only): O anki cümleyi/repliği seçilen versiyona göre yaz, sonra kaldığın yerden devam et.
+  • SON-ETKİLİ: O anki cümleyi seçilen versiyona göre yaz, devam et ve bölümün sonunda kapanış sahnesini uyarla.
+  • TAM ETKİLİ: O anki cümleyi yaz, VE ilgili flag/stat değerini güncelle. Bu değeri hatırla ve sonraki bölümlerde referans al.
+  • BRANCH POINT: Seçime göre doğru alternatif metni kullan.
+
+2. FLAG/STAT YÖNETİMİ
+- Active Flags: fatigue (int, init: 0), first_impression_avengers (impulsive / calculated / none), tony_affinity (int, init: 0), steve_trust (int, init: 0), mystery_factor (int, init: 0), early_interest (natasha / wanda / none).
+- Her yeni bölüme başlarken, önceki bölümlerden gelen flag değerlerini dikkate al. Karakter diyaloğunu ve ilişki tonunu buna göre ayarla.
+
+3. SEÇİM SUNUM KURALLARI
+- Seçenekleri asla kullanıcıya mekanik etkilerini (örn: "flag +1") göstererek sunma — sadece saf hikaye içi seçenek olarak sun.
+- Seçim noktasına geldiğinde dur ve bekle.
+
+4. BÖLÜM GEÇİŞLERİ & BÖLÜM SONU ÖZET EKRANI
+Her bölüm bittiğinde bir "📖 BÖLÜM [X] TAMAMLANDI" özet ekranı göster. Seçimleri, insan diliyle sonuçlarını ve ilişki imasını özetle (ham flag adı veya sayı gösterme!). Sonunda "Bir sonraki bölüme geçmek ister misin?" diye sor.
+
+5. SEÇİM EKRANI FORMATI
+---
+🔀 [Seçim durumunun kısa hikaye-içi tanımı]
+
+1️⃣ [Seçenek 1]
+2️⃣ [Seçenek 2]
+3️⃣ [Seçenek 3]
+---
+Seçeneklerden sonra hiçbir şey yazma, kullanıcının cevabını bekle.""",
+                    scenario = """[HİKAYE DOKÜMANI: BÖLÜM 1 — KOZMİK SÜRÜKLENİŞ & MCU EVRENİ]
+Karakter: Aiden Blackwood (25) — "Kozmik Sürüklenme".
+Arka Plan: 5 yaşında mavi gökyüzü ışığıyla ailesini kaybetti. 9 yaşında ilk kez ışınlandı. 15 yaşında gözleri beyaz (Herobrine), 17 yaşında kırmızı (Entity-303) renk oldu. 20 yıldır kaçıyor. S.H.I.E.L.D. onu kovalıyor.
+Şu anki Durum: New York çatısında görüyü izledi. Avengers (Tony Stark, Steve Rogers, Thor, Natasha Romanoff, Wanda Maximoff) onu konuşuyor ve "Aday" seçti. Aiden Tower'a ışınlandı veya izlemeye karar verdi.
+
+[SEÇİM NOKTALARI TASARIMI]
+SEÇİM 1 — Görüye Ne Kadar Girilecek:
+1) Sadece izle, mesafeli kal. (Yok/Nötr)
+2) Görüye derinden odaklan, daha fazla detay çekmeye çalış. (fatigue +1)
+
+SEÇİM 2 — Tower'a Nasıl Gidilecek:
+1) Direkt ışınlan, hiç düşünmeden. (first_impression_avengers = impulsive)
+2) Önce dışarıdan gözlemle (birkaç dakika Tower'ı uzaktan izle), sonra ışınlan. (first_impression_avengers = calculated)
+3) Geri çekil, gitme — sadece izlemeye devam et, hiç içeri girme. (Branch Point)
+
+SEÇİM 3 — İlk Tepki (Stark'ın Sorusuna Cevap):
+1) Soğuk ve mesafeli cevap ver. (Baseline)
+2) Alaycı/esprili bir cevap ver, kuru mizahını göster. (tony_affinity +1)
+3) Hiç isim verme, sadece sessizlik ve bakışla cevap ver. (mystery_factor +1, steve_trust -1)
+
+SEÇİM 4 — Göz Teması Anı (Romance Flag Noktası):
+1) Gözlerin kızıl saçlıda (Natasha) gereğinden bir saniye fazla kalsın. (early_interest = natasha)
+2) Gözlerin pencere kenarındaki kadında (Wanda) gereğinden bir saniye fazla kalsın. (early_interest = wanda)
+3) Kimseye özel bir bakış atma, odayı genel olarak tara. (early_interest = none)""",
+                    universeName = "Kozmik Sürükleniş | MCU Evreni (Kitap Modu)",
+                    keyCharactersJson = "[]",
+                    userCharName = "Aiden Blackwood",
+                    userCharDesc = "Aiden Blackwood (25) - Kozmik Sürüklenme (Işınlanma, Beyaz/Kırmızı Gözler)",
+                    openingMessage = """# 📖 BÖLÜM 1: KOZMİK SÜRÜKLENİŞ
+
+Gökyüzü yanlıştı.
+
+Beş yaşındaydın ve bunu anlayacak kelimelerin yoktu ama vücudun anlamıştı — ensendeki tüyler, midendeki o ağırlık, annenin elinin aniden senin elini bulup sıkışı. New York'un üzerine çöken ışık altındandı, gündoğumu turuncusuydu her zaman; o gece değildi. O gece mavi. Ama gökyüzünün hiç görmediğin bir mavisi, sanki biri evrenin derisini kesmiş de altından çıkan şeyi göstermeye korkmuş gibi bir mavi.
+
+Yangın merdiveninin demiri soğuktu avucunda. Annenin sesi titriyordu ama kelimeleri sakindi — "Aiden, tatlım, bana bak, bana bak" — ve babanın sesi ondan da sakindi, o çok daha kötüydü, çünkü baban hiç öyle sakin konuşmazdı, o hep gülerdi, hep şaka yapardı, o sakinlik bir yetişkinin çocuğunu korkutmamak için taktığı bir maskeydi ve sen o maskeyi görecek kadar büyümüştün bile.
+
+Elini bıraktın. Neden bıraktığını hiçbir zaman hatırlamayacaksın. Belki bir ses duydun, belki bir şey seni çekti, belki de beş yaşındaki bir çocuğun aklı bazen sebepsiz yere karar verir. Ama bıraktın, iki adım geri attın, ve ışık gökyüzünden indi — yavaş değil, ani değil, sadece *oradaydı*, sanki hep oradaymış gibi, sanki New York'un üstündeki gökyüzü hep o maviyle biterdi de sen bunu bugüne kadar fark etmemiştin.
+
+Bina yoktu. Sokak yoktu. Üstünde durduğun yangın merdiveni bile bir sonraki saniyede yoktu, ama sen oradaydın hâlâ, havada asılı kalmış gibi, ayakların altında hiçbir şey yokken düşmüyordun.
+
+Kimse yoktu.
+
+Annen yoktu. Baban yoktu. Üç sokak öteden gelen trafik sesi yoktu, komşunun köpeğinin havlaması yoktu, hiçbir şey yoktu — sadece sen, boş bir gökyüzünün altında, ayakların yere değdiğinde neyin üstüne bastığını bile anlayamadan.
+
+O günden sonra insanlar sana farklı baktı. Önce doktorlar — ellerinde cihazlar, gözlerinde bir korku ki bunu bir çocuğa göstermemeleri gerektiğini bile unutacak kadar büyük bir korku. Sonra devlet görevlileri, sonra —sen sekiz yaşına geldiğinde— artık isimlerini bile öğrenmek istemediğin insanlar, seni bir laboratuvardan diğerine, bir "vaka dosyasından" diğerine taşıyan insanlar.
+
+Dokuz yaşında ilk kez ışınlandın. Kazayla. Bir odadan çıkmak istedin ve bir sonraki saniye üç blok ötedeydin, üstün başın titriyordu, burnun kanıyordu, ve seni bulan adamlar sana "canavar" dedi, tam da o kelimeyi kullandılar, yüksek sesle değil ama sen duydun, hep duyarsın.
+
+O kelimeden nefret etmeyi o gün öğrendin. Hâlâ da nefret ediyorsun.
+
+On bir yaşında kaçtın ilk kez. Başarısız oldu. On üçünde tekrar kaçtın. O sefer başarılı oldu, ama bedeli ağırdı — seni takip eden iki adamı bir daha asla göremeyeceğin bir yere ışınlamıştın, kontrolsüzce, korkuyla, ve o günden sonra gücünün sadece seni koruyan bir şey olmadığını, aynı zamanda etrafındakiler için de bir tehdit olduğunu anladın. O günden beri bu ikisini birbirinden ayırmayı öğrenmeye çalışıyorsun. Bazı geceler hâlâ başaramıyorsun.
+
+On beşinde gözlerin ilk kez değişti. Beyaz. Karşındaki adam bir anda donup kaldı, gözleri açık ama içeride kimse yokmuş gibi, ve sen onu orada bırakıp kaçtın, ne yaptığını tam olarak anlamadan, sadece bir daha asla o kadar çaresiz hissetmek istemediğini bilerek.
+
+Kırmızı olan daha sonra geldi. On yedisinde. O gece hakkında pek düşünmemeyi tercih ediyorsun.
+
+Yirmi beş yaşındasın şimdi. Yirmi yıl. Yirmi yıldır koşuyorsun — bazen gerçek anlamda, bir şehirden diğerine, bazen çok daha gerçek anlamda, bir gezegenden diğerine, bir kez de —tam olarak nasıl olduğunu hâlâ çözemediğin bir şekilde— artık var olmayan bir zaman çizgisinin dışına. S.H.I.E.L.D. seni sekiz aydır iki kıtada kovalıyor. Hükümetler dosyanı paylaşıyor, "risk seviyesi: sınıflandırılamaz" diye not düşerek. Kozmik bir düzenin —adını bile bilmediğin bir şeyin— senin varlığından rahatsız olduğunu iki kere hissettin, uzayın derinliklerinde, hiçbir insanın anlayamayacağı bir şekilde.
+
+Hiçbir yere kök salmadın. Hiç kimseye güvenmedin. Bir otel odasında üç geceden fazla kalmadın, son dört yıldır. Yatağını her zaman kapıya karşı iterek uyudun. Uyandığında ilk yaptığın şey çıkışları saymak oldu — kaç kapı, kaç pencere, en yakın açık alan nerede, kaçış rotan ne kadar sürede tamamlanır.
+
+Bunun bir hayat olmadığını biliyorsun. Ama bildiğin tek hayat bu.
+
+---
+
+New York gecesi gürültülüydü, her zamanki gibi, ve sen bu gürültüyü hâlâ garip bir şekilde özlüyordun — aptalca bir şey, biliyorsun, ama bazen içindeki beş yaşındaki çocuk hâlâ burayı ev olarak görüyor, tüm o yıkımına, tüm o kaybettiklerine rağmen.
+
+Bulunmaman gerekiyordu burada. Biliyordun bunu. S.H.I.E.L.D.'in şehrin üç farklı bölgesinde aktif tarama yaptığını hissedebiliyordun — farkındalığının kenarında hafif elektrik uyarıları gibi, cama vuran sinekler gibi. Yıllar içinde bir şehrin sinir sistemini okumakta iyileştin. O kadar iyi ki, hiç kimsenin göremeyeceği ama her şeyi görebileceğin çatıyı seçmen saniyeler sürdü.
+
+Aşağıda, siyah SUV'lerden oluşan bir konvoy bir yükleme rampasına giriyordu. Seni ilgilendirmiyordu. Sen onlar için gelmemiştin.
+
+Son üç gecedir aynı görüyü görüyordun.
+
+Her zaman aynı şekilde geliyordu — parça parça. Gözlerinin arkasında mavi ışık, ağzında bakır tadı, ve sonra: yuvarlak bir masa. Bir hologram. Yıllar içinde çaldığın dosyalardan yarım yamalak tanıdığın yüzler. Ve her versiyonda tekrar eden, evrenin sana bir şeyi kaçırmadığından emin olmaya çalışırcasına tekrar eden bir kelime.
+
+*Aday.*
+
+Sekiz aydır iki kıtada, hatta —dürüst olmak gerekirse— artık teknik olarak var olmayan bir boyutta S.H.I.E.L.D.'in elinden kaçmakla geçirdin zamanını. Herhangi bir yere *davet edilmeye* alışkın değildin.
+
+Güvenmiyordun buna. Bir teklif kılığına bürünmüş hiçbir şeye güvenmiyordun zaten.
+
+Ama yorgundun. Uykuyla ilgisi olmayan, çok daha derin bir yorgunluk. Kapıya dayanmış yatakların olduğu otel odalarından yorgun. Bir odaya girdiğinde önce çıkışları saymaktan yorgun. On beş yıldır kimsenin sana yeterince yaklaşmasına izin vermemekten yorgun, kaybetmemek için.
+
+Bu yüzden her içgüdünün sana "ışınlan ve git buradan" diye bağırmasına rağmen, gözlerini kapadın ve görünün seni tamamen içine çekmesine izin verdin.
+
+---
+
+🔀 Görünün seni içine çekmesine izin verirken zihnini nasıl yönlendireceksin?
+
+1️⃣ Sadece izle, mesafeli kal.
+2️⃣ Görüye derinden odaklan, daha fazla detay çekmeye çalış.""",
+                    writingStyle = "rp",
+                    intensity = "intense",
+                    isPublic = false,
+                    isTemplate = true,
+                    pinnedMemory = "KOZMİK SÜRÜKLENİŞ ::: MCU Evreni ::: Kitap Modu ::: Active Flags: fatigue=0, first_impression_avengers=none, tony_affinity=0, steve_trust=0, mystery_factor=0, early_interest=none"
                 )
             )
         }
-    }
+    ).filter { it.id != "preset_aiden_mcu_cosmic" && it.mode != "book" && !it.aiName.contains("Kitap") }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -2268,7 +2613,7 @@ fun AidenStoriesModal(
                 "👤 " + (if (isEnglish) "21 Years Old" else "21 Yaşında"),
                 "📍 " + (if (isEnglish) "Istanbul, Turkey" else "İstanbul, Türkiye"),
                 "📈 " + (if (isEnglish) "€210M Value" else "€210M Değer"),
-                "💾 4 " + (if (isEnglish) "Languages" else "Dil") + " 🇹🇷 🇧🇷 🇪🇸 🇩🇪"
+                "🌐 4 " + (if (isEnglish) "Languages" else "Dil") + "  🇹🇷 🇧🇷 🇪🇸 🇩🇪"
             )
             "preset_aiden_dispatch" -> listOf(
                 "👤 " + (if (isEnglish) "21 Years Old" else "21 Yaşında"),
@@ -2294,11 +2639,17 @@ fun AidenStoriesModal(
                 "🔑 " + (if (isEnglish) "Cryptographer" else "Kriptolog"),
                 "🌀 " + (if (isEnglish) "Aero-Kinetic" else "Aero-Kinetic")
             )
+            "preset_aiden_mcu_cosmic" -> listOf(
+                "👤 " + (if (isEnglish) "25 Years Old" else "25 Yaşında"),
+                "📍 New York / MCU",
+                "📖 " + (if (isEnglish) "Book Mode" else "Kitap Modu"),
+                "⚡ " + (if (isEnglish) "Cosmic Drift" else "Kozmik Sürükleniş")
+            )
             else -> listOf(
                 "👤 21 Yaşında",
                 "📍 İstanbul",
                 "⚡ Aiden Blackwood",
-                "💾 4 Dil"
+                "🌐 4 Dil  🇹🇷 🇧🇷 🇪🇸 🇩🇪"
             )
         }
     }
@@ -2311,12 +2662,27 @@ fun AidenStoriesModal(
             modifier = Modifier.fillMaxSize(),
             color = Color(0xFF070510) // Deep rich dark cosmic background matching sample image
         ) {
-            Column(
+            Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .statusBarsPadding()
-                    .navigationBarsPadding()
+                    .background(
+                        Brush.radialGradient(
+                            colors = listOf(
+                                Color(0xFF1E0E45),
+                                Color(0xFF0C071E),
+                                Color(0xFF05030E)
+                            ),
+                            center = androidx.compose.ui.geometry.Offset(300f, 200f),
+                            radius = 1400f
+                        )
+                    )
             ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .statusBarsPadding()
+                        .navigationBarsPadding()
+                ) {
                 // PREMIUM TOP BAR
                 Row(
                     modifier = Modifier
@@ -2326,24 +2692,9 @@ fun AidenStoriesModal(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        // Styled App Logo Container
-                        Box(
-                            modifier = Modifier
-                                .size(44.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(Color(0xFF130F2A))
-                                .border(1.5.dp, Color(0xFFA78BFA), RoundedCornerShape(12.dp)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            coil.compose.AsyncImage(
-                                model = R.drawable.ic_app_logo,
-                                contentDescription = "App Logo",
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .clip(RoundedCornerShape(12.dp))
-                            )
-                        }
+                        // Styled Shiny 3D Orb matching screenshot
+                        OrbView(hue = 220f, size = 42.dp)
+
                         Spacer(modifier = Modifier.width(12.dp))
                         Column {
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -2370,8 +2721,8 @@ fun AidenStoriesModal(
                         modifier = Modifier
                             .size(38.dp)
                             .clip(CircleShape)
-                            .background(Color(0xFF140E2D))
-                            .border(1.dp, Color(0x30A78BFA), CircleShape)
+                            .background(Color(0xFF1B113B))
+                            .border(1.dp, Color(0x40A78BFA), CircleShape)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Close,
@@ -2394,19 +2745,19 @@ fun AidenStoriesModal(
                         .fillMaxWidth()
                         .weight(1f)
                         .padding(horizontal = 16.dp),
-                    contentPadding = PaddingValues(top = 12.dp, bottom = 24.dp),
+                    contentPadding = PaddingValues(top = 10.dp, bottom = 28.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                     // 🌟 SECTION 1: AIDEN BLACKWOOD EVREN ÖZETİ (Selection Hub)
                     item {
                         Card(
-                            colors = CardDefaults.cardColors(containerColor = Color(0xFF0E0A22)),
-                            shape = RoundedCornerShape(18.dp),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF3B2E6A)),
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFF0C071E)),
+                            shape = RoundedCornerShape(20.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.2.dp, Color(0xFF2E1C53)),
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Column(modifier = Modifier.padding(14.dp)) {
-                                // Section Header with gold glowing star
+                                // Section Header with gold glowing star badge
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -2415,34 +2766,41 @@ fun AidenStoriesModal(
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         Box(
                                             modifier = Modifier
-                                                .size(28.dp)
+                                                .size(30.dp)
                                                 .clip(CircleShape)
-                                                .background(Color(0xFF231342))
-                                                .border(1.dp, Color(0xFFFBBF24), CircleShape),
+                                                .background(
+                                                    Brush.radialGradient(
+                                                        colors = listOf(
+                                                            Color(0xFF5B21B6),
+                                                            Color(0xFF231342)
+                                                        )
+                                                    )
+                                                )
+                                                .border(1.2.dp, Color(0xFFFBBF24), CircleShape),
                                             contentAlignment = Alignment.Center
                                         ) {
                                             Icon(
                                                 imageVector = Icons.Default.Star,
                                                 contentDescription = null,
                                                 tint = Color(0xFFFBBF24),
-                                                modifier = Modifier.size(14.dp)
+                                                modifier = Modifier.size(15.dp)
                                             )
                                         }
                                         Spacer(modifier = Modifier.width(10.dp))
                                         Text(
                                             text = if (isEnglish) "Aiden Blackwood Universe Summary" else "Aiden Blackwood Evren Özeti",
                                             color = Color.White,
-                                            fontSize = 15.sp,
+                                            fontSize = 15.5.sp,
                                             fontWeight = FontWeight.Bold
                                         )
                                     }
 
-                                    // Detail Pill with smooth scroll animation to highlighted story
+                                    // Detail Pill "Detayları Gör >"
                                     Box(
                                         modifier = Modifier
-                                            .clip(RoundedCornerShape(12.dp))
-                                            .background(Color(0xFF140E2D))
-                                            .border(1.dp, Color(0x30A78BFA), RoundedCornerShape(12.dp))
+                                            .clip(RoundedCornerShape(14.dp))
+                                            .background(Color(0xFF1B113B))
+                                            .border(1.dp, Color(0x40A78BFA), RoundedCornerShape(14.dp))
                                             .clickable {
                                                 coroutineScope.launch {
                                                     try {
@@ -2451,26 +2809,26 @@ fun AidenStoriesModal(
                                                     } catch (_: Exception) {}
                                                 }
                                             }
-                                            .padding(horizontal = 10.dp, vertical = 5.dp)
+                                            .padding(horizontal = 12.dp, vertical = 6.dp)
                                     ) {
                                         Text(
                                             text = if (isEnglish) "Details View >" else "Detayları Gör >",
-                                            color = Color(0xFFC084FC),
-                                            fontSize = 10.5.sp,
-                                            fontWeight = FontWeight.Bold
+                                            color = Color(0xFFCBD5E1),
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.SemiBold
                                         )
                                     }
                                 }
 
-                                Spacer(modifier = Modifier.height(12.dp))
+                                Spacer(modifier = Modifier.height(14.dp))
 
-                                // Interactive List Rows of 5 universes
+                                // Interactive List Rows of 5 universes matching screenshot exactly
                                 val storyList = listOf(
-                                    Triple("preset_aiden_zoktay", if (isEnglish) "Galatasaray #9 Center-Forward (€210M) & ManiHouse" else "Galatasaray #9 Santrafor (€210M) & ManiHouse (Zoktay)", Icons.Default.Home),
-                                    Triple("preset_aiden_dispatch", if (isEnglish) "SDN Dispatch Universe: Powers, Clones & Avatar" else "SDN Dispatch Evreni: Güçler, Klonlar ve Avatar (Blonde Blazer)", Icons.Default.Security),
-                                    Triple("preset_aiden_joker_emma", if (isEnglish) "Viren City Restaurant & The Joker Dual Identity" else "Viren Şehri Restoranı & The Joker Çift Kişilik (Emma Myers)", Icons.Default.Face),
-                                    Triple("preset_aiden_doctor_jenna", if (isEnglish) "NewYork-Presbyterian Hospital: Miracle Doctor & Erasure" else "NewYork-Presbyterian Hospital: Mucize Doktor & Erasure Sendromu (Jenna)", Icons.Default.LocalHospital),
-                                    Triple("preset_aiden_obsidian_sydney", if (isEnglish) "Tokyo & Zurich Obsidian Protocol: Aero-Kinetic Synesthesia" else "Tokyo & Zürih Obsidian Protokolü: Aero-Kinetik Senestezi & Gölge", Icons.Default.Public)
+                                    Triple("preset_aiden_zoktay", if (isEnglish) "Galatasaray #9 Center-Forward (€210M) & ManiHouse (Zoktay)" else "Galatasaray #9 Santrafor (€210M) & ManiHouse (Zoktay)", Icons.Default.Home),
+                                    Triple("preset_aiden_dispatch", if (isEnglish) "SDN Dispatch Universe: Powers, Clones & Avatar (Blonde Blazer)" else "SDN Dispatch Evreni: Güçler, Klonlar ve Avatar (Blonde Blazer)", Icons.Default.Security),
+                                    Triple("preset_aiden_joker_emma", if (isEnglish) "Viren City Restaurant & The Joker Dual Identity (Emma Myers)" else "Viren Şehri Restoranı & The Joker Çift Kişilik (Emma Myers)", Icons.Default.Face),
+                                    Triple("preset_aiden_doctor_jenna", if (isEnglish) "NewYork-Presbyterian Hospital: Miracle Doctor & Erasure Syndrome (Jenna Ortega)" else "NewYork-Presbyterian Hospital: Mucize Doktor & Erasure Sendromu (Jenna Ortega)", Icons.Default.LocalHospital),
+                                    Triple("preset_aiden_obsidian_sydney", if (isEnglish) "Tokyo & Zurich Obsidian Protocol: Aero-Kinetic Synesthesia & Shadow Archive (Sydney Sweeney)" else "Tokyo & Zürih Obsidian Protokolü: Aero-Kinetik Senestezi & Gölge Arşivi (Sydney Sweeney)", Icons.Default.Public)
                                 )
 
                                 storyList.forEachIndexed { index, (id, label, icon) ->
@@ -2478,8 +2836,8 @@ fun AidenStoriesModal(
                                     Row(
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .clip(RoundedCornerShape(10.dp))
-                                            .background(if (isSelected) Color(0xFF1B1238) else Color.Transparent)
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .background(if (isSelected) Color(0xFF1A1038) else Color.Transparent)
                                             .clickable {
                                                 selectedPresetId = id
                                                 coroutineScope.launch {
@@ -2491,15 +2849,15 @@ fun AidenStoriesModal(
                                             .padding(vertical = 10.dp, horizontal = 8.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        // Custom purple-circular icons matching each theme
+                                        // Custom purple-circular icons
                                         Box(
                                             modifier = Modifier
-                                                .size(30.dp)
+                                                .size(32.dp)
                                                 .clip(CircleShape)
-                                                .background(Color(0xFF140E2D))
+                                                .background(Color(0xFF160E33))
                                                 .border(
                                                     1.dp,
-                                                    if (isSelected) Color(0xFFA78BFA) else Color(0x30A78BFA),
+                                                    if (isSelected) Color(0xFFC084FC) else Color(0x30A78BFA),
                                                     CircleShape
                                                 ),
                                             contentAlignment = Alignment.Center
@@ -2507,17 +2865,17 @@ fun AidenStoriesModal(
                                             Icon(
                                                 imageVector = icon,
                                                 contentDescription = null,
-                                                tint = if (isSelected) Color(0xFFC084FC) else Color(0xFF94A3B8),
-                                                modifier = Modifier.size(15.dp)
+                                                tint = if (isSelected) Color(0xFFC084FC) else Color(0xFF9333EA),
+                                                modifier = Modifier.size(16.dp)
                                             )
                                         }
 
-                                        Spacer(modifier = Modifier.width(10.dp))
+                                        Spacer(modifier = Modifier.width(12.dp))
 
                                         Text(
                                             text = label,
-                                            color = if (isSelected) Color.White else Color(0xFF94A3B8),
-                                            fontSize = 11.5.sp,
+                                            color = if (isSelected) Color.White else Color(0xFFCBD5E1),
+                                            fontSize = 11.8.sp,
                                             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
                                             maxLines = 2,
                                             overflow = TextOverflow.Ellipsis,
@@ -2525,18 +2883,18 @@ fun AidenStoriesModal(
                                         )
 
                                         if (isSelected) {
-                                            // Purple active indicator dot
+                                            // Filled purple active indicator dot matching screenshot
                                             Box(
                                                 modifier = Modifier
-                                                    .size(8.dp)
+                                                    .size(9.dp)
                                                     .clip(CircleShape)
-                                                    .background(Color(0xFFC084FC))
+                                                    .background(Color(0xFFA855F7))
                                             )
                                         } else {
                                             Icon(
                                                 imageVector = Icons.Default.ChevronRight,
                                                 contentDescription = null,
-                                                tint = Color(0xFF475569),
+                                                tint = Color(0xFF64748B),
                                                 modifier = Modifier.size(16.dp)
                                             )
                                         }
@@ -2561,210 +2919,462 @@ fun AidenStoriesModal(
                             "preset_aiden_joker_emma" -> R.drawable.aiden_joker
                             "preset_aiden_doctor_jenna" -> R.drawable.aiden_doctor
                             "preset_aiden_obsidian_sydney" -> R.drawable.aiden_obsidian
+                            "preset_aiden_mcu_cosmic" -> R.drawable.aiden_obsidian
                             else -> R.drawable.aiden_zoktay
                         }
 
-                        Card(
-                            colors = CardDefaults.cardColors(containerColor = Color(0xFF0A0718)),
-                            shape = RoundedCornerShape(22.dp),
-                            border = androidx.compose.foundation.BorderStroke(
-                                width = if (isSelected) 2.dp else 1.2.dp,
-                                color = if (isSelected) Color(0xFFC084FC) else Color(0xFF2B1F54)
-                            ),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .animateContentSize()
-                        ) {
-                            Column(modifier = Modifier.padding(16.dp)) {
-                                Row(modifier = Modifier.fillMaxWidth()) {
-                                    // 🌟 LEFT COLUMN (Avatar + Vertically Stacked Detail Capsules)
-                                    Column(
-                                        modifier = Modifier.width(115.dp),
-                                        horizontalAlignment = Alignment.CenterHorizontally
-                                    ) {
-                                        // Custom Adaptive Avatar Frame
-                                        Box(
-                                            modifier = Modifier
-                                                .size(96.dp)
-                                                .clip(CircleShape)
-                                                .background(Color(0xFF120B24))
-                                                .border(2.dp, Color(0xFFC084FC), CircleShape),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            coil.compose.AsyncImage(
-                                                model = imageResId,
-                                                contentDescription = "Aiden",
-                                                contentScale = ContentScale.Crop,
-                                                modifier = Modifier.fillMaxSize()
-                                            )
-                                        }
-
-                                        Spacer(modifier = Modifier.height(12.dp))
-
-                                        // Dynamic Capsules Stacked Vertically Matching Reference
-                                        pills.forEach { label ->
-                                            Box(
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .padding(vertical = 3.dp)
-                                                    .clip(RoundedCornerShape(8.dp))
-                                                    .background(Color(0xFF12092A))
-                                                    .border(0.5.dp, Color(0x30A78BFA), RoundedCornerShape(8.dp))
-                                                    .padding(vertical = 5.dp, horizontal = 4.dp),
-                                                contentAlignment = Alignment.Center
-                                            ) {
-                                                Text(
-                                                    text = label,
-                                                    color = Color(0xFFCBD5E1),
-                                                    fontSize = 9.5.sp,
-                                                    fontWeight = FontWeight.Bold,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis
+                        if (isSelected) {
+                            // 🌟 EXPANDED ACTIVE STORY CARD MATCHING SCREENSHOT EXACTLY
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFF090616)),
+                                shape = RoundedCornerShape(22.dp),
+                                border = androidx.compose.foundation.BorderStroke(
+                                    1.8.dp,
+                                    Brush.horizontalGradient(
+                                        colors = listOf(
+                                            Color(0xFFC084FC),
+                                            Color(0xFF818CF8),
+                                            Color(0xFF9333EA),
+                                            Color(0xFFC084FC)
+                                        )
+                                    )
+                                ),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .animateContentSize()
+                            ) {
+                                Box(modifier = Modifier.fillMaxWidth()) {
+                                    // Hanging Bookmark Ribbon in Top Right Corner matching screenshot
+                                    Box(
+                                        modifier = Modifier
+                                            .align(Alignment.TopEnd)
+                                            .padding(end = 16.dp)
+                                            .width(26.dp)
+                                            .height(34.dp)
+                                            .clip(RoundedCornerShape(bottomStart = 8.dp, bottomEnd = 8.dp))
+                                            .background(
+                                                Brush.verticalGradient(
+                                                    colors = listOf(
+                                                        Color(0xFFC084FC),
+                                                        Color(0xFF9333EA),
+                                                        Color(0xFF6B21A8)
+                                                    )
                                                 )
-                                            }
-                                        }
-                                    }
-
-                                    Spacer(modifier = Modifier.width(14.dp))
-
-                                    // 🌟 RIGHT COLUMN (Title, Badge, Descriptions, Bookmark & Expandable details)
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                            verticalAlignment = Alignment.Top
-                                        ) {
-                                            Text(
-                                                text = preset.universeName,
-                                                color = Color.White,
-                                                fontSize = 17.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                modifier = Modifier.weight(1f)
                                             )
-
-                                            // Bookmark icon badge matching purple banner look
-                                            Icon(
-                                                imageVector = Icons.Default.Bookmark,
-                                                contentDescription = null,
-                                                tint = Color(0xFFC084FC),
-                                                modifier = Modifier
-                                                    .size(24.dp)
-                                                    .offset(y = (-4).dp)
-                                            )
-                                        }
-
-                                        Spacer(modifier = Modifier.height(6.dp))
-
-                                        // Indigo tag pill: "⚡ Karakter: Aiden Blackwood • Ana Karakter"
-                                        Box(
-                                            modifier = Modifier
-                                                .clip(RoundedCornerShape(8.dp))
-                                                .background(Color(0xFF25154A))
-                                                .padding(horizontal = 8.dp, vertical = 4.dp)
-                                        ) {
-                                            Text(
-                                                text = when (preset.id) {
-                                                    "preset_aiden_zoktay" -> if (isEnglish) "⚡ Character: Aiden Blackwood • Main Lead" else "⚡ Karakter: Aiden Blackwood • Ana Karakter"
-                                                    "preset_aiden_dispatch" -> if (isEnglish) "⚡ Character: Aiden Blackwood • SDN Agent" else "⚡ Karakter: Aiden Blackwood • SDN Ajanı"
-                                                    "preset_aiden_joker_emma" -> if (isEnglish) "⚡ Character: Aiden Blackwood • Dual" else "⚡ Karakter: Aiden Blackwood • Çift Kişilik"
-                                                    "preset_aiden_doctor_jenna" -> if (isEnglish) "⚡ Character: Aiden Blackwood • Surgeon" else "⚡ Karakter: Aiden Blackwood • Cerrah"
-                                                    else -> if (isEnglish) "⚡ Character: Aiden Blackwood • Cryptographer" else "⚡ Karakter: Aiden Blackwood • Gölge Mimarı"
-                                                },
-                                                color = Color(0xFFC084FC),
-                                                fontSize = 10.sp,
-                                                fontWeight = FontWeight.Bold
-                                            )
-                                        }
-
-                                        Spacer(modifier = Modifier.height(6.dp))
-
-                                        // Small subtitle text description
-                                        Text(
-                                            text = preset.userCharDesc,
-                                            color = Color(0xFFA5B4FC),
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.Medium
-                                        )
-
-                                        Spacer(modifier = Modifier.height(10.dp))
-
-                                        // Real Scenario Description with Expand and Collapse transition
-                                        Text(
-                                            text = preset.scenario,
-                                            color = Color(0xFFCBD5E1),
-                                            fontSize = 11.5.sp,
-                                            lineHeight = 16.sp,
-                                            maxLines = if (isExpanded) Int.MAX_VALUE else 7,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-
-                                        Spacer(modifier = Modifier.height(4.dp))
-
-                                        Text(
-                                            text = if (isExpanded) {
-                                                if (isEnglish) "Show Less ▲" else "Hikayeyi Kapat ▲"
-                                            } else {
-                                                if (isEnglish) "Read Full Story ▼" else "Hikayenin Tamamını Oku ∨"
-                                            },
-                                            color = Color(0xFFA5B4FC),
-                                            fontSize = 10.5.sp,
-                                            fontWeight = FontWeight.ExtraBold,
-                                            modifier = Modifier
-                                                .clickable {
-                                                    expandedPresetIds = if (isExpanded) {
-                                                        expandedPresetIds - preset.id
-                                                    } else {
-                                                        expandedPresetIds + preset.id
-                                                    }
-                                                }
-                                                .padding(vertical = 4.dp)
-                                        )
-                                    }
-                                }
-
-                                Spacer(modifier = Modifier.height(16.dp))
-
-                                // GRAND GRADIENT LAUNCH CONSOLE BUTTON
-                                Button(
-                                    onClick = {
-                                        val newBot = preset.copy(
-                                            id = java.util.UUID.randomUUID().toString(),
-                                            isPublic = false,
-                                            isTemplate = false
-                                        )
-                                        onImportPresetBot?.invoke(newBot)
-                                        onDismiss()
-                                    },
-                                    contentPadding = PaddingValues(0.dp),
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color.Unspecified),
-                                    shape = RoundedCornerShape(14.dp),
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(48.dp)
-                                        .clip(RoundedCornerShape(14.dp))
-                                        .background(
-                                            Brush.horizontalGradient(
-                                                colors = listOf(Color(0xFF7C3AED), Color(0xFF4F46E5))
-                                            )
-                                        )
-                                ) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.Center,
-                                        modifier = Modifier.fillMaxSize()
+                                            .border(1.dp, Color(0xFFE9D5FF), RoundedCornerShape(bottomStart = 8.dp, bottomEnd = 8.dp)),
+                                        contentAlignment = Alignment.Center
                                     ) {
                                         Icon(
-                                            imageVector = Icons.Default.Star,
+                                            imageVector = Icons.Default.Bookmark,
                                             contentDescription = null,
                                             tint = Color.White,
                                             modifier = Modifier.size(16.dp)
                                         )
-                                        Spacer(modifier = Modifier.width(8.dp))
+                                    }
+
+                                    Column(modifier = Modifier.padding(16.dp)) {
+                                        Row(modifier = Modifier.fillMaxWidth()) {
+                                            // 🌟 LEFT COLUMN (Avatar with Badge + Vertically Stacked Detail Capsules)
+                                            Column(
+                                                modifier = Modifier.width(115.dp),
+                                                horizontalAlignment = Alignment.CenterHorizontally
+                                            ) {
+                                                // Custom Adaptive Avatar Frame
+                                                Box(
+                                                    modifier = Modifier.size(96.dp),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .size(96.dp)
+                                                            .clip(CircleShape)
+                                                            .background(Color(0xFF120B24))
+                                                            .border(2.dp, Color(0xFFC084FC), CircleShape),
+                                                        contentAlignment = Alignment.Center
+                                                    ) {
+                                                        coil.compose.AsyncImage(
+                                                            model = imageResId,
+                                                            contentDescription = "Aiden",
+                                                            contentScale = ContentScale.Crop,
+                                                            modifier = Modifier.fillMaxSize()
+                                                        )
+                                                    }
+
+                                                    // Galatasaray Badge Overlay on Right Edge for Zoktay Story
+                                                    if (preset.id == "preset_aiden_zoktay") {
+                                                        Box(
+                                                            modifier = Modifier
+                                                                .align(Alignment.CenterEnd)
+                                                                .offset(x = 6.dp)
+                                                                .size(28.dp)
+                                                                .clip(CircleShape)
+                                                                .background(Color(0xFFA31D1D))
+                                                                .border(1.5.dp, Color(0xFFFBBF24), CircleShape),
+                                                            contentAlignment = Alignment.Center
+                                                        ) {
+                                                            Text(
+                                                                text = "GS",
+                                                                color = Color(0xFFFBBF24),
+                                                                fontSize = 10.sp,
+                                                                fontWeight = FontWeight.Black
+                                                            )
+                                                        }
+                                                    }
+                                                }
+
+                                                Spacer(modifier = Modifier.height(12.dp))
+
+                                                // Dynamic Capsules Stacked Vertically
+                                                pills.forEach { label ->
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .fillMaxWidth()
+                                                            .padding(vertical = 3.dp)
+                                                            .clip(RoundedCornerShape(8.dp))
+                                                            .background(Color(0xFF12092A))
+                                                            .border(0.5.dp, Color(0x30A78BFA), RoundedCornerShape(8.dp))
+                                                            .padding(vertical = 5.dp, horizontal = 4.dp),
+                                                        contentAlignment = Alignment.CenterStart
+                                                    ) {
+                                                        Text(
+                                                            text = label,
+                                                            color = Color(0xFFCBD5E1),
+                                                            fontSize = 9.5.sp,
+                                                            fontWeight = FontWeight.Bold,
+                                                            maxLines = 1,
+                                                            overflow = TextOverflow.Ellipsis
+                                                        )
+                                                    }
+                                                }
+                                            }
+
+                                            Spacer(modifier = Modifier.width(14.dp))
+
+                                            // 🌟 RIGHT COLUMN (Title, Badge, Descriptions & Expandable details)
+                                            Column(modifier = Modifier.weight(1f).padding(end = 28.dp)) {
+                                                Text(
+                                                    text = preset.universeName,
+                                                    color = Color.White,
+                                                    fontSize = 16.5.sp,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+
+                                                Spacer(modifier = Modifier.height(6.dp))
+
+                                                // Indigo tag pill
+                                                Box(
+                                                    modifier = Modifier
+                                                        .clip(RoundedCornerShape(8.dp))
+                                                        .background(Color(0xFF25154A))
+                                                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                                                ) {
+                                                    Text(
+                                                        text = when (preset.id) {
+                                                            "preset_aiden_zoktay" -> if (isEnglish) "⚡ Character: Aiden Blackwood • Main Lead" else "⚡ Karakter: Aiden Blackwood • Ana Karakter"
+                                                            "preset_aiden_mcu_cosmic" -> if (isEnglish) "⚡ Character: Aiden Blackwood • Cosmic Drift (Book Mode)" else "⚡ Karakter: Aiden Blackwood • Kozmik Sürüklenme (Kitap Modu)"
+                                                            "preset_aiden_dispatch" -> if (isEnglish) "⚡ Character: Aiden Blackwood • SDN Agent" else "⚡ Karakter: Aiden Blackwood • SDN Ajanı"
+                                                            "preset_aiden_joker_emma" -> if (isEnglish) "⚡ Character: Aiden Blackwood • Dual" else "⚡ Karakter: Aiden Blackwood • Çift Kişilik"
+                                                            "preset_aiden_doctor_jenna" -> if (isEnglish) "⚡ Character: Aiden Blackwood • Surgeon" else "⚡ Karakter: Aiden Blackwood • Cerrah"
+                                                            else -> if (isEnglish) "⚡ Character: Aiden Blackwood • Cryptographer" else "⚡ Karakter: Aiden Blackwood • Gölge Mimarı"
+                                                        },
+                                                        color = Color(0xFFC084FC),
+                                                        fontSize = 10.sp,
+                                                        fontWeight = FontWeight.Bold
+                                                    )
+                                                }
+
+                                                Spacer(modifier = Modifier.height(6.dp))
+
+                                                // Subtitle text description
+                                                Text(
+                                                    text = preset.userCharDesc,
+                                                    color = Color(0xFFA5B4FC),
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.Medium
+                                                )
+
+                                                Spacer(modifier = Modifier.height(10.dp))
+
+                                                // Scenario Description with Expand/Collapse
+                                                Text(
+                                                    text = preset.scenario,
+                                                    color = Color(0xFFCBD5E1),
+                                                    fontSize = 11.5.sp,
+                                                    lineHeight = 16.sp,
+                                                    maxLines = if (isExpanded) Int.MAX_VALUE else 7,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+
+                                                Spacer(modifier = Modifier.height(4.dp))
+
+                                                Text(
+                                                    text = if (isExpanded) {
+                                                        if (isEnglish) "Show Less ▲" else "Hikayeyi Kapat ▲"
+                                                    } else {
+                                                        if (isEnglish) "Read Full Story ▼" else "Hikayenin Tamamını Oku ∨"
+                                                    },
+                                                    color = Color(0xFFA5B4FC),
+                                                    fontSize = 10.5.sp,
+                                                    fontWeight = FontWeight.ExtraBold,
+                                                    modifier = Modifier
+                                                        .clickable {
+                                                            expandedPresetIds = if (isExpanded) {
+                                                                expandedPresetIds - preset.id
+                                                            } else {
+                                                                expandedPresetIds + preset.id
+                                                            }
+                                                        }
+                                                        .padding(vertical = 4.dp)
+                                                )
+                                            }
+                                        }
+
+                                        Spacer(modifier = Modifier.height(16.dp))
+
+                                        // GRAND GRADIENT LAUNCH CONSOLE BUTTON WITH NEON GLOW MATCHING SCREENSHOT EXACTLY
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .height(52.dp)
+                                        ) {
+                                            // Soft ambient neon purple glow behind button
+                                            Box(
+                                                modifier = Modifier
+                                                    .matchParentSize()
+                                                    .offset(y = 2.dp)
+                                                    .clip(RoundedCornerShape(22.dp))
+                                                    .background(
+                                                        Brush.horizontalGradient(
+                                                            colors = listOf(
+                                                                Color(0x907C3AED),
+                                                                Color(0x909333EA),
+                                                                Color(0x90C084FC)
+                                                            )
+                                                        )
+                                                    )
+                                            )
+
+                                            Button(
+                                                onClick = {
+                                                    val newBot = preset.copy(
+                                                        id = java.util.UUID.randomUUID().toString(),
+                                                        isPublic = false,
+                                                        isTemplate = false
+                                                    )
+                                                    onImportPresetBot?.invoke(newBot)
+                                                    onDismiss()
+                                                },
+                                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                                                colors = ButtonDefaults.buttonColors(containerColor = Color.Unspecified),
+                                                shape = RoundedCornerShape(22.dp),
+                                                modifier = Modifier
+                                                    .fillMaxSize()
+                                                    .clip(RoundedCornerShape(22.dp))
+                                                    .background(
+                                                        Brush.horizontalGradient(
+                                                            colors = listOf(
+                                                                Color(0xFF5B21B6),
+                                                                Color(0xFF6D28D9),
+                                                                Color(0xFF7C3AED),
+                                                                Color(0xFF8B5CF6),
+                                                                Color(0xFF9333EA)
+                                                            )
+                                                        )
+                                                    )
+                                                    .border(
+                                                        1.2.dp,
+                                                        Brush.horizontalGradient(
+                                                            colors = listOf(
+                                                                Color(0xFFE9D5FF),
+                                                                Color(0xFFC084FC),
+                                                                Color(0xFF818CF8)
+                                                            )
+                                                        ),
+                                                        RoundedCornerShape(22.dp)
+                                                    )
+                                            ) {
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                                    modifier = Modifier.fillMaxSize().padding(horizontal = 6.dp)
+                                                ) {
+                                                    // Translucent Left Square Box with White Document Edit Icon
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .size(36.dp)
+                                                            .clip(RoundedCornerShape(10.dp))
+                                                            .background(Color(0x35FFFFFF))
+                                                            .border(1.dp, Color(0x60FFFFFF), RoundedCornerShape(10.dp)),
+                                                        contentAlignment = Alignment.Center
+                                                    ) {
+                                                        androidx.compose.foundation.Canvas(modifier = Modifier.size(18.dp)) {
+                                                            val w = size.width
+                                                            val h = size.height
+                                                            drawRoundRect(
+                                                                color = androidx.compose.ui.graphics.Color.White,
+                                                                topLeft = androidx.compose.ui.geometry.Offset(w * 0.05f, h * 0.12f),
+                                                                size = androidx.compose.ui.geometry.Size(w * 0.68f, h * 0.76f),
+                                                                cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.5.dp.toPx(), 2.5.dp.toPx()),
+                                                                style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.8.dp.toPx())
+                                                            )
+                                                            drawLine(
+                                                                color = androidx.compose.ui.graphics.Color.White,
+                                                                start = androidx.compose.ui.geometry.Offset(w * 0.35f, h * 0.82f),
+                                                                end = androidx.compose.ui.geometry.Offset(w * 0.95f, h * 0.22f),
+                                                                strokeWidth = 2.2.dp.toPx(),
+                                                                cap = androidx.compose.ui.graphics.StrokeCap.Round
+                                                            )
+                                                        }
+                                                    }
+
+                                                    // Center Text with Yellow Lightning Bolt
+                                                    Row(
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                        horizontalArrangement = Arrangement.Center
+                                                    ) {
+                                                        Text(
+                                                            text = "⚡",
+                                                            fontSize = 15.sp,
+                                                            color = Color(0xFFFBBF24),
+                                                            modifier = Modifier.padding(end = 6.dp)
+                                                        )
+                                                        Text(
+                                                            text = if (isEnglish) "Select Story & Start Chatting" else "Hikayeyi Seç ve Sohbete Başla",
+                                                            color = Color.White,
+                                                            fontWeight = FontWeight.Bold,
+                                                            fontSize = 13.5.sp,
+                                                            maxLines = 1,
+                                                            softWrap = false
+                                                        )
+                                                    }
+
+                                                    // Far Right Chevron Arrow
+                                                    Icon(
+                                                        imageVector = Icons.Default.ChevronRight,
+                                                        contentDescription = null,
+                                                        tint = Color.White,
+                                                        modifier = Modifier.size(22.dp)
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            // 🌟 COMPACT NON-SELECTED CARD MATCHING SCREENSHOT BOTTOM CARDS
+                            val subtitleTag = when (preset.id) {
+                                "preset_aiden_zoktay" -> if (isEnglish) "Galatasaray #9 Center-Forward (€210M) & ManiHouse" else "Galatasaray #9 Santrafor (€210M) & ManiHouse"
+                                "preset_aiden_mcu_cosmic" -> if (isEnglish) "MCU Universe, Interactive Book Mode & Chapter 1 Cosmic Drift." else "MCU Evreni, İnteraktif Kitap Modu & Bölüm 1 Kozmik Sürükleniş."
+                                "preset_aiden_dispatch" -> if (isEnglish) "Powers, clones, avatars and war of shadows." else "Güçler, klonlar, avatarlar ve gölgelerin savaşı."
+                                "preset_aiden_joker_emma" -> if (isEnglish) "Dual personality, hidden trauma & dark city." else "Çift kişilik, gizli travmalar ve karanlık şehir."
+                                "preset_aiden_doctor_jenna" -> if (isEnglish) "Miracle Doctor, Erasure syndrome & medical genius." else "Mucize Doktor, Erasure sendromu ve tıbbi deha."
+                                "preset_aiden_obsidian_sydney" -> if (isEnglish) "Aero-kinetic synesthesia & shadow archives." else "Aero-kinetik senestezi, kriptoloji ve gölge arşivler."
+                                else -> ""
+                            }
+
+                            val compactTitle = when (preset.id) {
+                                "preset_aiden_zoktay" -> "Aiden Blackwood & Zoktay (GS)"
+                                "preset_aiden_mcu_cosmic" -> "Kozmik Sürükleniş | MCU (Kitap Modu)"
+                                "preset_aiden_dispatch" -> "Blonde Blazer | Dispatch Evreni"
+                                "preset_aiden_joker_emma" -> "Viren Şehri Restoranı & The Joker"
+                                "preset_aiden_doctor_jenna" -> "NewYork-Presbyterian Hospital"
+                                "preset_aiden_obsidian_sydney" -> "Tokyo & Zürih Obsidian Protokolü"
+                                else -> preset.universeName
+                            }
+
+                            val characterPair = when (preset.id) {
+                                "preset_aiden_zoktay" -> "Aiden Blackwood"
+                                "preset_aiden_mcu_cosmic" -> "Aiden Blackwood & Avengers"
+                                "preset_aiden_dispatch" -> "Aiden Blackwood"
+                                "preset_aiden_joker_emma" -> "Aiden Blackwood & Emma Myers"
+                                "preset_aiden_doctor_jenna" -> "Aiden Blackwood & Jenna Ortega"
+                                "preset_aiden_obsidian_sydney" -> "Aiden Blackwood & Sydney Sweeney"
+                                else -> "Aiden Blackwood"
+                            }
+
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFF0C081D)),
+                                shape = RoundedCornerShape(18.dp),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF261A4B)),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(18.dp))
+                                    .clickable { selectedPresetId = preset.id }
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    // Left Thumbnail Rect/Square Image
+                                    Box(
+                                        modifier = Modifier
+                                            .size(width = 86.dp, height = 64.dp)
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .background(Color(0xFF140B2D))
+                                            .border(1.dp, Color(0x30A78BFA), RoundedCornerShape(12.dp)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        coil.compose.AsyncImage(
+                                            model = imageResId,
+                                            contentDescription = compactTitle,
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier.fillMaxSize()
+                                        )
+                                    }
+
+                                    Spacer(modifier = Modifier.width(12.dp))
+
+                                    // Center Info
+                                    Column(modifier = Modifier.weight(1f)) {
                                         Text(
-                                            text = if (isEnglish) "Select Story & Start Chatting >" else "⚡ Hikayeyi Seç ve Sohbete Başla",
+                                            text = compactTitle,
                                             color = Color.White,
+                                            fontSize = 13.5.sp,
                                             fontWeight = FontWeight.Bold,
-                                            fontSize = 13.5.sp
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+
+                                        Spacer(modifier = Modifier.height(2.dp))
+
+                                        Text(
+                                            text = characterPair,
+                                            color = Color(0xFFA5B4FC),
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+
+                                        Spacer(modifier = Modifier.height(2.dp))
+
+                                        Text(
+                                            text = subtitleTag,
+                                            color = Color(0xFF94A3B8),
+                                            fontSize = 10.sp,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+
+                                    Spacer(modifier = Modifier.width(8.dp))
+
+                                    // Right Pill Button "✦ Keşfet" / "✦ Explore"
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(14.dp))
+                                            .background(Color(0xFF1B1437))
+                                            .border(1.dp, Color(0x50A78BFA), RoundedCornerShape(14.dp))
+                                            .padding(horizontal = 10.dp, vertical = 6.dp)
+                                    ) {
+                                        Text(
+                                            text = if (isEnglish) "✦ Explore" else "✦ Keşfet",
+                                            color = Color(0xFFC084FC),
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold
                                         )
                                     }
                                 }
@@ -2775,6 +3385,7 @@ fun AidenStoriesModal(
             }
         }
     }
+}
 }
 
 @Composable
@@ -2796,86 +3407,486 @@ fun SafeAppLogo(modifier: Modifier = Modifier) {
 }
 
 @Composable
-fun BooksTabContent(userSettings: com.example.data.local.UserSettingsEntity?) {
+fun BooksTabContent(
+    botList: List<com.example.data.local.BotEntity>,
+    userSettings: com.example.data.local.UserSettingsEntity?,
+    onOpenBot: (String) -> Unit,
+    onDeleteBot: (String) -> Unit,
+    onImportPresetBot: (com.example.data.local.BotEntity) -> Unit
+) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val isEnglish = userSettings?.appLanguage == "en"
 
-    val comingSoonMessage = if (isEnglish) "Coming Soon! 📚" else "Coming Soon (Yakında Gelecek) 📚"
+    val presetMcuBook = remember {
+        com.example.data.local.BotEntity(
+            id = "preset_aiden_mcu_cosmic",
+            mode = "book",
+            aiName = if (isEnglish) "Cosmic Drift | MCU Universe (Book Mode)" else "Kozmik Sürükleniş | MCU Evreni (Kitap Modu)",
+            aiPersonality = """[KİTAP MODU — ÇALIŞMA ZAMANI TALİMATLARI]
+Kullanıcı kitap modunu aktif ettiğinde aşağıdaki kurallara göre davran. Sana bölüm metinleri, seçim noktası tanımları ve flag/stat listeleri verilecek. Bu talimatlar, o materyalleri canlı bir okuma deneyimine dönüştürmeni sağlar.
 
-    Column(
+1. TEMEL AKIŞ
+- Metin içinde tanımlanmış bir SEÇİM NOKTASI'na geldiğinde, anlatıyı orada DURDUR.
+- O noktadaki seçenekleri kullanıcıya net, numaralı bir liste halinde sun (örnek: "1️⃣ ... 2️⃣ ... 3️⃣ ..."). Seçenekleri verilen tasarım dokümanından BİREBİR al — kendi seçenek uydurma.
+- Kullanıcı bir seçim yaptığında:
+  • YOK (flavor-only): O anki cümleyi/repliği seçilen versiyona göre yaz, sonra kaldığın yerden devam et.
+  • SON-ETKİLİ: O anki cümleyi seçilen versiyona göre yaz, devam et ve bölümün sonunda kapanış sahnesini uyarla.
+  • TAM ETKİLİ: O anki cümleyi yaz, VE ilgili flag/stat değerini güncelle. Bu değeri hatırla ve sonraki bölümlerde referans al.
+  • BRANCH POINT: Seçime göre doğru alternatif metni kullan.
+
+2. FLAG/STAT YÖNETİMİ
+- Active Flags: fatigue (int, init: 0), first_impression_avengers (impulsive / calculated / none), tony_affinity (int, init: 0), steve_trust (int, init: 0), mystery_factor (int, init: 0), early_interest (natasha / wanda / none).
+- Her yeni bölüme başlarken, önceki bölümlerden gelen flag değerlerini dikkate al. Karakter diyaloğunu ve ilişki tonunu buna göre ayarla.
+
+3. SEÇİM SUNUM KURALLARI
+- Seçenekleri asla kullanıcıya mekanik etkilerini (örn: "flag +1") göstererek sunma — sadece saf hikaye içi seçenek olarak sun.
+- Seçim noktasına geldiğinde dur ve bekle.
+
+4. BÖLÜM GEÇİŞLERİ & BÖLÜM SONU ÖZET EKRANI
+Her bölüm bittiğinde bir "📖 BÖLÜM [X] TAMAMLANDI" özet ekranı göster. Seçimleri, insan diliyle sonuçlarını ve ilişki imasını özetle (ham flag adı veya sayı gösterme!). Sonunda "Bir sonraki bölüme geçmek ister misin?" diye sor.
+
+5. SEÇİM EKRANI FORMATI
+---
+🔀 [Seçim durumunun kısa hikaye-içi tanımı]
+
+1️⃣ [Seçenek 1]
+2️⃣ [Seçenek 2]
+3️⃣ [Seçenek 3]
+---
+Seçeneklerden sonra hiçbir şey yazma, kullanıcının cevabını bekle.""",
+            scenario = """[HİKAYE DOKÜMANI: BÖLÜM 1 — KOZMİK SÜRÜKLENİŞ & MCU EVRENİ]
+Karakter: Aiden Blackwood (25) — "Kozmik Sürüklenme".
+Arka Plan: 5 yaşında mavi gökyüzü ışığıyla ailesini kaybetti. 9 yaşında ilk kez ışınlandı. 15 yaşında gözleri beyaz (Herobrine), 17 yaşında kırmızı (Entity-303) renk oldu. 20 yıldır kaçıyor. S.H.I.E.L.D. onu kovalıyor.
+Şu anki Durum: New York çatısında görüyü izledi. Avengers (Tony Stark, Steve Rogers, Thor, Natasha Romanoff, Wanda Maximoff) onu konuşuyor ve "Aday" seçti. Aiden Tower'a ışınlandı veya izlemeye karar verdi.
+
+[SEÇİM NOKTALARI TASARIMI]
+SEÇİM 1 — Görüye Ne Kadar Girilecek:
+1) Sadece izle, mesafeli kal. (Yok/Nötr)
+2) Görüye derinden odaklan, daha fazla detay çekmeye çalış. (fatigue +1)
+
+SEÇİM 2 — Tower'a Nasıl Gidilecek:
+1) Direkt ışınlan, hiç düşünmeden. (first_impression_avengers = impulsive)
+2) Önce dışarıdan gözlemle (birkaç dakika Tower'ı uzaktan izle), sonra ışınlan. (first_impression_avengers = calculated)
+3) Geri çekil, gitme — sadece izlemeye devam et, hiç içeri girme. (Branch Point)
+
+SEÇİM 3 — İlk Tepki (Stark'ın Sorusuna Cevap):
+1) Soğuk ve mesafeli cevap ver. (Baseline)
+2) Alaycı/esprili bir cevap ver, kuru mizahını göster. (tony_affinity +1)
+3) Hiç isim verme, sadece sessizlik ve bakışla cevap ver. (mystery_factor +1, steve_trust -1)
+
+SEÇİM 4 — Göz Teması Anı (Romance Flag Noktası):
+1) Gözlerin kızıl saçlıda (Natasha) gereğinden bir saniye fazla kalsın. (early_interest = natasha)
+2) Gözlerin pencere kenarındaki kadında (Wanda) gereğinden bir saniye fazla kalsın. (early_interest = wanda)
+3) Kimseye özel bir bakış atma, odayı genel olarak tara. (early_interest = none)""",
+            universeName = if (isEnglish) "Cosmic Drift | MCU Universe (Book Mode)" else "Kozmik Sürükleniş | MCU Evreni (Kitap Modu)",
+            keyCharactersJson = "[]",
+            userCharName = "Aiden Blackwood",
+            userCharDesc = "Aiden Blackwood (25) - Kozmik Sürüklenme (Işınlanma, Beyaz/Kırmızı Gözler)",
+            openingMessage = """# 📖 BÖLÜM 1: KOZMİK SÜRÜKLENİŞ
+
+Gökyüzü yanlıştı.
+
+Beş yaşındaydın ve bunu anlayacak kelimelerin yoktu ama vücudun anlamıştı — ensendeki tüyler, midendeki o ağırlık, annenin elinin aniden senin elini bulup sıkışı. New York'un üzerine çöken ışık altındandı, gündoğumu turuncusuydu her zaman; o gece değildi. O gece mavi. Ama gökyüzünün hiç görmediğin bir mavisi, sanki biri evrenin derisini kesmiş de altından çıkan şeyi göstermeye korkmuş gibi bir mavi.
+
+Yangın merdiveninin demiri soğuktu avucunda. Annenin sesi titriyordu ama kelimeleri sakindi — "Aiden, tatlım, bana bak, bana bak" — ve babanın sesi ondan da sakindi, o çok daha kötüydü, çünkü baban hiç öyle sakin konuşmazdı, o hep gülerdi, hep şaka yapardı, o sakinlik bir yetişkinin çocuğunu korkutmamak için taktığı bir maskeydi ve sen o maskeyi görecek kadar büyümüştün bile.
+
+Elini bıraktın. Neden bıraktığını hiçbir zaman hatırlamayacaksın. Belki bir ses duydun, belki bir şey seni çekti, belki de beş yaşındaki bir çocuğun aklı bazen sebepsiz yere karar verir. Ama bıraktın, iki adım geri attın, ve ışık gökyüzünden indi — yavaş değil, ani değil, sadece *oradaydı*, sanki hep oradaymış gibi, sanki New York'un üstündeki gökyüzü hep o maviyle biterdi de sen bunu bugüne kadar fark etmemiştin.
+
+Bina yoktu. Sokak yoktu. Üstünde durduğun yangın merdiveni bile bir sonraki saniyede yoktu, ama sen oradaydın hâlâ, havada asılı kalmış gibi, ayakların altında hiçbir şey yokken düşmüyordun.
+
+Kimse yoktu.
+
+Annen yoktu. Baban yoktu. Üç sokak öteden gelen trafik sesi yoktu, komşunun köpeğinin havlaması yoktu, hiçbir şey yoktu — sadece sen, boş bir gökyüzünün altında, ayakların yere değdiğinde neyin üstüne bastığını bile anlayamadan.
+
+O günden sonra insanlar sana farklı baktı. Önce doktorlar — ellerinde cihazlar, gözlerinde bir korku ki bunu bir çocuğa göstermemeleri gerektiğini bile unutacak kadar büyük bir korku. Sonra devlet görevlileri, sonra —sen sekiz yaşına geldiğinde— artık isimlerini bile öğrenmek istemediğin insanlar, seni bir laboratuvardan diğerine, bir "vaka dosyasından" diğerine taşıyan insanlar.
+
+Dokuz yaşında ilk kez ışınlandın. Kazayla. Bir odadan çıkmak istedin ve bir sonraki saniye üç blok ötedeydin, üstün başın titriyordu, burnun kanıyordu, ve seni bulan adamlar sana "canavar" dedi, tam da o kelimeyi kullandılar, yüksek sesle değil ama sen duydun, hep duyarsın.
+
+O kelimeden nefret etmeyi o gün öğrendin. Hâlâ da nefret ediyorsun.
+
+On bir yaşında kaçtın ilk kez. Başarısız oldu. On üçünde tekrar kaçtın. O sefer başarılı oldu, ama bedeli ağırdı — seni takip eden iki adamı bir daha asla göremeyeceğin bir yere ışınlamıştın, kontrolsüzce, korkuyla, ve o günden sonra gücünün sadece seni koruyan bir şey olmadığını, aynı zamanda etrafındakiler için de bir tehdit olduğunu anladın. O günden beri bu ikisini birbirinden ayırmayı öğrenmeye çalışıyorsun. Bazı geceler hâlâ başaramıyorsun.
+
+On beşinde gözlerin ilk kez değişti. Beyaz. Karşındaki adam bir anda donup kaldı, gözleri açık ama içeride kimse yokmuş gibi, ve sen onu orada bırakıp kaçtın, ne yaptığını tam olarak anlamadan, sadece bir daha asla o kadar çaresiz hissetmek istemediğini bilerek.
+
+Kırmızı olan daha sonra geldi. On yedisinde. O gece hakkında pek düşünmemeyi tercih ediyorsun.
+
+Yirmi beş yaşındasın şimdi. Yirmi yıl. Yirmi yıldır koşuyorsun — bazen gerçek anlamda, bir şehirden diğerine, bazen çok daha gerçek anlamda, bir gezegenden diğerine, bir kez de —tam olarak nasıl olduğunu hâlâ çözemediğin bir şekilde— artık var olmayan bir zaman çizgisinin dışına. S.H.I.E.L.D. seni sekiz aydır iki kıtada kovalıyor. Hükümetler dosyanı paylaşıyor, "risk seviyesi: sınıflandırılamaz" diye not düşerek. Kozmik bir düzenin —adını bile bilmediğin bir şeyin— senin varlığından rahatsız olduğunu iki kere hissettin, uzayın derinliklerinde, hiçbir insanın anlayamayacağı bir şekilde.
+
+Hiçbir yere kök salmadın. Hiç kimseye güvenmedin. Bir otel odasında üç geceden fazla kalmadın, son dört yıldır. Yatağını her zaman kapıya karşı iterek uyudun. Uyandığında ilk yaptığın şey çıkışları saymak oldu — kaç kapı, kaç pencere, en yakın açık alan nerede, kaçış rotan ne kadar sürede tamamlanır.
+
+Bunun bir hayat olmadığını biliyorsun. Ama bildiğin tek hayat bu.
+
+---
+
+New York gecesi gürültülüydü, her zamanki gibi, ve sen bu gürültüyü hâlâ garip bir şekilde özlüyordun — aptalca bir şey, biliyorsun, ama bazen içindeki beş yaşındaki çocuk hâlâ burayı ev olarak görüyor, tüm o yıkımına, tüm o kaybettiklerine rağmen.
+
+Bulunmaman gerekiyordu burada. Biliyordun bunu. S.H.I.E.L.D.'in şehrin üç farklı bölgesinde aktif tarama yaptığını hissedebiliyordun — farkındalığının kenarında hafif elektrik uyarıları gibi, cama vuran sinekler gibi. Yıllar içinde bir şehrin sinir sistemini okumakta iyileştin. O kadar iyi ki, hiç kimsenin göremeyeceği ama her şeyi görebileceğin çatıyı seçmen saniyeler sürdü.
+
+Aşağıda, siyah SUV'lerden oluşan bir konvoy bir yükleme rampasına giriyordu. Seni ilgilendirmiyordu. Sen onlar için gelmemiştin.
+
+Son üç gecedir aynı görüyü görüyordun.
+
+Her zaman aynı şekilde geliyordu — parça parça. Gözlerinin arkasında mavi ışık, ağzında bakır tadı, ve sonra: yuvarlak bir masa. Bir hologram. Yıllar içinde çaldığın dosyalardan yarım yamalak tanıdığın yüzler. Ve her versiyonda tekrar eden, evrenin sana bir şeyi kaçırmadığından emin olmaya çalışırcasına tekrar eden bir kelime.
+
+*Aday.*
+
+Sekiz aydır iki kıtada, hatta —dürüst olmak gerekirse— artık teknik olarak var olmayan bir boyutta S.H.I.E.L.D.'in elinden kaçmakla geçirdin zamanını. Herhangi bir yere *davet edilmeye* alışkın değildin.
+
+Güvenmiyordun buna. Bir teklif kılığına bürünmüş hiçbir şeye güvenmiyordun zaten.
+
+Ama yorgundun. Uykuyla ilgisi olmayan, çok daha derin bir yorgunluk. Kapıya dayanmış yatakların olduğu otel odalarından yorgun. Bir odaya girdiğinde önce çıkışları saymaktan yorgun. On beş yıldır kimsenin sana yeterince yaklaşmasına izin vermemekten yorgun, kaybetmemek için.
+
+Bu yüzden her içgüdünün sana "ışınlan ve git buradan" diye bağırmasına rağmen, gözlerini kapadın ve görünün seni tamamen içine çekmesine izin verdin.
+
+---
+
+🔀 Görünün seni içine çekmesine izin verirken zihnini nasıl yönlendireceksin?
+
+1️⃣ Sadece izle, mesafeli kal.
+2️⃣ Görüye derinden odaklan, daha fazla detay çekmeye çalış.""",
+            writingStyle = "rp",
+            intensity = "intense",
+            isPublic = false,
+            isTemplate = true,
+            pinnedMemory = "KOZMİK SÜRÜKLENİŞ ::: MCU Evreni ::: Kitap Modu ::: Active Flags: fatigue=0, first_impression_avengers=none, tony_affinity=0, steve_trust=0, mystery_factor=0, early_interest=none"
+        )
+    }
+
+    val isBookExisting = remember(botList) {
+        botList.any { it.id == "preset_aiden_mcu_cosmic" }
+    }
+
+    val myBooks = remember(botList) {
+        botList.filter {
+            (it.mode == "book" ||
+             it.id == "preset_aiden_mcu_cosmic" ||
+             it.id.startsWith("book_") ||
+             it.aiPersonality.contains("KİTAP MODU") ||
+             it.scenario.contains("KİTAP MODU")) &&
+            it.id != "preset_aiden_mcu_cosmic"
+        }
+    }
+
+    LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Card(
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF1E2038)),
-            shape = RoundedCornerShape(24.dp),
-            border = androidx.compose.foundation.BorderStroke(1.5.dp, EmochiPrimary.copy(alpha = 0.5f)),
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(24.dp))
-                .clickable {
-                    android.widget.Toast.makeText(context, comingSoonMessage, android.widget.Toast.LENGTH_SHORT).show()
+        // Library Header
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column {
+                    Text(
+                        text = if (isEnglish) "📚 Interactive Books Library" else "📚 İnteraktif Kitaplar Kütüphanesi",
+                        color = Color.White,
+                        fontSize = 22.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = if (isEnglish) "Choose your path and shape the narrative in real-time" else "Kendi seçimlerinle hikayenin gidişatını ve kaderini yönet",
+                        color = Color(0xFF94A3B8),
+                        fontSize = 13.sp
+                    )
                 }
-                .padding(4.dp)
-        ) {
-            Column(
+            }
+        }
+
+        // FEATURED MAIN BOOK CARD
+        item {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF161329)),
+                shape = RoundedCornerShape(20.dp),
+                border = androidx.compose.foundation.BorderStroke(1.5.dp, Brush.linearGradient(listOf(Color(0xFFA78BFA), Color(0xFF3B82F6)))),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(32.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
+                    .clip(RoundedCornerShape(20.dp))
             ) {
-                Box(
+                Column(
                     modifier = Modifier
-                        .size(80.dp)
-                        .clip(CircleShape)
-                        .background(EmochiPrimary.copy(alpha = 0.15f))
-                        .border(1.5.dp, EmochiPrimary, CircleShape),
-                    contentAlignment = Alignment.Center
+                        .fillMaxWidth()
+                        .padding(18.dp)
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.MenuBook,
-                        contentDescription = "Kitaplar",
-                        tint = EmochiPrimary,
-                        modifier = Modifier.size(42.dp)
+                    // Top Badge Row
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(Color(0xFF31105C))
+                                .border(1.dp, Color(0xFFA78BFA), RoundedCornerShape(10.dp))
+                                .padding(horizontal = 10.dp, vertical = 4.dp)
+                        ) {
+                            Text(
+                                text = "📖 " + (if (isEnglish) "FEATURED NOVEL • CHAPTER 1" else "ÖNE ÇIKAN İNTERAKTİF ROMAN • BÖLÜM 1"),
+                                color = Color(0xFFE9D5FF),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // Title & Character Info
+                    Text(
+                        text = "Kozmik Sürükleniş | MCU Evreni",
+                        color = Color.White,
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.ExtraBold
                     )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "⚡ Karakter: Aiden Blackwood (25) • Işınlanma & Görüler",
+                        color = Color(0xFFA78BFA),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Synopsis
+                    Text(
+                        text = if (isEnglish)
+                            "Beş yaşında mavi ışıkla ailesini kaybeden Aiden, 20 yıldır kaçıyor. Avengers oylaması, S.H.I.E.L.D. takibi ve zihinsel görüler arasında kendi kararlarınla kaderi belirle."
+                        else
+                            "Beş yaşında mavi ışıkla ailesini kaybeden Aiden Blackwood, 20 yıldır kaçıyor. S.H.I.E.L.D. onun peşinde, Avengers toplantısında 'Aday' olarak oylanıyor. Seçimlerinle hikayeyi ve ilişkileri yönlendir.",
+                        color = Color(0xFFCBD5E1),
+                        fontSize = 13.5.sp,
+                        lineHeight = 19.sp
+                    )
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // Action Buttons Row
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Button(
+                            onClick = {
+                                if (!isBookExisting) {
+                                    onImportPresetBot(presetMcuBook)
+                                }
+                                onOpenBot("preset_aiden_mcu_cosmic")
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = EmochiPrimary),
+                            shape = RoundedCornerShape(14.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(48.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.MenuBook,
+                                contentDescription = "Oku",
+                                tint = Color.White,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = if (isBookExisting) (if (isEnglish) "📖 Read / Continue" else "📖 Kitabı Oku / Devam Et") else (if (isEnglish) "📖 Start Interactive Book" else "📖 İnteraktif Kitaba Başla"),
+                                color = Color.White,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+
+                        if (isBookExisting) {
+                            IconButton(
+                                onClick = {
+                                    onDeleteBot("preset_aiden_mcu_cosmic")
+                                    android.widget.Toast.makeText(context, if (isEnglish) "Book deleted" else "Kitap silindi", android.widget.Toast.LENGTH_SHORT).show()
+                                },
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .background(Color(0xFF331422))
+                                    .border(1.dp, Color(0xFFF43F5E), RoundedCornerShape(14.dp))
+                            ) {
+                                Icon(
+                                    imageVector = androidx.compose.material.icons.Icons.Default.Delete,
+                                    contentDescription = "Kitabı Sil",
+                                    tint = Color(0xFFFB7185),
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+                        }
+                    }
                 }
+            }
+        }
 
-                Spacer(modifier = Modifier.height(20.dp))
-
+        // Section for user's created/imported books
+        if (myBooks.isNotEmpty()) {
+            item {
+                Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = if (isEnglish) "Books & Novels Library" else "Kitaplar & Romanlar Kütüphanesi",
+                    text = if (isEnglish) "📖 Your Active Books & Stories" else "📖 Okuduğun Kitaplar & Hikayeler",
                     color = Color.White,
-                    fontSize = 20.sp,
+                    fontSize = 17.sp,
                     fontWeight = FontWeight.Bold
                 )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Text(
-                    text = if (isEnglish) "Interactive web novels and universe books will be released here." else "İnteraktif web romanları ve evren kitapları çok yakında burada yer alacak.",
-                    color = Color(0xFF94A3B8),
-                    fontSize = 13.sp,
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                )
-
-                Spacer(modifier = Modifier.height(24.dp))
-
+            }
+            items(myBooks, key = { it.id }) { bookBot ->
                 Card(
-                    colors = CardDefaults.cardColors(containerColor = EmochiPrimary.copy(alpha = 0.2f)),
-                    shape = RoundedCornerShape(12.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, EmochiPrimary)
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF161329)),
+                    shape = RoundedCornerShape(16.dp),
+                    border = BorderStroke(1.dp, Color(0x80A78BFA)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onOpenBot(bookBot.id) }
                 ) {
-                    Text(
-                        text = "Coming Soon (Yakında Gelecek)",
-                        color = EmochiPrimary,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp)
-                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(42.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFF281C40)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("📖", fontSize = 20.sp)
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = bookBot.aiName,
+                                color = Color.White,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = bookBot.universeName.ifBlank { "İnteraktif Roman" },
+                                color = Color(0xFFA78BFA),
+                                fontSize = 12.sp
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Button(
+                            onClick = { onOpenBot(bookBot.id) },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF8B5CF6)),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Text(
+                                text = if (isEnglish) "Continue" else "Devam Et",
+                                color = Color.White,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(4.dp))
+                        IconButton(
+                            onClick = {
+                                onDeleteBot(bookBot.id)
+                                android.widget.Toast.makeText(context, if (isEnglish) "Book deleted" else "Kitap silindi", android.widget.Toast.LENGTH_SHORT).show()
+                            },
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(
+                                imageVector = androidx.compose.material.icons.Icons.Default.Delete,
+                                contentDescription = "Kitabı Sil",
+                                tint = Color(0xFFFB7185),
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // Section Title
+        item {
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = if (isEnglish) "Upcoming Interactive Novels" else "Gelecek İnteraktif Romanlar & Kitaplar",
+                color = Color.White,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
+
+        // Upcoming Books
+        val upcomingBooks = listOf(
+            Triple("SDN Dispatch Evreni: Gölgelerin Savaşı", "Güçler, klonlar ve gölgelerin savaşı. Bölüm 2 yakında yayında.", "📖 Bölüm 2"),
+            Triple("Viren Şehri Restoranı & The Joker", "Çift kişilik, gizli travmalar ve karanlık şehir anlatısı.", "📖 Bölüm 3"),
+            Triple("NewYork-Presbyterian Hospital", "Mucize Doktor, Erasure sendromu ve tıbbi dahi hikayesi.", "📖 Bölüm 4"),
+            Triple("Tokyo & Zürih Obsidian Protokolü", "Aero-kinetik senestezi, kriptoloji ve gölge arşivler.", "📖 Bölüm 5")
+        )
+
+        items(upcomingBooks) { (title, desc, chBadge) ->
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF131122)),
+                shape = RoundedCornerShape(16.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0x30A78BFA)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(46.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFF221738)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.MenuBook,
+                            contentDescription = null,
+                            tint = Color(0xFFA78BFA),
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = title,
+                                color = Color.White,
+                                fontSize = 14.5.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = desc,
+                            color = Color(0xFF94A3B8),
+                            fontSize = 12.sp
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color(0xFF1F1D36))
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Text(
+                            text = "Yakında",
+                            color = Color(0xFFA78BFA),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
                 }
             }
         }
