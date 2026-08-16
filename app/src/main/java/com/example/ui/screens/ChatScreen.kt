@@ -1667,25 +1667,34 @@ fun ChapterSummaryModal(
     DisposableEffect(Unit) {
         var player: android.media.MediaPlayer? = null
         try {
-            val audioAttrs = android.media.AudioAttributes.Builder()
-                .setContentType(android.media.AudioAttributes.CONTENT_TYPE_MUSIC)
-                .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
-                .build()
-            player = android.media.MediaPlayer.create(context, com.example.R.raw.bolumsonu, audioAttrs, 0)?.apply {
-                isLooping = true
-                setVolume(0f, 0f)
-                start()
-            }
-            mediaPlayer = player
+            val afd = context.resources.openRawResourceFd(com.example.R.raw.bolumsonu)
+            if (afd != null) {
+                val p = android.media.MediaPlayer()
+                p.setDataSource(afd.fileDescriptor, afd.startOffset, afd.length)
+                afd.close()
+                p.setAudioAttributes(
+                    android.media.AudioAttributes.Builder()
+                        .setContentType(android.media.AudioAttributes.CONTENT_TYPE_MUSIC)
+                        .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+                        .build()
+                )
+                p.isLooping = true
+                p.prepare()
+                p.setVolume(0.1f, 0.1f)
+                p.start()
+                player = p
+                mediaPlayer = p
 
-            // Rapid Fade-In: 0% -> 100%
-            coroutineScope.launch {
-                for (i in 0..100) {
-                    val vol = i / 100f
-                    player?.setVolume(vol, vol)
-                    delay(15)
+                // Rapid Fade-In: 0% -> 100%
+                coroutineScope.launch {
+                    for (i in 10..100) {
+                        val vol = i / 100f
+                        try {
+                            if (p.isPlaying) p.setVolume(vol, vol)
+                        } catch (e: Exception) { e.printStackTrace() }
+                        delay(15)
+                    }
                 }
-                player?.setVolume(1.0f, 1.0f)
             }
         } catch (e: Exception) {
             e.printStackTrace()
@@ -3085,6 +3094,60 @@ fun BookReaderView(
     var showSummaryModal by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
 
+    var isAmbientMusicPlaying by remember { mutableStateOf(false) }
+    var ambientMediaPlayer by remember { mutableStateOf<android.media.MediaPlayer?>(null) }
+
+    fun toggleAmbientMusic() {
+        if (isAmbientMusicPlaying) {
+            try {
+                ambientMediaPlayer?.let { p ->
+                    if (p.isPlaying) p.stop()
+                    p.release()
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+            ambientMediaPlayer = null
+            isAmbientMusicPlaying = false
+        } else {
+            try {
+                val afd = context.resources.openRawResourceFd(com.example.R.raw.bolumsonu)
+                if (afd != null) {
+                    val p = android.media.MediaPlayer()
+                    p.setDataSource(afd.fileDescriptor, afd.startOffset, afd.length)
+                    afd.close()
+                    p.setAudioAttributes(
+                        android.media.AudioAttributes.Builder()
+                            .setContentType(android.media.AudioAttributes.CONTENT_TYPE_MUSIC)
+                            .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+                            .build()
+                    )
+                    p.isLooping = true
+                    p.prepare()
+                    p.setVolume(0.8f, 0.8f)
+                    p.start()
+                    ambientMediaPlayer = p
+                    isAmbientMusicPlaying = true
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            try {
+                ambientMediaPlayer?.let { p ->
+                    if (p.isPlaying) p.stop()
+                    p.release()
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
     LaunchedEffect(messages.size, isSending) {
         if (messages.isNotEmpty()) {
             listState.animateScrollToItem(messages.lastIndex)
@@ -3212,6 +3275,19 @@ fun BookReaderView(
                         color = Color(0xFFD8B4FE),
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold
+                    )
+                }
+
+                IconButton(
+                    onClick = { toggleAmbientMusic() },
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(if (isAmbientMusicPlaying) Color(0xFF3B1233) else Color(0xFF20223D))
+                ) {
+                    Text(
+                        text = if (isAmbientMusicPlaying) "🎵" else "🔇",
+                        fontSize = 16.sp
                     )
                 }
 

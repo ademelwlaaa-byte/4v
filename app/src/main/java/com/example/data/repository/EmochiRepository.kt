@@ -1755,23 +1755,27 @@ Bu son cümle, düşündüğünden daha fazla ağırlık taşıyordu. Yirmi yıl
             }
             12 -> {
                 val c1Text = if (lastUserMsg.contains("2") || lastUserMsg.contains("Tereddütsüz") || lastUserMsg.contains("kabul")) {
-                    """"Tamam," dedin, sesin kendi kulağına bile tereddütsüz çıktı. "Otuz gün. Görelim."
-Steve'in yüzünde gerçek bir memnuniyet belirdi."""
+                    """"Tamam," dedin, sesin kendi kulağına bile tereddütsüz ve kararlı çıktı. "Otuz gün. Görelim bakalım Avengers Tower dedikleri yer ne kadar dayanıklıymış."
+Steve'in yüzünde derin bir memnuniyet ve gerçek bir takdir belirdi. "Aramıza hoş geldin Aiden. Bu karardan pişman olmayacaksın."
+Gözlerinin içine bakarak sözlerini tarttın. On beş yıldır ilk kez bir sözün arkasında durmaya niyetlenen adamlara denk geliyordun."""
                 } else if (lastUserMsg.contains("3") || lastUserMsg.contains("kısa") || lastUserMsg.contains("birkaç gün")) {
-                    """"Otuz gün çok uzun," dedin mesafeli bir tonla. "Birkaç gün diyelim. Sonrasına bakarız."
-Steve anlayışla başını salladı."""
+                    """"Otuz gün çok uzun Steve," dedin mesafeli bir tonla. "On beş yıldır hiçbir yerde otuz saat bile durmadım. Birkaç gün diyelim — üç ya da beş gün. Sonrasına duruma göre bakarız."
+Steve anlayışla başını salladı, seni zorlamadı. "Pekala. Gün gün ilerleyelim. Sınırlarına saygı duyarım. İster üç gün olsun ister otuz, burada olduğun sürece bizim müttefikimizsin."
+Mesafeli tavrını koruyarak başınla onayladın."""
                 } else {
-                    """"Tamam," dedin, sesin kendi kulağına bile biraz garip geldi, bu kadar kolay çıktığı için. "Otuz gün. Ama kendi şartlarımla."
-Steve'in yüzünde hafif, gerçek bir gülümseme belirdi."""
+                    """"Tamam," dedin, sesin kendi kulağına bile garip geldi, bu kadar kolay çıktığı için. "Otuz gün. Ama kendi şartlarımla. İstediğim an kapıdan çıkarım ve kimse önüme geçmeye çalışmaz."
+Steve'in yüzünde hafif, gerçek bir gülümseme belirdi — kutlama değil, sadece memnuniyet. "Anlaştık Blackwood. Biz hapishane işletmiyoruz. Kapı daima açık."
+Steve'in netliği göğsündeki o eski savunma zırhını bir anlığına hafifletti."""
                 }
 
                 c1Text + """
 
-*"İyi. O zaman seni ekiple tanıştıralım, resmi olarak. Ve —"* tabletine baktı, *"— birkaç şey netleştirmemiz gerekiyor. Yeteneklerinin sınırlarını bilmemiz lazım, sadece merak değil, güvenlik için. Antrenman salonunda bir değerlendirme yapabilir miyiz?"*
+Steve tabletini eline aldı, ekranı hafifçe kaydırarak sana baktı.
+*"İyi. O zaman seni ekiple tanıştıralım, resmi olarak. Ve —"* tabletine bakıp devam etti, *"— birkaç şey netleştirmemiz gerekiyor. Yeteneklerinin sınırlarını bilmemiz lazım, sadece merak değil, güvenlik için. Antrenman salonunda bir değerlendirme yapabilir miyiz?"*
 
 İçinde bir şey gerildi otomatik olarak — *değerlendirme*, *test*, bu kelimeler sende hep aynı tepkiyi uyandırırdı, laboratuvarları, dosyaları, seni bir "vaka" olarak gören gözleri hatırlatarak. Ama Steve'in ses tonunda o eski soğukluk yoktu.
 
-*"Kontrollü olacak,"* diye ekledi Steve, senin tereddüdünü fark ederek. *"Sen ne kadar göstermek istersen o kadar. Zorlamıyoruz."*
+*"Kontrollü olacak,"* diye ekledi Steve, senin yüzündeki anlık gerilimi fark ederek. *"Sen ne kadar göstermek istersen o kadar. Kimse seni zorlamayacak."*
 
 ---
 
@@ -1783,12 +1787,17 @@ Steve'in yüzünde hafif, gerçek bir gülümseme belirdi."""
             }
             13 -> {
                 val c2Text = if (lastUserMsg.contains("2") || lastUserMsg.contains("İstekli") || lastUserMsg.contains("merak")) {
-                    """"Görelim," dedin istekli bir ifadeyle. "Kaptan Amerika'nın dövüş stilini merak ediyordum zaten."
-Steve hafifçe sırıttı."""
+                    """"Görelim," dedin, gözlerinde meraklı ve meydan okuyan bir pırıltıyla. "Dürüst olmak gerekirse Kaptan Amerika'nın dövüş stilini ve ekibin kapasitesini canlı izlemeyi merak ediyordum zaten."
+Steve hafifçe sırıttı, meydan okumanı memnuniyetle karşıladı: "Seni hayal kırıklığına uğratmamaya çalışırım Blackwood. Bakalım efsaneler kadar hızlı mısın."
+Birlikte koridordan aşağı, güçlendirilmiş antrenman katına doğru adımladınız."""
                 } else if (lastUserMsg.contains("3") || lastUserMsg.contains("Reddet") || lastUserMsg.contains("sözlü")) {
-                    """"Fiziksel teste gerek yok, teorik anlatırım," dedin. Ancak Steve gülümseyerek antrenman salonuna davet etti."""
+                    """"Fiziksel bir teste gerek yok," dedin kollarını kavuşturarak. "Yeteneklerimi teorik olarak anlatırım, bu güvenlik için yeterli olur."
+Steve hafifçe gülümsedi. "Teori güzeldir ama antrenman salonunda kahve ve ekip var. Sadece bir tur görmek bile şüpheleri siler. Gel, sadece ortamı gör, zorlama yok."
+Steve'in ısrarcı ama dostça davetiyle antrenman salonuna doğru ilerlediniz."""
                 } else {
-                    """"Görelim," dedin sonunda temkinli bir tonda."""
+                    """"Görelim bakalım," dedin, sesindeki zırhı koruyarak. "Ama sınırlarımı ben belirlerim Steve. Dur dediğim an her şey durur."
+Steve başıyla onayladı: "Söz. Kontrol tamamen sende."
+Steve öne düştü ve Kule'nin alt katlarındaki devasa antrenman alanına indiniz."""
                 }
 
                 c2Text + """
@@ -1797,15 +1806,16 @@ Steve hafifçe sırıttı."""
 
 ## ANTRENMAN SALONU
 
-Antrenman salonu, beklediğinden daha büyüktü — güçlendirilmiş duvarlar, enerji emici paneller, tavanda gözlemleyen kameralar, ve bir köşede, hiç kullanılmamış gibi duran bir dizi antika görünümlü silah — muhtemelen Thor'a ait.
+Antrenman salonu, beklediğinden çok daha büyüktü — güçlendirilmiş çelik duvarlar, yüksek enerji emici paneller, tavanda yüksek hızlı tarama kameraları ve köşede Thor'a ait antika görünümlü hedef büstleri.
 
-Steve, Natasha ve şaşırtıcı bir şekilde Wanda da oradaydı, kenarda duruyor, kollarını kavuşturmuş, ilgiyle izliyordu. Bir de, tanımadığın biri daha vardı — uzun boylu, gözlüklü, elinde bir tablet.
+Steve, Natasha ve şaşırtıcı bir şekilde Wanda da oradaydı. Wanda kenarda duruyor, kollarını kavuşturmuş, ilgisi uyanmış bir şekilde izliyordu. Bir de tanımadığın uzun boylu, gözlüklü bir adam vardı — elinde dijital bir biyometrik tablet.
 
-*"Bruce,"* diye tanıttı kendini adam. *"Bruce Banner. Sadece izliyorum."*
+*"Bruce,"* diye tanıttı kendini adam. *"Bruce Banner. Sadece verileri izliyorum, endişelenme."*
 
-*"Basit başlayalım,"* dedi Steve, salonun ortasına doğru yürürken. *"Fiziksel güç, hız, dayanıklılık."*
+Steve salonun ortasına doğru ilerledi, eldivenlerinin kayışlarını sıktı.
+*"Basit başlayalım,"* dedi Steve, sana dönerek. *"Fiziksel güç, hız, refleksler ve dayanıklılık. Benimle. Kaptan Amerika'ya karşı bir tur. Ne kadar ileri gitmek istersen o kadar."*
 
-Steve, kendi eldivenlerini takarken hafifçe gülümsedi. *"Benimle. Kaptan Amerika'ya karşı bir tur."*
+Steve kalkanını koluna takıp dövüş pozisyonu aldı. Bütün ekip ve Bruce Banner gözlerini sana çevirdi.
 
 ---
 
@@ -1817,19 +1827,29 @@ Steve, kendi eldivenlerini takarken hafifçe gülümsedi. *"Benimle. Kaptan Amer
             }
             14 -> {
                 val c3Text = if (lastUserMsg.contains("3") || lastUserMsg.contains("Hiç geri tutma") || lastUserMsg.contains("kazanmaya")) {
-                    """Geri tutmadın. Kırmızı Göz'ünün sarsıcı ivmesiyle Steve'in kalkanını kenara savurdun ve saniyeden kısa sürede hamleni tamamladın. Bruce dehşetle tabletine notlar aldı, Steve ise doğrulurken takdirle başını salladı."""
-                } else if (lastUserMsg.contains("2") || lastUserMsg.contains("zorla")) {
-                    """Biraz daha zorladın, reflekslerini ve hızını tam sınıra çıkardın. Steve kalkanıyla darbeni güçlükle göğüsledi. Natasha kenardan hafifçe ıslık çaldı."""
-                } else {
-                    """Kavga beklediğinden farklı geçti. Steve hızlıydı ama sen çok daha hızlıydın, bunu ona acı vermeden gösterdin. Steve'in kalkanı bir keresinde seni tam isabetle yakaladı, ama iyileşme anında başladı.
+                    """Geri tutmadın. Kırmızı Göz'ünün sarsıcı ivmesi gözlerinde alevlendi! Salondaki hava basıncı aniden düştü, zemin titredi. Saniyeden kısa bir sürede mavi ve kırmızı bir kuantum çizgisi halinde Steve'in üzerine atıldın. Steve kalkanını kaldırmaya fırsat bulamadan kalkanın kenarına indirdiğin kinetik şok dalgası kalkanı yana savurdu ve elini Steve'in boğazının bir santim önünde durdurdun!
 
-*"Ciddi yaralar dakikalar sürer,"* dedin. *"Ölümcül olmayan her şey saniyeler."*
-Natasha'dan kısa, gerçek bir kahkaha çıktı."""
+Salonda derin bir sessizlik oldu. Bruce Banner dehşetle ve hayranlıkla tabletine notlar aldı. Steve yutkunarak doğruldu ve takdirle gülümsedi: "Muazzam bir ivme... Hızın kalkanımdan bile önce ulaşıyor. Kazandın Blackwood."
+Natasha etkilenmiş bir şekilde mırıldandı: "Sadece hızlı değil, dövüş geometrisini anında yok ediyor.""""
+                } else if (lastUserMsg.contains("2") || lastUserMsg.contains("zorla")) {
+                    """Gözlerinde Kırmızı Göz'ün hafif ivmesi parıldadı. Hızını ve reflekslerini tam sınıra çıkardın! Steve'in kalkan hamlesini saniyenin onda birinde savuşturup arkasına geçtin ve sırtına kontrollü ama güçlü bir darbe indirdin. Steve kalkanını son anda arkasına çevirip darbeni güçlükle göğüsledi, ayakları güçlendirilmiş zeminde iki metre geriye kaydı.
+
+Steve derin bir nefes alıp gülümsedi: "İşte bu gerçek bir refleks testi. Savunmamı bu kadar zorlayan az insan gördüm."
+Natasha gözlerini kısarak mırıldandı: "Mükemmel bir zamanlama ve fiziksel kontrol."
+Bruce Banner tabletindeki grafiklere bakarak şaşkınlıkla notlar aldı."""
+                } else {
+                    """Geri tuttun. Steve hamle yaptı — kalkanı havayı yararak sana doğru savruldu. Ama senin için zaman adeta yavaşladı. Işınlanmaya bile gerek duymadan, sadece vücut reflekslerinle kalkanın altından süzüldün. Steve'in hamlesi boşa çıktı. İkinci hamlesinde kalkanın kenarı omzuna sertçe çarptı, ama bir saniye içinde yaralanan dokularının mavi kıvılcımlarla kendi kendini onardığını herkes gördü.
+
+*"Ciddi yaralar dakikalar sürer,"* dedin sakince. *"Ölümcül olmayan her şey saniyeler içinde kapanır."*
+Natasha kenardan hafif, takdir dolu bir ıslık çaldı. Steve ise kalkanını indirip doğruldu: "Hızın ve hücresel iyileşmen inanılmaz. Kendini harika kontrol ediyorsun.""""
                 }
 
                 c3Text + """
 
-Steve devam etti. *"Enerji tarafı. Sadece görmek için — küçük ölçekte, güvenlik protokolleriyle."* Duvardaki panellere işaret etti. *"Bu paneller enerji emiyor, seni ya da odayı riske atmadan gücünü ölçebiliriz."*
+Steve terini silip salondaki güçlendirilmiş enerji panellerine doğru yürüdü.
+*"Fiziksel kapasiteni gördük,"* dedi Steve, panelleri göstererek. *"Şimdi sıra enerji tarafında. Sadece görmek için — küçük ölçekte, güvenlik protokolleriyle. Bu paneller yüksek wattlı enerjiyi emebiliyor. Seni ya da odayı riske atmadan kozmik güç çıktını ölçebiliriz."*
+
+Stark'ın sesi interkomdan duyuldu: *"Banner ekranları açtı. Göster bakalım elimizde ne var Kozmik Gezgin."*
 
 ---
 
@@ -1841,13 +1861,22 @@ Steve devam etti. *"Enerji tarafı. Sadece görmek için — küçük ölçekte,
             }
             15 -> {
                 val c4Text = if (lastUserMsg.contains("2") || lastUserMsg.contains("Minimum")) {
-                    """Elini kaldırdın ve panellere sadece minik bir mavi kıvılcım dalgası fırlattın. *"Fazlasına gerek yok,"* dedin gizemini koruyarak."""
-                } else if (lastUserMsg.contains("3") || lastUserMsg.contains("tam kapasite")) {
-                    """Elini kaldırdın ve panelleri sarsan devasa bir enerji patlaması gönderdin! Paneller alarm verdi, Stark'ın tabletinde sayılar tavan yaptı. *"Muazzam bir çıktı!"* diye bağırdı Stark."""
-                } else {
-                    """Elini kaldırdın, ve bu sefer sadece bir ışık küresi değil, gerçek bir enerji dalgası gönderdin. Panel titredi, gösterge ekranındaki rakamlar hızla yükseldi.
+                    """Elini kaldırdın ve panellere sadece parmak ucundan minik, zararsız bir mavi kıvılcım dalgası fırlattın. Paneldeki ibre hafifçe kıpırdadı.
 
-*"Bu daha düşük seviyem,"* dedin sakin bir şekilde. Wanda ekrana bakarak *"Bu ölçüm bina seviyesinden fazla gösteriyor,"* dedi. Bruce, *"Enerji imzan tanıdık geliyor, kendi kategorin gibi,"* diye ekledi."""
+*"Fazlasına gerek yok,"* dedin ellerini cebine sokarak. *"Gücümü şov malzemesi yapmayı sevmem."*
+Stark interkomdan mırıldandı: "Cimri çıktı bizimki... Ama o kadarlık kıvılcımda bile frekans yoğunluğu korkutucu. Biyometrik imzan benzersiz."
+Steve gizemini korumana saygı duyarak başını salladı."""
+                } else if (lastUserMsg.contains("3") || lastUserMsg.contains("tam kapasite")) {
+                    """Elini kaldırdın ve gözlerin Kırmızı Göz'ün aleviyle parladı! Panellere doğru devasa bir kozmik enerji patlaması gönderdin! Bütün antrenman salonu sarsıldı, duvar panelleri kırmızı alarmlarla öttü, Stark'ın tabletindeki ölçüm grafikleri tavan yaptı!
+
+Stark heyecanla bağırdı: "Muazzam bir çıktı! Bu çocuk adeta yürüyen bir reaktör! Sayılar büyüleyici!"
+Wanda etkilenmiş bir şekilde geri çekildi, Bruce Banner ise şaşkınlıkla gözlüklerini düzeltti."""
+                } else {
+                    """Elini kaldırdın, ve bu sefer sadece bir ışık küresi değil, odaklanmış gerçek bir enerji dalgası fırlattın. Panel titredi, üzerindeki mavi gösterge çizgileri hızla yükseldi ve sistem fanları yüksek devirde çalışmaya başladı.
+
+*"Bu daha orta seviyem,"* dedin sakince.
+Wanda ekrana bakarak *"Bu ölçüm bina seviyesinden fazla bir potansiyel gösteriyor,"* dedi.
+Bruce Banner ise *"Enerji imzan bilinen tüm kategorilerin ötesinde, tamamen kendine has,"* diye ekledi."""
                 }
 
                 c4Text + """
@@ -1856,9 +1885,13 @@ Steve devam etti. *"Enerji tarafı. Sadece görmek için — küçük ölçekte,
 
 ## ARADA BİR MOLA
 
-Değerlendirme bittikten sonra, Natasha yanına geldi. *"İyiydin,"* dedi. *"Steve'i yenmedin ama yenebilirdin. Güç, ne zaman kullanılmayacağını bilmekle anlamlı hale gelir."*
+Antrenman bittikten sonra ekip üstünü değiştirdi. Natasha yanına geldi: *"İyi iş çıkardın Blackwood. Güç, ne zaman ve ne kadar kullanılacağını bilmekle anlamlı hale gelir."*
 
-Öğlen yemeğinde, ortak kafeteryada Sam Wilson senin hakkında iki şaka yaptı, ikisi de zararsızdı.
+Öğleyin Kule'nin ortak kafeteryasında büyük masaya oturdunuz. Sam Wilson (Falcon) elinde tepsisiyle masaya geldi. Seni süzüp genişçe gülümsedi.
+
+*"Demek Kule'nin yeni efsanesi sensin,"* dedi Sam. *"Steve seni antrenmanda öve öve bitiremedi. 'Işık hızında ve kalkanımı zorlayabiliyor' diyor. Umarım mutfaktaki kahve makinesini ışınlayıp ortadan kaybetmezsin!"*
+
+Masadaki herkes —Steve, Natasha, Wanda, Bruce— hafifçe güldü ve hepsi senin vereceğin tepkiyi bekledi.
 
 ---
 
@@ -1870,24 +1903,28 @@ Değerlendirme bittikten sonra, Natasha yanına geldi. *"İyiydin,"* dedi. *"Ste
             }
             16 -> {
                 val c5Text = if (lastUserMsg.contains("3") || lastUserMsg.contains("ciddiye") || lastUserMsg.contains("savunma")) {
-                    """Şakayı ciddiye alıp soğuk bir bakış attın. Masada bir anlık sessizlik oldu ama Sam gülerek ortamı yumuşattı."""
+                    """"Cihazlarla ya da şakalarla ilgilenmiyorum Wilson," dedin soğuk ve ciddi bir tonda.
+Masada anlık bir sessizlik oldu. Sam ellerini kaldırıp gülümsedi: "Pekala dostum, sadece havayı yumuşatmaya çalışıyordum. Sorun yok." Steve araya girerek ortamı dengelendi."""
                 } else if (lastUserMsg.contains("2") || lastUserMsg.contains("Sessiz")) {
-                    """Sessiz kalıp sadece hafifçe gülümsedin. Mesafeli duruşun masadakilerce saygıyla karşılandı."""
+                    """Sessiz kaldın, ama dudaklarında hafif, mesafeli bir gülümseme belirdi. Tepkisizliğin ve sakinliğin Sam'in şakasını tatlı bir saygı havasına dönüştürdü.
+Sam sandalyesini çekip oturdu: "Sessiz tipleri severim. Saygılar dostum." Ekip yemeğe neşeyle devam etti."""
                 } else {
-                    """Sen —beklemediğin bir şekilde— birine karşılık verdin, kuru bir tonda, ve masa kahkahaya boğuldu. Bir masada oturmak yıllardır tatmadığın bir histi."""
+                    """"Kahveyi değil ama seni Kule'nin çatısına ışınlayabilirim Wilson," dedin kuru ve ciddi bir tonda.
+Masa bir anda kahkahaya boğuldu! Sam elini kalbine koyup taklit yaptı: "Tamam, tamam, geri çekiliyorum! Adam tehlikeli çıktı!" Yıllar sonra ilk kez bir masada gülmenin ve kabul görmenin tadını çıkardın."""
                 }
 
                 c5Text + """
 
 ---
 
-## ALARM
+## ALARM & S.H.I.E.L.D. TEHDİDİ
 
-Öğleden sonra, Tower'da alarmlar çaldı. Stark'ın sesi interkomdan geldi: *"Millet, S.H.I.E.L.D.'den bir ekip Tower'ın dışında ışınlanma imzanı takip ediyor."*
+Öğleden sonra Kule'nin kırmızı acil durum alarmları aniden çalmaya başladı! Kırmızı ışıklar koridorlarda dönerken Stark'ın sesi interkomdan panikle yükseldi:
+*"Millet! S.H.I.E.L.D.'den General Ross destekli ağır bir operasyon ekibi Kule'nin alt kapısında! Işınlanma enerjini ve kozmik imzanı takip etmişler. Seni teslim almadan gitmeyeceklerini söylüyorlar!"*
 
-İçinde bir şey sıkıştı — *bulundun, koş* refleksi. Parmak uçlarında mavi kıvılcımlar belirdi.
-Steve, *"Kaçmana gerek yok, bu bizim sorunumuz,"* dedi.
-Natasha sert bir netlikle ekledi: *"Kaçarsan haklı olduklarını kanıtlarsın. Kal."*
+İçinde 20 yıllık kaçış mekanizması anında tetiklendi — *bulundun, hemen kaç!* Parmak uçlarında mavi kıvılcımlar çatırdamaya başladı.
+Steve hızla önüne geçti, ellerini kaldırdı: *"Kaçmana gerek yok Blackwood! Sen bu Kule'nin çatısı altındasın. Bu artık bizim sorunumuz!"*
+Natasha gözlerinin içine bakarak sertçe ekledi: *"Şimdi kaçarsan suçlu olduğunu kabul etmiş olursun. Kal ve arkamızda dur!"*
 
 ---
 
@@ -1903,31 +1940,29 @@ Natasha sert bir netlikle ekledi: *"Kaçarsan haklı olduklarını kanıtlarsın
                 val isBigEscape = c6Choice.contains("3") || c6Choice.contains("uzağa") || c6Choice.contains("Büyük")
 
                 val outcomeText = if (isBigEscape) {
-                    """Onları dinlemedin. Yirmi yıllık alışkanlık kelimelerden daha hızlı hareket etti.
-Mavi ışık seni sardı ve kendini bambaşka bir şehrin karanlık, ıslak sokağında buldun. Geriye baktın, Tower çoktan kıtalar ötesindeydi.
+                    """Onları dinlemedin. Yirmi yıllık alışkanlık ve korku bedenini sardı. Mavi kuantum ışığı seni kapladı ve kendini yüzlerce mil ötede, ıslak ve karanlık bir liman şehrinin terk edilmiş deposunda buldun. Geriye baktın, Avengers Tower çoktan kıtalar ötesinde bir anıya dönüşmüştü.
 
 ---
 
 ÜÇ GÜN SONRA
 
-Üç gün geçti. Tanımadığın şehirlerde, yarı yıkık binalarda yalnız kaldın. Dördüncü gece terk edilmiş bir depoda otururken ozon kokusu yayıldı. Thor geldi!
+Üç gün geçti. Tanımadığın soğuk şehirlerde, yarı yıkık binalarda yalnız kaldın. Eski kaçış günlerine dönmüştün ama bu sefer içindeki boşluk her zamankinden daha büyüktü.
 
-*"Seni bulmak zor oldu,"* dedi Thor. *"Steve kırıldı, Wanda ise senin geri döneceğine inandı. Önemli olan kaçtıktan sonra geri dönüp dönmediğin."*
+Dördüncü gece terk edilmiş depoda otururken havada yoğun bir ozon ve şimşek kokusu yayıldı. Altın bir şimşek çaktı ve THOR belirdi!
 
-Thor'la birlikte Tower'a geri döndün. Steve seni mesafeli karşıladı. Akşam olduğunda çatıya çıktın."""
+*"Seni bulmak zor olmadı gezgin,"* dedi Thor, bir tahta kasanın üzerine oturup matarasını uzatarak. *"Steve kırıldı ama seni anladı. Wanda ise senin geri döneceğine hep inandı. Kaçmak korkunun eseri olabilir Blackwood, ama yüzleşmek için geri dönmek kahramanların işidir. Kule'de seni bekliyorlar."*
+
+Thor ile birlikte Avengers Tower'a geri döndün. Steve seni kapıda karşılayıp omzuna dokundu: "Tekrar hoş geldin. Yolu bulmuş olman önemli." Akşam olduğunda çatıya çıktın."""
                 } else if (isShortEscape) {
-                    """Natasha'nın sözleri kulağına ulaştı ama yirmi yıllık refleks daha hızlı hareket etti. Mavi ışıkla Tower'ın çatısına ışınlandın!
+                    """Natasha'nın sözleri kulağına ulaştı ama yirmi yıllık refleksin kelimelerden hızlı hareket etti! Bir mavi ışık patlamasıyla Kule'nin en üst heliped çatısına ışınlandın!
 
-Aşağıda S.H.I.E.L.D. araçlarını izledin. İki dakika sonra Steve'in ekibi ikna ettiğini gördün. Utanç ve kararlılıkla adımlayarak aşağı indin.
+Aşağıdaki S.H.I.E.L.D. zırhlı araçlarını izledin. İki dakika sonra Steve'in ekibi ikna edip ajanları geri gönderdiğini gördün. Yanlış yaptığını anlayıp kararlılıkla aşağı indin.
 
-Wanda seni görünce gülümsedi: *"Geri döndün. Bu da bir seçim."*
-Akşam olduğunda çatıya çıktın."""
+Steve seni gördü, gülümsedi. Wanda ise tutkuyla baktı: *"Kaçmak senin refleksindi Aiden, ama geri dönmek senin seçimin. Doğru olanı yaptın."* Akşam olduğunda çatıya çıktın."""
                 } else {
-                    """Bir çelişki içindeydin — ama bu sefer farklı bir şey denemeye karar verdin. Elindeki mavi kıvılcımı söndürdün. Kaldın.
+                    """Işınlanmadın. Elindeki mavi kıvılcımları yavaşça söndürdün. Yirmi yıllık kaçış refleksini ilk kez bastırdın ve Kule'de kaldın.
 
-Steve ve Natasha aşağı inip S.H.I.E.L.D. ekibini geri çevirdi. Wanda ile pencereden izlediniz. Wanda, *"Bazen kalmak kaçmaktan daha cesurca,"* dedi.
-
-Akşam olduğunda çatıya çıktın."""
+Steve ve Natasha aşağı inip S.H.I.E.L.D. General Ross ve ekibini Avengers yetkisiyle geri çevirdi. Sen ve Wanda yüksek cam pencereden onları izlediniz. Wanda yanına gelip fısıldadı: *"Bazen kalmak, kaçmaktan çok daha büyük bir cesaret gerektirir. Doğru olanı yaptın Aiden."* Akşam olduğunda çatıya çıktın."""
                 }
 
                 outcomeText + """
@@ -1936,31 +1971,38 @@ Akşam olduğunda çatıya çıktın."""
 
 ## RECONVERGENCE — Çatı Sahnesi
 
-New York'un gece manzarası seni tuhaf bir şekilde sakinleştiriyordu. Natasha seni orada buldu, kenara oturdu.
+Gece New York'un üzerine çöktü. Bütün şehir binlerce ışıkla ışıldıyordu.
+Kule'nin heliped çatısına çıktın. Soğuk gece rüzgarı yüzüne vuruyordu.
+Natasha gölgelerin arasından süzülüp yanındaki demirliklere yaslandı.
+
+*"Kule'de ilk gecen,"* dedi Natasha, şehri izleyerek. *"New York ayaklarının altında... Nasıl hissediyorsun Aiden? Kalmak seni korkutuyor mu, yoksa alışıyor musun?"*
 
 ---
 
 🔀 Çatıda Natasha seni bulduğunda ona karşı dürüstlüğün ne seviyede olacak?
 
 1️⃣ Tam dürüst cevap ver. ("Korkutucu... Kalmak, kaybedecek bir şey biriktirmek demek.")
-2️⃣ Yarım dürüst — şakayla hafiflet. ("Manzara güzel Romanoff.")
-3️⃣ Kapan, yüzeysel cevap ver. ("Sadece hava alıyordum.")"""
+2️⃣ Yarım dürüst — şakayla hafiflet. ("Manzara güzel Romanoff, kaçmıyorum.")
+3️⃣ Kapan, yüzeysel cevap ver. ("Sadece hava alıyordum, sorun yok.")"""
             }
             18 -> {
                 val c7Text = if (lastUserMsg.contains("3") || lastUserMsg.contains("Kapan")) {
-                    """"Sadece hava alıyordum Romanoff," dedin mesafeli bir tonda. Natasha başını salladı, zorlamadı."""
+                    """"Sadece hava alıyordum Romanoff. Endişelenecek bir şey yok," dedin mesafeli ve soğuk bir tonda.
+Natasha başını salladı, zorlamadı: "Pekala. Sınırlarına saygı duyarım. Ama burada yalnız olmadığını unutma.""""
                 } else if (lastUserMsg.contains("2") || lastUserMsg.contains("Yarım")) {
-                    """"Manzara güzel Romanoff, kaçmıyorum," dedin hafif bir gülümsemeyle."""
+                    """"Manzara güzel Romanoff. Endişelenme, bu sefer kaçmıyorum," dedin hafif bir tebessümle.
+Natasha hafifçe gülümsedi: "Seni takip etmiyordum zaten. Sadece çatı havası iyi gelir. Otuz günün var, bu hissin tadını çıkar.""""
                 } else {
-                    """"Korkutucu," dedin dürüstçe. "Kaçmak kolaydır. Ama kalmak... kaybedecek bir şey biriktirmek demek."
-Natasha *"Ben de Kızıl Oda'dan sonra bunu öğrendim. Bağlar güç olabilir,"* dedi."""
+                    """"Korkutucu," dedin dürüstçe. "Kaçmak kolaydır. Ama kalmak... bir yerlere kök salmak... kaybedecek bir şey biriktirmek demek."
+Natasha New York ışıklarına bakarak devam etti: "Ben de Kızıl Oda'dan ayrıldıktan sonra tam olarak bunu hissettim. Kaybedecek şeylerin olması seni zayıflatmaz Blackwood. Onlar seni korumak için savaşacağın nedenlere dönüştürür.""""
                 }
 
                 c7Text + """
 
 *"Otuz günün var,"* dedi Natasha ayağa kalkarken. *"Gör bakalım neye benziyor kalmak. İyi geceler Blackwood."*
 
-O gittikten sonra çatıda tek başına kaldın. Cebinden ailenden kalma tek şeyi, gümüş kolye ucunu çıkardın.
+Natasha ayağa kalkıp içeri girdi. Çatıda yalnız kaldın.
+Cebinden gümüş kolye ucunu çıkardın — yirmi yıl önceki patlamadan ailesinden kalan tek hatıra. Ay ışığı kolyenin üzerinde parıldadı.
 
 ---
 
@@ -1972,15 +2014,15 @@ O gittikten sonra çatıda tek başına kaldın. Cebinden ailenden kalma tek şe
             }
             19 -> {
                 val c8Text = if (lastUserMsg.contains("2") || lastUserMsg.contains("cebine") || lastUserMsg.contains("bastır")) {
-                    """Kolyeyi hızla cebine geri koydun ve duygusal düşünceleri bastırdın. Soğukkanlı zırhını korumaya karar verdin.
+                    """Kolyeyi hızla cebine geri koydun ve duygusal zayıflığa geçit vermedin. Soğukkanlı zırhını koruyarak Kule'ye ve yeni odana doğru adım attın.
 
 ---
 
 📖 BÖLÜM 3 SONU — DENEME SÜRESİ
 
-Aiden Blackwood 30 günlük deneme süresine adım attı, duygularını kontrol altında tutarak geceyi tamamladı."""
+Aiden Blackwood 30 günlük deneme süresine adım attı, duygularını ve gardını kontrol altında tutarak geceyi tamamladı."""
                 } else if (lastUserMsg.contains("3") || lastUserMsg.contains("flashback") || lastUserMsg.contains("bak")) {
-                    """Kolyeye bakarken 20 yıl önceki çocukluk evin ve patlama anı gözlerinin önünden geçti. Geçmişin yüküyle kulede yeni bir sayfa açtın.
+                    """Kolyeye bakarken 20 yıl önceki çocukluk evin ve alevlerin arasındaki o patlama anı gözlerinin önünden geçti. Geçmişin acısını kabullenerek Avengers Kulesi'nde yeni bir sayfa açtın.
 
 ---
 
@@ -1988,7 +2030,7 @@ Aiden Blackwood 30 günlük deneme süresine adım attı, duygularını kontrol 
 
 Aiden Blackwood geçmişinin anılarıyla yüzleşti ve Avengers Kulesi'nde 30 günlük deneme süresine adım attı."""
                 } else {
-                    """Belki, dedin kendine, belki bu sefer bir şeyleri kaybetmeden tutabilirsin.
+                    """Kolyeyi avucunda sıktın. Yıllardır ilk kez içindeki o karanlık şüphe yerini umuda bıraktı. Belki de bu sefer bir şeyleri kaybetmeden tutabilirdin. Geceye gülümseyerek Kule'ye adım attın.
 
 ---
 
