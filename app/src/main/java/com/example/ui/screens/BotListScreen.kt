@@ -3556,6 +3556,24 @@ Bu yüzden her içgüdünün sana "ışınlan ve git buradan" diye bağırmasın
         botList.any { it.id == "preset_aiden_mcu_cosmic" }
     }
 
+    var showChapterModal by remember { mutableStateOf(false) }
+
+    if (showChapterModal) {
+        ChapterSelectionModal(
+            botId = "preset_aiden_mcu_cosmic",
+            bookTitle = if (isEnglish) "Cosmic Drift | MCU Universe" else "Kozmik Sürükleniş | MCU Evreni",
+            userSettings = userSettings,
+            onDismiss = { showChapterModal = false },
+            onSelectChapter = { _, _ ->
+                showChapterModal = false
+                if (!isBookExisting) {
+                    onImportPresetBot(presetMcuBook)
+                }
+                onOpenBot("preset_aiden_mcu_cosmic")
+            }
+        )
+    }
+
     val myBooks = remember(botList) {
         botList.filter {
             (it.mode == "book" ||
@@ -3673,10 +3691,14 @@ Bu yüzden her içgüdünün sana "ışınlan ve git buradan" diye bağırmasın
                     ) {
                         Button(
                             onClick = {
-                                if (!isBookExisting) {
+                                val progress = ChapterProgressManager.getUnlockedChapter(context, "preset_aiden_mcu_cosmic")
+                                if (progress == 0 && !isBookExisting) {
+                                    ChapterProgressManager.saveUnlockedChapter(context, "preset_aiden_mcu_cosmic", 1)
                                     onImportPresetBot(presetMcuBook)
+                                    onOpenBot("preset_aiden_mcu_cosmic")
+                                } else {
+                                    showChapterModal = true
                                 }
-                                onOpenBot("preset_aiden_mcu_cosmic")
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = EmochiPrimary),
                             shape = RoundedCornerShape(14.dp),
@@ -3887,6 +3909,286 @@ Bu yüzden her içgüdünün sana "ışınlan ve git buradan" diye bağırmasın
                             fontWeight = FontWeight.SemiBold
                         )
                     }
+                }
+            }
+        }
+    }
+}
+
+object ChapterProgressManager {
+    private const val PREFS_NAME = "emochi_book_progress"
+
+    fun getUnlockedChapter(context: android.content.Context, botId: String): Int {
+        val prefs = context.getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE)
+        return prefs.getInt("progress_$botId", 0)
+    }
+
+    fun saveUnlockedChapter(context: android.content.Context, botId: String, chapterNumber: Int) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE)
+        val current = prefs.getInt("progress_$botId", 0)
+        if (chapterNumber > current) {
+            prefs.edit().putInt("progress_$botId", chapterNumber).apply()
+        }
+    }
+}
+
+private data class BookChapterInfo(
+    val index: Int,
+    val openTitle: String,
+    val openDesc: String,
+    val startMsg: String?
+)
+
+@Composable
+fun ChapterSelectionModal(
+    botId: String,
+    bookTitle: String,
+    userSettings: com.example.data.local.UserSettingsEntity?,
+    onDismiss: () -> Unit,
+    onSelectChapter: (chapterIndex: Int, chapterStartMsg: String?) -> Unit
+) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val isEnglish = userSettings?.appLanguage == "en"
+    val progress = remember { ChapterProgressManager.getUnlockedChapter(context, botId) }
+
+    val chapters = listOf(
+        BookChapterInfo(
+            index = 1,
+            openTitle = if (isEnglish) "Chapter 1: Cosmic Drift" else "Bölüm 1: Kozmik Sürükleniş",
+            openDesc = if (isEnglish) "Disappearance at age 5 in blue light, S.H.I.E.L.D. pursuit, and meeting the Avengers in New York." else "Beş yaşında mavi ışıkla kayboluş, S.H.I.E.L.D. takibi ve New York'ta Avengers ile temas.",
+            startMsg = null
+        ),
+        BookChapterInfo(
+            index = 2,
+            openTitle = if (isEnglish) "Chapter 2: The Terms" else "Bölüm 2: Şartlar",
+            openDesc = if (isEnglish) "Bargaining with Tony Stark and Steve Rogers at Avengers Tower, terms, and choosing sides." else "Avengers Kulesi'nde Tony Stark ve Steve Rogers ile pazarlık, şartlar ve taraf seçimi.",
+            startMsg = "Bölüm 2: Şartlar'a başla"
+        ),
+        BookChapterInfo(
+            index = 3,
+            openTitle = if (isEnglish) "Chapter 3: Probation" else "Bölüm 3: Deneme Süresi",
+            openDesc = if (isEnglish) "Field mission, trust tests, and trial under fire." else "Saha görevi, güven testleri ve ilk büyük tehlike ateşi.",
+            startMsg = "Bölüm 3: Deneme Süresi'ne başla"
+        ),
+        BookChapterInfo(
+            index = 4,
+            openTitle = if (isEnglish) "Chapter 4: Coming Soon" else "Bölüm 4: Yakında",
+            openDesc = if (isEnglish) "Under development. Coming soon!" else "Yapım aşamasında. Çok yakında yayınlanacak!",
+            startMsg = null
+        )
+    )
+
+    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
+        androidx.compose.material3.Surface(
+            shape = RoundedCornerShape(24.dp),
+            color = Color(0xFF0F0B21),
+            border = BorderStroke(1.5.dp, Brush.linearGradient(listOf(Color(0xFFC084FC), Color(0xFF6366F1)))),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 12.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(18.dp)
+            ) {
+                // Header with title and close button
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = if (isEnglish) "📖 Chapter Selection" else "📖 Bölüm Sayfası",
+                            color = Color.White,
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = bookTitle,
+                            color = Color(0xFFA78BFA),
+                            fontSize = 12.5.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+
+                    IconButton(
+                        onClick = onDismiss,
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFF261845))
+                            .border(1.dp, Color(0x60A78BFA), CircleShape)
+                    ) {
+                        Icon(
+                            imageVector = androidx.compose.material.icons.Icons.Default.Close,
+                            contentDescription = "Kapat",
+                            tint = Color.White,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Progress Banner
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color(0xFF1E153A))
+                        .border(1.dp, Color(0x40A78BFA), RoundedCornerShape(12.dp))
+                        .padding(horizontal = 12.dp, vertical = 10.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("✨", fontSize = 15.sp)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = if (progress >= 3) "Mevcut İlerleme: Bölüm 3 Tamamlandı 🎉"
+                            else if (progress >= 2) "Mevcut İlerleme: Bölüm 2 Tamamlandı (Bölüm 3 Açık)"
+                            else if (progress >= 1) "Mevcut İlerleme: Bölüm 1 Tamamlandı (Bölüm 2 Açık)"
+                            else "Mevcut İlerleme: Henüz Başlanmadı (Bölüm 1 Açık)",
+                            color = Color(0xFFE9D5FF),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // List of Chapters
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    chapters.forEach { item ->
+                        val isUnlocked = item.index <= (progress + 1) && item.index <= 3
+                        val isCompleted = item.index <= progress
+                        val isCurrent = (progress + 1) == item.index || (progress >= 3 && item.index == 3)
+
+                        val displayTitle = if (isUnlocked) item.openTitle else "Bölüm ${item.index}: 🔒 Kilitli Bölüm"
+                        val displayDesc = if (isUnlocked) item.openDesc else "🔒 Bu bölümün adı ve detayları kilitlidir. Açmak için önceki bölümü tamamlayın."
+
+                        Card(
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (isCurrent) Color(0xFF1F123C) else if (isUnlocked) Color(0xFF150F2E) else Color(0xFF0C091A)
+                            ),
+                            shape = RoundedCornerShape(16.dp),
+                            border = BorderStroke(
+                                1.dp,
+                                if (isCurrent) Color(0xFFC084FC) else if (isUnlocked) Color(0x60A78BFA) else Color(0x2064748B)
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    if (item.index == 4) {
+                                        android.widget.Toast.makeText(context, "🔒 Bölüm 4 yapım aşamasındadır. Çok yakında yayınlanacak!", android.widget.Toast.LENGTH_LONG).show()
+                                    } else if (isUnlocked) {
+                                        onSelectChapter(item.index, item.startMsg)
+                                    } else {
+                                        android.widget.Toast.makeText(context, "🔒 Bu bölüm kilitlidir. Açmak için lütfen önceki bölümü tamamlayın!", android.widget.Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                // Badge
+                                Box(
+                                    modifier = Modifier
+                                        .size(38.dp)
+                                        .clip(CircleShape)
+                                        .background(
+                                            if (isCompleted) Color(0xFF10B981)
+                                            else if (isUnlocked) Color(0xFF8B5CF6)
+                                            else Color(0xFF1E293B)
+                                        ),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (!isUnlocked) {
+                                        Icon(Icons.Default.Lock, contentDescription = "Kilitli", tint = Color(0xFF94A3B8), modifier = Modifier.size(18.dp))
+                                    } else if (isCompleted) {
+                                        Icon(Icons.Default.Star, contentDescription = "Tamamlandı", tint = Color.White, modifier = Modifier.size(20.dp))
+                                    } else {
+                                        Text(
+                                            text = "${item.index}",
+                                            color = Color.White,
+                                            fontWeight = FontWeight.Black,
+                                            fontSize = 15.sp
+                                        )
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.width(10.dp))
+
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text(
+                                            text = displayTitle,
+                                            color = if (isUnlocked) Color.White else Color(0xFF94A3B8),
+                                            fontSize = 13.5.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.weight(1f, fill = false)
+                                        )
+
+                                        if (isCurrent && isUnlocked) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .padding(start = 6.dp)
+                                                    .clip(RoundedCornerShape(6.dp))
+                                                    .background(Color(0xFF8B5CF6))
+                                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                                            ) {
+                                                Text("ŞU ANKİ", color = Color.White, fontSize = 8.5.sp, fontWeight = FontWeight.Black)
+                                            }
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(3.dp))
+
+                                    Text(
+                                        text = displayDesc,
+                                        color = if (isUnlocked) Color(0xFFCBD5E1) else Color(0xFF64748B),
+                                        fontSize = 11.sp,
+                                        lineHeight = 14.5.sp
+                                    )
+                                }
+
+                                Spacer(modifier = Modifier.width(6.dp))
+
+                                Icon(
+                                    imageVector = if (isUnlocked) Icons.Default.ChevronRight else Icons.Default.Lock,
+                                    contentDescription = null,
+                                    tint = if (isUnlocked) Color(0xFFA78BFA) else Color(0xFF475569),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                Button(
+                    onClick = onDismiss,
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF261845)),
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(44.dp)
+                ) {
+                    Text(if (isEnglish) "Close" else "Kapat", color = Color(0xFFE9D5FF), fontWeight = FontWeight.Bold, fontSize = 13.5.sp)
                 }
             }
         }

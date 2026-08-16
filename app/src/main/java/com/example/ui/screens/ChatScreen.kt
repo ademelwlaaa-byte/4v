@@ -243,6 +243,7 @@ fun ChatScreen(
     var editingMessageId by remember { mutableStateOf<String?>(null) }
     var editingText by remember { mutableStateOf("") }
     var expandedMenuMessageId by remember { mutableStateOf<String?>(null) }
+    var isStatsExpanded by remember { mutableStateOf(false) }
 
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
@@ -406,277 +407,269 @@ fun ChatScreen(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(
-                            Brush.verticalGradient(
-                                listOf(Color(0xD0070512), Color(0x50070512))
-                            )
-                        )
+                        .background(Color(0xEA070512))
                         .statusBarsPadding()
                 ) {
-                // Top bar Header matching screenshot
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    // Back button
                     Box(
                         modifier = Modifier
-                            .size(40.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(Color(0xFF130F26))
-                            .border(1.dp, Color(0x508B5CF6), RoundedCornerShape(12.dp))
-                            .clickable { onBack() },
-                        contentAlignment = Alignment.Center
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 6.dp)
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.ArrowBack,
-                            contentDescription = "Geri",
-                            tint = Color.White,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-
-                    // Center Stack (Avatar + Bot Name + Emotion Badge)
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier
-                            .clickable { showQuickProfile = true }
-                            .padding(horizontal = 8.dp)
-                    ) {
+                        // Back button (Left)
                         Box(
-                            contentAlignment = Alignment.BottomEnd,
-                            modifier = Modifier.size(54.dp)
+                            modifier = Modifier
+                                .size(38.dp)
+                                .align(Alignment.CenterStart)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(Color(0x90130F26))
+                                .border(1.dp, Color(0x508B5CF6), RoundedCornerShape(12.dp))
+                                .clickable { onBack() },
+                            contentAlignment = Alignment.Center
                         ) {
-                            // Pulsing Outer Aura Ring
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .clip(CircleShape)
-                                    .background(Color(0x30A855F7).copy(alpha = pulseGlowAlpha * 0.5f))
+                            Icon(
+                                imageVector = Icons.Default.ArrowBack,
+                                contentDescription = "Geri",
+                                tint = Color.White,
+                                modifier = Modifier.size(19.dp)
                             )
+                        }
 
-                            // Avatar with animated gradient border
+                        // Truly Centered Stack (Avatar + Bot Name + Mood Emoji)
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center,
+                            modifier = Modifier
+                                .align(Alignment.Center)
+                                .then(
+                                    if (bot.mode == "personal") {
+                                        Modifier.clickable { isStatsExpanded = !isStatsExpanded }
+                                    } else Modifier
+                                )
+                                .padding(horizontal = 50.dp)
+                        ) {
+                            // Avatar Box
                             Box(
-                                modifier = Modifier
-                                    .size(52.dp)
-                                    .align(Alignment.Center)
-                                    .clip(CircleShape)
-                                    .border(
-                                        width = 2.dp,
-                                        brush = Brush.sweepGradient(
-                                            listOf(Color(0xFFE9D5FF), Color(0xFFC084FC), Color(0xFF7C3AED), Color(0xFFE9D5FF))
-                                        ),
-                                        shape = CircleShape
-                                    )
-                                    .padding(2.dp)
-                            ) {
-                                if (bot.id == "starter_ayla" || bot.aiName.equals("Ayla", ignoreCase = true)) {
-                                    androidx.compose.foundation.Image(
-                                        painter = androidx.compose.ui.res.painterResource(id = com.example.R.drawable.img_ayla_avatar),
-                                        contentDescription = displayName,
-                                        contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .clip(CircleShape)
-                                    )
-                                } else if (bot.id == "starter_aetheria" || bot.universeName.contains("Aetheria", ignoreCase = true) || bot.aiName.contains("Aetheria", ignoreCase = true)) {
-                                    androidx.compose.foundation.Image(
-                                        painter = androidx.compose.ui.res.painterResource(id = com.example.R.drawable.img_aetheria_universe),
-                                        contentDescription = displayName,
-                                        contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .clip(CircleShape)
-                                    )
-                                } else if (bot.avatarUrl.isNotBlank()) {
-                                    coil.compose.AsyncImage(
-                                        model = bot.avatarUrl,
-                                        contentDescription = displayName,
-                                        contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .clip(CircleShape)
-                                    )
-                                } else {
-                                    OrbView(hue = hue, size = 48.dp)
-                                }
-                            }
-
-                            // Active green online status dot with pulsing glow ring
-                            Box(
-                                modifier = Modifier
-                                    .size(14.dp)
-                                    .clip(CircleShape)
-                                    .background(Color(0xFF10B981).copy(alpha = pulseGlowAlpha))
-                                    .padding(1.5.dp),
-                                contentAlignment = Alignment.Center
+                                contentAlignment = Alignment.BottomEnd,
+                                modifier = Modifier.size(44.dp)
                             ) {
                                 Box(
                                     modifier = Modifier
-                                        .size(10.dp)
+                                        .fillMaxSize()
                                         .clip(CircleShape)
-                                        .background(Color(0xFF10B981))
-                                        .border(1.5.dp, Color(0xFF070512), CircleShape)
+                                        .background(Color(0x30A855F7).copy(alpha = pulseGlowAlpha * 0.5f))
+                                )
+
+                                Box(
+                                    modifier = Modifier
+                                        .size(42.dp)
+                                        .align(Alignment.Center)
+                                        .clip(CircleShape)
+                                        .border(
+                                            width = 1.8.dp,
+                                            brush = Brush.sweepGradient(
+                                                listOf(Color(0xFFE9D5FF), Color(0xFFC084FC), Color(0xFF7C3AED), Color(0xFFE9D5FF))
+                                            ),
+                                            shape = CircleShape
+                                        )
+                                        .padding(1.5.dp)
+                                ) {
+                                    if (bot.id == "starter_ayla" || bot.aiName.equals("Ayla", ignoreCase = true)) {
+                                        androidx.compose.foundation.Image(
+                                            painter = androidx.compose.ui.res.painterResource(id = com.example.R.drawable.img_ayla_avatar),
+                                            contentDescription = displayName,
+                                            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                            modifier = Modifier.fillMaxSize().clip(CircleShape)
+                                        )
+                                    } else if (bot.id == "starter_aetheria" || bot.universeName.contains("Aetheria", ignoreCase = true) || bot.aiName.contains("Aetheria", ignoreCase = true)) {
+                                        androidx.compose.foundation.Image(
+                                            painter = androidx.compose.ui.res.painterResource(id = com.example.R.drawable.img_aetheria_universe),
+                                            contentDescription = displayName,
+                                            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                            modifier = Modifier.fillMaxSize().clip(CircleShape)
+                                        )
+                                    } else if (bot.avatarUrl.isNotBlank()) {
+                                        coil.compose.AsyncImage(
+                                            model = bot.avatarUrl,
+                                            contentDescription = displayName,
+                                            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                            modifier = Modifier.fillMaxSize().clip(CircleShape)
+                                        )
+                                    } else {
+                                        OrbView(hue = hue, size = 38.dp)
+                                    }
+                                }
+
+                                Box(
+                                    modifier = Modifier
+                                        .size(12.dp)
+                                        .clip(CircleShape)
+                                        .background(Color(0xFF10B981).copy(alpha = pulseGlowAlpha))
+                                        .padding(1.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(9.dp)
+                                            .clip(CircleShape)
+                                            .background(Color(0xFF10B981))
+                                            .border(1.dp, Color(0xFF070512), CircleShape)
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(2.dp))
+
+                            // Bot Name (+ Mood Emoji on SAME LINE for Personal Mode)
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                Text(
+                                    text = displayName,
+                                    color = Color.White,
+                                    fontSize = 14.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 2,
+                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                )
+                                if (bot.mode == "personal") {
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = if (isSending) "✨" else emotionState.getMoodEmoji(),
+                                        fontSize = 13.5.sp
+                                    )
+                                }
+                            }
+                        }
+
+                        // Right Action Buttons (Wallpaper + Settings)
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.align(Alignment.CenterEnd)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(38.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(Color(0x90130F26))
+                                    .border(1.dp, Color(0x508B5CF6), RoundedCornerShape(12.dp))
+                                    .clickable { showBackgroundPicker = true }
+                                    .testTag("wallpaper_picker_button"),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Wallpaper,
+                                    contentDescription = "Arka Plan",
+                                    tint = Color(0xFFC084FC),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.width(6.dp))
+
+                            Box(
+                                modifier = Modifier
+                                    .size(38.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(Color(0x90130F26))
+                                    .border(1.dp, Color(0x508B5CF6), RoundedCornerShape(12.dp))
+                                    .clickable { showBotSettings = true }
+                                    .testTag("bot_settings_button"),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Settings,
+                                    contentDescription = "Ayarlar",
+                                    tint = Color(0xFFA78BFA),
+                                    modifier = Modifier.size(18.dp)
                                 )
                             }
                         }
-                        Spacer(modifier = Modifier.height(3.dp))
-                        Text(
-                            text = displayName,
-                            color = Color.White,
-                            fontSize = 17.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        // Mood Badge Pill
+                    }
+
+                    // Expandable Header Stats Banner (Personal Mode Only)
+                    AnimatedVisibility(visible = isStatsExpanded && bot.mode == "personal") {
                         Box(
                             modifier = Modifier
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(Color(0xFF17102C))
-                                .border(1.dp, Color(0x408B5CF6), RoundedCornerShape(10.dp))
-                                .padding(horizontal = 8.dp, vertical = 2.dp)
+                                .fillMaxWidth()
+                                .padding(horizontal = 14.dp, vertical = 4.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(Color(0xE6140A28))
+                                .border(1.dp, Color(0x608B5CF6), RoundedCornerShape(12.dp))
+                                .padding(horizontal = 10.dp, vertical = 5.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "✨ " + (userSettings?.selectedModel?.ifBlank { "Gemini 2.5 Flash" } ?: "Gemini 2.5 Flash") + " 🔥",
+                                    color = Color(0xFFD8B4FE),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(Color(0xFF381224))
+                                            .border(1.dp, Color(0x60FF4D6D), RoundedCornerShape(8.dp))
+                                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                                    ) {
+                                        Text("❤️ ${emotionState.affection}%", color = Color(0xFFFF4D6D), fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(Color(0xFF0F253E))
+                                            .border(1.dp, Color(0x6038BDF8), RoundedCornerShape(8.dp))
+                                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                                    ) {
+                                        Text("🛡️ ${emotionState.trust}%", color = Color(0xFF38BDF8), fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if (isSpeaking) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(Color(0xFF2A1C38))
+                                .padding(horizontal = 16.dp, vertical = 6.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = if (isSending) "✨ Düşünüyor..." else realMoodDisplay,
-                                color = Color(0xFFE2E8F0),
-                                fontSize = 11.sp,
+                                text = "🔊 Sesli okunuyor...",
+                                color = Color(0xFFD8B4FE),
+                                fontSize = 12.sp,
                                 fontWeight = FontWeight.SemiBold
                             )
-                        }
-                    }
-
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        // Wallpaper / Background Button
-                        Box(
-                            modifier = Modifier
-                                .size(40.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(Color(0xFF130F26))
-                                .border(1.dp, Color(0x508B5CF6), RoundedCornerShape(12.dp))
-                                .clickable { showBackgroundPicker = true }
-                                .testTag("wallpaper_picker_button"),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Wallpaper,
-                                contentDescription = "Arka Plan",
-                                tint = Color(0xFFC084FC),
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.width(6.dp))
-
-                        // Settings Button
-                        Box(
-                            modifier = Modifier
-                                .size(40.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(Color(0xFF130F26))
-                                .border(1.dp, Color(0x508B5CF6), RoundedCornerShape(12.dp))
-                                .clickable { showBotSettings = true }
-                                .testTag("bot_settings_button"),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Settings,
-                                contentDescription = "Ayarlar",
-                                tint = Color(0xFFA78BFA),
-                                modifier = Modifier.size(20.dp)
-                            )
+                            TextButton(
+                                onClick = onStopSpeaking,
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                            ) {
+                                Text("⏹️ Okumayı Durdur", color = Color(0xFFD8B4FE), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
                         }
                     }
                 }
-
-                // Sub-header stats row matching screenshot
-                Row(
+            },
+            bottomBar = {
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 14.dp, vertical = 4.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                        .background(Color(0xEA070512))
+                        .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom))
                 ) {
-                    // Model Tag on Left
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(Color(0xFF1E1538))
-                            .border(1.dp, Color(0x608B5CF6), RoundedCornerShape(12.dp))
-                            .padding(horizontal = 10.dp, vertical = 5.dp)
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = "✨ " + (userSettings?.selectedModel?.ifBlank { "Gemini 2.5 Flash" } ?: "Gemini 2.5 Flash") + " (RP) 🔥",
-                                color = Color(0xFFD8B4FE),
-                                fontSize = 11.5.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
-
-                    // Stats Badges on Right: Red Heart % and Blue Shield %
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(Color(0xFF381224))
-                                .border(1.dp, Color(0x60FF4D6D), RoundedCornerShape(12.dp))
-                                .padding(horizontal = 8.dp, vertical = 4.dp)
-                        ) {
-                            Text("❤️ ${emotionState.affection}%", color = Color(0xFFFF4D6D), fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        }
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(Color(0xFF0F253E))
-                                .border(1.dp, Color(0x6038BDF8), RoundedCornerShape(12.dp))
-                                .padding(horizontal = 8.dp, vertical = 4.dp)
-                        ) {
-                            Text("🛡️ ${emotionState.trust}%", color = Color(0xFF38BDF8), fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        }
-                    }
-                }
-
-                if (isSpeaking) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(Color(0xFF2A1C38))
-                            .padding(horizontal = 16.dp, vertical = 6.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "🔊 Sesli okunuyor...",
-                            color = Color(0xFFD8B4FE),
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        TextButton(
-                            onClick = onStopSpeaking,
-                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 0.dp)
-                        ) {
-                            Text("⏹️ Okumayı Durdur", color = Color(0xFFD8B4FE), fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                        }
-                    }
-                }
-            }
-        },
-        bottomBar = {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(Color(0xD0070512))
-                    .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom))
-            ) {
                 // Quick RP prompt suggestion chips
                 val quickPrompts = listOf(
                     "🎭 Sahneyi derinleştir" to "Lütfen şu anki sahneyi ve karakterin iç dünyasını daha detaylı, atmosferik bir şekilde betimleyerek yanıt ver.",
@@ -1225,23 +1218,41 @@ fun ChatScreen(
                                             )
                                             val pillBg = Color(0x90140A28)
 
-                                            // Copy Pill
+                                            // 1. Regenerate Pill
                                             Box(
                                                 modifier = Modifier
                                                     .clip(RoundedCornerShape(14.dp))
                                                     .background(pillBg)
                                                     .border(pillBorder, RoundedCornerShape(14.dp))
-                                                    .clickable { clipboardManager.setText(AnnotatedString(msg.text)) }
+                                                    .clickable(enabled = !isSending) { onRegenerate() }
                                                     .padding(horizontal = 11.dp, vertical = 6.dp)
                                             ) {
                                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                                    Text("📋", fontSize = 11.sp)
+                                                    Text("🔄", fontSize = 11.sp)
                                                     Spacer(modifier = Modifier.width(4.dp))
-                                                    Text("Kopyala", color = Color(0xFFE2E8F0), fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold)
+                                                    Text("Yeniden Oluştur", color = Color(0xFFE2E8F0), fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold)
                                                 }
                                             }
 
-                                            // Read Aloud Pill
+                                            // 2. Continue Story Pill
+                                            Box(
+                                                modifier = Modifier
+                                                    .clip(RoundedCornerShape(14.dp))
+                                                    .background(pillBg)
+                                                    .border(pillBorder, RoundedCornerShape(14.dp))
+                                                    .clickable(enabled = !isSending) {
+                                                        onSendMessage("Devam et, hikayeye kaldığın yerden devam et.")
+                                                    }
+                                                    .padding(horizontal = 11.dp, vertical = 6.dp)
+                                            ) {
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    Text("▶️", fontSize = 11.sp)
+                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                    Text("Devam Ettir", color = Color(0xFFE2E8F0), fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold)
+                                                }
+                                            }
+
+                                            // 3. Read Aloud Pill
                                             Box(
                                                 modifier = Modifier
                                                     .clip(RoundedCornerShape(14.dp))
@@ -1264,23 +1275,23 @@ fun ChatScreen(
                                                 }
                                             }
 
-                                            // Regenerate Pill
+                                            // 4. Copy Pill
                                             Box(
                                                 modifier = Modifier
                                                     .clip(RoundedCornerShape(14.dp))
                                                     .background(pillBg)
                                                     .border(pillBorder, RoundedCornerShape(14.dp))
-                                                    .clickable(enabled = !isSending) { onRegenerate() }
+                                                    .clickable { clipboardManager.setText(AnnotatedString(msg.text)) }
                                                     .padding(horizontal = 11.dp, vertical = 6.dp)
                                             ) {
                                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                                    Text("🔄", fontSize = 11.sp)
+                                                    Text("📋", fontSize = 11.sp)
                                                     Spacer(modifier = Modifier.width(4.dp))
-                                                    Text("Yeniden Oluştur", color = Color(0xFFE2E8F0), fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold)
+                                                    Text("Kopyala", color = Color(0xFFE2E8F0), fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold)
                                                 }
                                             }
 
-                                            // More Actions Pill (•••) matching screenshot
+                                            // 5. More Actions Pill (•••)
                                             Box(
                                                 modifier = Modifier
                                                     .clip(RoundedCornerShape(14.dp))
@@ -1387,7 +1398,7 @@ fun ChatScreen(
 
                 val showScrollToBottom = remember {
                     derivedStateOf {
-                        listState.firstVisibleItemIndex > 2
+                        listState.canScrollForward
                     }
                 }
 
@@ -2282,12 +2293,17 @@ fun ChapterSummaryModal(
                         // Close (X) Button
                         IconButton(
                             onClick = { safeExitWithFade(onDismiss) },
-                            modifier = Modifier.size(36.dp)
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFF231B3D))
+                                .border(1.dp, Color(0x60A78BFA), CircleShape)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Close,
                                 contentDescription = "Kapat",
-                                tint = Color(0xFF94A3B8)
+                                tint = Color.White,
+                                modifier = Modifier.size(20.dp)
                             )
                         }
                     }
@@ -2474,8 +2490,35 @@ fun ChapterSummaryModal(
                                         Text(
                                             if (isChapter3) "🔄 Bölüm 3'ü Tekrar Oyna" else if (isChapter2) "🔄 Bölüm 2'yi Tekrar Oyna" else "🔄 Bölüm 1'i Tekrar Oyna",
                                             fontWeight = FontWeight.Bold,
-                                            fontSize = 13.5.sp
+                                            fontSize = 13.5.sp,
+                                            maxLines = 1,
+                                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                                         )
+                                    }
+
+                                    Spacer(modifier = Modifier.height(10.dp))
+
+                                    Button(
+                                        onClick = {
+                                            safeExitWithFade { onDismiss() }
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E1B38)),
+                                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF382F5E)),
+                                        shape = RoundedCornerShape(14.dp),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(48.dp)
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(Icons.Default.Close, contentDescription = "Kapat", tint = Color(0xFFCBD5E1), modifier = Modifier.size(18.dp))
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text(
+                                                "Özeti Kapat",
+                                                color = Color(0xFFCBD5E1),
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 14.sp
+                                            )
+                                        }
                                     }
 
                                     Spacer(modifier = Modifier.height(32.dp))

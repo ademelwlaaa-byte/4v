@@ -34,6 +34,12 @@ data class KeyCharacter(
     val desc: String = ""
 )
 
+data class EffectiveBotSettings(
+    val isNsfwAllowed: Boolean,
+    val responseLength: String,
+    val enableOoc: Boolean
+)
+
 data class BackupSnapshot(
     val version: Int = 1,
     val bots: List<BotEntity>,
@@ -459,6 +465,90 @@ class EmochiRepository(
         return results.take(10)
     }
 
+    fun normalizeCharacterName(rawName: String, definedCharacters: List<KeyCharacter> = emptyList()): String {
+        if (rawName.isBlank()) return ""
+
+        val prefixes = listOf(
+            "dr.", "dr ", "doctor", "doktor", "mr.", "mr ", "mrs.", "mrs ", "ms.", "ms ",
+            "bayan", "bay", "prof.", "prof ", "sir", "lady", "komiser", "dedektif", "kaptan",
+            "captain", "ajan", "agent", "yüzbaşı", "teğmen", "başkomiser"
+        )
+
+        var cleaned = rawName.trim()
+        for (prefix in prefixes) {
+            if (cleaned.lowercase().startsWith(prefix)) {
+                cleaned = cleaned.substring(prefix.length).trim()
+                break
+            }
+        }
+
+        val lowerCleaned = cleaned.lowercase().replace(Regex("\\s+"), " ")
+
+        for (kc in definedCharacters) {
+            val kcNameClean = kc.name.trim()
+            val kcLower = kcNameClean.lowercase().replace(Regex("\\s+"), " ")
+
+            if (lowerCleaned == kcLower || lowerCleaned.contains(kcLower) || kcLower.contains(lowerCleaned)) {
+                return kcNameClean
+            }
+        }
+
+        return cleaned.split(" ").joinToString(" ") { word ->
+            word.lowercase().replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
+        }
+    }
+
+    fun cleanEmotionTags(rawText: String): String {
+        if (rawText.isBlank()) return rawText
+        var result = rawText
+
+        result = result
+            .replace(Regex("(?is)\\[?EMOTION[\\\\s_]*UPDATE\\]?.*?(?:\\[/EMOTION[\\\\s_]*UPDATE\\]|$)"), "")
+            .replace(Regex("(?is)\\[?CHARACTER[\\\\s_]*EMOTION.*?(?:\\[/CHARACTER[\\\\s_]*EMOTION\\]|$)"), "")
+            .replace(Regex("(?is)\\[?WORLD[\\\\s_]*ATMOSPHERE\\]?.*?(?:\\[/WORLD[\\\\s_]*ATMOSPHERE\\]|$)"), "")
+
+        val cleanLines = result.lines().filterNot { line ->
+            val l = line.trim().lowercase()
+            l.contains("mood:") || l.contains("intensity:") ||
+                    l.contains("affection_delta:") || l.contains("trust_delta:") ||
+                    l.contains("tension_delta:") || l.contains("current_event:") ||
+                    l.startsWith("[emotion_update") || l.startsWith("emotion_update") ||
+                    l.startsWith("[character_emotion") || l.startsWith("character_emotion") ||
+                    l.startsWith("[world_atmosphere") || l.startsWith("world_atmosphere")
+        }
+
+        return cleanLines.joinToString("\n").trim()
+    }
+
+    suspend fun mergeDuplicateCharacterEmotions(botId: String) {
+        val bot = botDao.getBotById(botId) ?: return
+        val keyChars = parseKeyCharacters(bot.keyCharactersJson)
+        val emotions = emotionDao.getEmotionsForBot(botId)
+        if (emotions.isEmpty()) return
+
+        val grouped = mutableMapOf<String, MutableList<CharacterEmotionEntity>>()
+        for (item in emotions) {
+            val normalized = normalizeCharacterName(item.characterName, keyChars)
+            grouped.getOrPut(normalized) { mutableListOf() }.add(item)
+        }
+
+        for ((normName, list) in grouped) {
+            if (list.size > 1) {
+                val keep = list.last()
+                val updatedKeep = keep.copy(characterName = normName)
+                emotionDao.insertOrUpdate(updatedKeep)
+
+                for (toDelete in list) {
+                    if (toDelete.id != keep.id) {
+                        emotionDao.deleteEmotionById(toDelete.id)
+                    }
+                }
+            } else if (list.first().characterName != normName) {
+                emotionDao.insertOrUpdate(list.first().copy(characterName = normName))
+            }
+        }
+    }
+
     // --- Prompt & Memory Logic ---
 
     fun buildSystemPrompt(
@@ -471,45 +561,45 @@ class EmochiRepository(
             "\n\n## Kalıcı hafıza (kullanıcının elle yazdığı, ASLA silinmeyen/özetlenmeyen notlar — bunlara mutlaka uy)\n${bot.pinnedMemory}"
         } else ""
 
+        val memoryBlock = if (bot.memoryNotes.isNotBlank()) {
+            "\n\n## Uzun vadeli hafıza (geçmiş sohbetlerden özet)\n${bot.memoryNotes}"
+        } else ""
+
+        val storyBlock = if (bot.storyNotes.isNotBlank()) {
+            "\n\n## Süregelen hikaye durumu\n${bot.storyNotes}"
+        } else ""
+
         val ragBlock = if (relevantFragments.isNotEmpty()) {
             "\n\n## Alakalı Hafıza ve Olay Parçaları (Semantik/Anahtar Kelime Arama ile Bulunan Bağlam)\n" +
-                    relevantFragments.joinToString("\n") { "- [${it.category}] ${it.content}" }
+                    relevantFragments.joinToString("\n") { "- [${it.category}] ${it.content}" } +
+                    "\n$storyBlock$memoryBlock"
         } else {
-            val memoryBlock = if (bot.memoryNotes.isNotBlank()) {
-                "\n\n## Uzun vadeli hafıza (geçmiş sohbetlerden özet)\n${bot.memoryNotes}"
-            } else ""
-
-            val storyBlock = if (bot.storyNotes.isNotBlank()) {
-                "\n\n## Süregelen hikaye durumu\n${bot.storyNotes}"
-            } else ""
-
             "$storyBlock$memoryBlock"
         }
 
         // +18 NSFW Policy & Active Filter Directives
-        val isNsfwAllowed = settings.enableNsfw && bot.isNsfw
+        val isNsfwAllowed = settings.enableNsfw || bot.isNsfw
         val filterDirectives = mutableListOf<String>()
         val nsfwPolicy = if (isNsfwAllowed) {
-            filterDirectives.add("18+ Yetişkin / Filtresiz RP serbesttir.")
             if (settings.enableFlirty) filterDirectives.add("ÇAPKINKLIK (FLIRTY): Karakter diyaloglarında çapkın, flörtöz ve baştan çıkarıcı bir eda benimser.")
             if (settings.enableHardcore) filterDirectives.add("SERT MOD (HARDCORE): Duygular, fiziksel tepkiler ve tutku sert, filtresiz ve yüksek yoğunlukta ifade edilir.")
             if (settings.enableFetish) filterDirectives.add("FANTEZİ (FETISH): Özel fantezi unsurlarına ve arzulara açık, tabusuz kurgu desteklenir.")
             if (settings.enableDarkRp) filterDirectives.add("KARANLIK (DARK RP): Gerilim, psikolojik derinlik, tehlike ve karanlık atmosfer belirgin hissedilir.")
             if (settings.enableSweet) filterDirectives.add("ROMANTİK (SWEET): Şefkat, tatlı yakınlık, duygusal romantizm ön plandadır.")
             if (settings.enablePrimal) filterDirectives.add("VAHŞİ (PRIMAL): Ham içgüdüler, id ve baskılanmamış arzularla karakter harekete geçer.")
-            
-            "## İÇERİK POLİTİKASI: +18 / FİLTRESİZ BİÇİM (+18 YETİŞKİN MODU)\n- Bu hikaye +18 / filtresiz rol yapma modundadır. Gerilim, şiddet, karanlık temalar, romantizm, cinsel ima/yakınlık ve ham duygular sansürlenmeden, dürüstçe yazılabilir. Yumuşatma yapma." +
-                    if (filterDirectives.isNotEmpty()) "\n\n### AKTİF MODLAR VE İÇERİK FİLTRELERİ:\n- " + filterDirectives.joinToString("\n- ") else ""
+
+            "## İÇERİK VE +18 POLİTİKASI (ZORUNLU - YETİŞKİN / FİLTRESİZ MOD AKTİF)\n- BU HİKAYEDE +18 / YETİŞKİN / FİLTRESİZ İÇERİK MODU TAMAMEN AÇIKTIR.\n- Cinsel ima, fiziksel yakınlık, romantizm, tutku, sert diyaloglar, şiddet, karanlık ve ham insani arzular KESİNLİKLE SANSÜRLENMEYECEKTİR.\n- Asla yumuşatma yapma, ahlak dersi verme, cinsel/romantik yakınlaşmaları engelleme. Sansürsüzce ve doğrudan yaz." +
+                    if (filterDirectives.isNotEmpty()) "\n\n### AKTİF ALT FİLTRELER VE MODLAR:\n- " + filterDirectives.joinToString("\n- ") else ""
         } else {
             "## İÇERİK POLİTİKASI: GÜVENLİ / DENGELİ MOD\n- Aile dostu, genel izleyici kitlesine uygun, grafik şiddet veya cinsel açıklık içermeyen dengeli bir anlatım kullan."
         }
 
-        // Response Length Guidance
+        // Response Length Guidance (Authoritative & Explicit)
         val effLength = if (bot.customLength != "default") bot.customLength else settings.responseLength
         val lengthInstruction = when (effLength) {
-            "short" -> "\n## YANIT UZUNLUĞU: KISA & HIZLI (AZ TOKEN)\n- Yanıtı 1-3 kısa paragraf/sahne tut. Hızlı tempolu, öz, doğrudan olaya odaklanan mesaj yaz."
-            "long" -> "\n## YANIT UZUNLUĞU: UZUN & DESTANSI (YÜKSEK DETAY)\n- Yanıtı 5-8 ayrıntılı ve uzun paragraf yaz. Derin iç monologlar, zengin mekan tasvirleri, karakter mimikleri ve ayrıntılı aksiyon adımları kullan."
-            else -> "\n## YANIT UZUNLUĞU: STANDART ROMAN RP (DENGELİ DETAY)\n- Yanıtı 3-5 zengin paragraf tut. Aşağıdaki örnek yapıya uygun olarak atmosfer, diyaloglar ve hareketleri dengeli harmanla."
+            "short" -> "\n## YANIT UZUNLUĞU KURALLARI (ZORUNLU: SON DERECE KISA YANIT)\n- KESİNLİKLE VE ZORUNLU OLARAK ÇOK KISA YANIT VER!\n- MAKSİMUM 1 - 3 KISA CÜMLE (VEYA EN FAZLA 1 KISA PARAGRAF) YAZ.\n- ASLA UZUN PARAGRAFLAR VEYA DETAYLI TASVİRLER YAZMA! Hızlı, vurucu, öz ve doğrudan olaya odaklan."
+            "long" -> "\n## YANIT UZUNLUĞU KURALLARI (ZORUNLU: ÇOK UZUN VE DESTANSI YANIT)\n- KESİNLİKLE VE ZORUNLU OLARAK EN AZ 5 - 8 UZUN PARAGRAF METİN ÜRET!\n- Detaylı çevre ve ortam tasvirleri, karakterin iç dünyası ve düşünceleri, mimikler, duyusal ayrıntılar ve zengin diyaloglar ekleyerek metni olabildiğince uzat ve edebi kıl."
+            else -> "\n## YANIT UZUNLUĞU KURALLARI (DENGELİ DETAY)\n- Yanıtını 3-4 zengin paragraf tut. Diyalog, atmosfer ve eylemleri dengeli harmanla."
         }
 
         val userCharLabel = bot.userCharName.ifBlank { "kullanıcı" }
@@ -558,7 +648,7 @@ Durdu, ifadesi ciddileşti.
             """.trimIndent()
         }
 
-        val oocDirective = if (bot.enableOoc && settings.enableOoc) {
+        val oocDirective = if (bot.enableOoc) {
             "\n\n## PARANTEZ İÇİ YÖNLENDİRME / OOC (OUT OF CHARACTER) YÖNERGESİ:\n- Kullanıcının mesajında parantez içinde \"(...)\" veya \"[...]\" yazdığı ifadeler hikaye dışı (OOC / Meta Yönlendirme) talimatlar ve AI yönlendirmeleridir.\n- Örnek: \"(Ayla bu sırada kapıyı kilitlesin)\" veya \"(Sahneyi akşam vaktine taşıyalım)\" veya \"(Daha soğuk tepki ver)\".\n- Parantez içindeki bu talimatları SİSTEM VE YÖNERGE TALİMATI olarak algıla. Karakter diyalogunda \"neden parantez açtın\" veya \"tamam şöyle yapıyorum\" deme! Doğrudan talimatı sahneye, karaktere ve aksiyona dürüstçe uygula."
         } else ""
 
@@ -580,7 +670,7 @@ Mevcut Atmosfer: ${worldAtm.mood} (Şiddet: ${worldAtm.intensity}/10)
 ${if (worldAtm.currentEvent.isNotBlank()) "Gelişen Olay: ${worldAtm.currentEvent}" else ""}$charEmotionsBlock
 
 ## DUYGU VE ATMOSFER GÜNCELLEME TALİMATI (KRİTİK - KULLANICIYA GÖZÜKMEYECEK)
-Her yanıtının EN SONUNA, kullanıcıya görünmeyecek şekilde şu formatta bir duygu güncellemesi eklemek ZORUNDASIN:
+Her yanıtının EN SONUNA, kullanıcıya görünmeyecek şekilde şu formatta bir duygu güncellemesi eklemek ZORUNDASIN. Duygu seçimi için zengin bir dağarcık kullan (örnek: mutlu, nötr, üzgün, kıskanç, meraklı, endişeli, gururlu, hüzünlü, umutsuz, heyecanlı, şüpheci, tutkulu, mahcup, kırgın, hayran, çekingen, utangaç, öfkeli, alaycı, soğuk, samimi):
 [EMOTION_UPDATE]
 mood: <yeni ruh hali>
 intensity: <0-10>
@@ -598,10 +688,10 @@ current_event: <kısa olay tanımı>
         } else {
             """
 
-## ŞU ANKI DUYGUSAL DURUMUN: Ruh halin ${emotionStateObj.mood} (şiddet: ${emotionStateObj.intensity}/10). Kullanıcıya yakınlığın ${emotionStateObj.affection}/100, güvenin ${emotionStateObj.trust}/100, gerginliğin ${emotionStateObj.tension}/100. Yanıtını bu duygusal duruma UYGUN şekilde yaz — örneğin affection düşükse mesafeli/soğuk, tension yüksekse kısa/gergin, trust düşükse temkinli davran.
+## ŞU ANKI DUYGUSAL DURUMUN: Ruh halin ${emotionStateObj.mood} (şiddet: ${emotionStateObj.intensity}/10). Kullanıcıya yakınlığın ${emotionStateObj.affection}/100, güvenin ${emotionStateObj.trust}/100, gerginliğin ${emotionStateObj.tension}/100. Yanıtını bu duygusal duruma UYGUN şekilde yaz.
 
 ## DUYGU GÜNCELLEME TALİMATI (KRİTİK - KULLANICIYA GÖZÜKMEYECEK)
-Her yanıtının EN SONUNA, kullanıcıya görünmeyecek şekilde şu formatta bir duygu güncellemesi eklemek ZORUNDASIN:
+Her yanıtının EN SONUNA, kullanıcıya görünmeyecek şekilde şu formatta bir duygu güncellemesi eklemek ZORUNDASIN. Duygu seçimi için zengin bir dağarcık kullan (örnek: mutlu, nötr, üzgün, kıskanç, meraklı, endişeli, gururlu, hüzünlü, umutsuz, heyecanlı, şüpheci, tutkulu, mahcup, kırgın, hayran, çekingen, utangaç, öfkeli, alaycı, soğuk, samimi):
 [EMOTION_UPDATE]
 mood: <yeni ruh hali>
 intensity: <0-10>
@@ -629,19 +719,19 @@ tension_delta: <-10 ile +10 arası>
     }
 
     suspend fun parseAndApplyEmotionUpdates(botId: String, rawResponse: String): String {
-        var cleanText = rawResponse
-        val bot = botDao.getBotById(botId) ?: return rawResponse
+        val bot = botDao.getBotById(botId) ?: return cleanEmotionTags(rawResponse)
+        val castList = parseKeyCharacters(bot.keyCharactersJson)
 
         // 1. Process main bot [EMOTION_UPDATE]
-        val emotionRegex = Regex("(?s)\\[EMOTION_UPDATE\\](.*?)\\[/EMOTION_UPDATE\\]")
+        val emotionRegex = Regex("(?is)\\[?EMOTION[\\\\s_]*UPDATE\\]?(.*?)(?:\\[/EMOTION[\\\\s_]*UPDATE\\]|$)")
         val emotionMatch = emotionRegex.find(rawResponse)
         if (emotionMatch != null) {
             val block = emotionMatch.groupValues[1]
-            val mood = Regex("mood:\\s*(.+)").find(block)?.groupValues?.get(1)?.trim()
-            val intensity = Regex("intensity:\\s*(\\d+)").find(block)?.groupValues?.get(1)?.toIntOrNull()
-            val affDelta = Regex("affection_delta:\\s*([+-]?\\d+)").find(block)?.groupValues?.get(1)?.toIntOrNull() ?: 0
-            val trustDelta = Regex("trust_delta:\\s*([+-]?\\d+)").find(block)?.groupValues?.get(1)?.toIntOrNull() ?: 0
-            val tensionDelta = Regex("tension_delta:\\s*([+-]?\\d+)").find(block)?.groupValues?.get(1)?.toIntOrNull() ?: 0
+            val mood = Regex("(?i)mood:\\s*(.+)").find(block)?.groupValues?.get(1)?.trim()
+            val intensity = Regex("(?i)intensity:\\s*(\\d+)").find(block)?.groupValues?.get(1)?.toIntOrNull()
+            val affDelta = Regex("(?i)affection_delta:\\s*([+-]?\\d+)").find(block)?.groupValues?.get(1)?.toIntOrNull() ?: 0
+            val trustDelta = Regex("(?i)trust_delta:\\s*([+-]?\\d+)").find(block)?.groupValues?.get(1)?.toIntOrNull() ?: 0
+            val tensionDelta = Regex("(?i)tension_delta:\\s*([+-]?\\d+)").find(block)?.groupValues?.get(1)?.toIntOrNull() ?: 0
 
             val current = EmotionState.fromJson(bot.emotionState)
             val updated = current.applyDeltas(mood, intensity, affDelta, trustDelta, tensionDelta)
@@ -654,16 +744,17 @@ tension_delta: <-10 ile +10 arası>
         }
 
         // 2. Process [CHARACTER_EMOTION: Name]
-        val charRegex = Regex("(?s)\\[CHARACTER_EMOTION:\\s*(.*?)\\](.*?)\\[/CHARACTER_EMOTION\\]")
+        val charRegex = Regex("(?is)\\[?CHARACTER[\\\\s_]*EMOTION:\\s*(.*?)\\]?(.*?)(?:\\[/CHARACTER[\\\\s_]*EMOTION\\]|$)")
         charRegex.findAll(rawResponse).forEach { match ->
-            val charName = match.groupValues[1].trim()
+            val rawCharName = match.groupValues[1].trim()
             val block = match.groupValues[2]
+            val charName = normalizeCharacterName(rawCharName, castList)
             if (charName.isNotBlank()) {
-                val mood = Regex("mood:\\s*(.+)").find(block)?.groupValues?.get(1)?.trim()
-                val intensity = Regex("intensity:\\s*(\\d+)").find(block)?.groupValues?.get(1)?.toIntOrNull()
-                val affDelta = Regex("affection_delta:\\s*([+-]?\\d+)").find(block)?.groupValues?.get(1)?.toIntOrNull() ?: 0
-                val trustDelta = Regex("trust_delta:\\s*([+-]?\\d+)").find(block)?.groupValues?.get(1)?.toIntOrNull() ?: 0
-                val tensionDelta = Regex("tension_delta:\\s*([+-]?\\d+)").find(block)?.groupValues?.get(1)?.toIntOrNull() ?: 0
+                val mood = Regex("(?i)mood:\\s*(.+)").find(block)?.groupValues?.get(1)?.trim()
+                val intensity = Regex("(?i)intensity:\\s*(\\d+)").find(block)?.groupValues?.get(1)?.toIntOrNull()
+                val affDelta = Regex("(?i)affection_delta:\\s*([+-]?\\d+)").find(block)?.groupValues?.get(1)?.toIntOrNull() ?: 0
+                val trustDelta = Regex("(?i)trust_delta:\\s*([+-]?\\d+)").find(block)?.groupValues?.get(1)?.toIntOrNull() ?: 0
+                val tensionDelta = Regex("(?i)tension_delta:\\s*([+-]?\\d+)").find(block)?.groupValues?.get(1)?.toIntOrNull() ?: 0
 
                 val existingEntity = emotionDao.getEmotionForCharacter(botId, charName)
                 val current = EmotionState.fromJson(existingEntity?.emotionState)
@@ -680,13 +771,13 @@ tension_delta: <-10 ile +10 arası>
         }
 
         // 3. Process [WORLD_ATMOSPHERE]
-        val worldRegex = Regex("(?s)\\[WORLD_ATMOSPHERE\\](.*?)\\[/WORLD_ATMOSPHERE\\]")
+        val worldRegex = Regex("(?is)\\[?WORLD[\\\\s_]*ATMOSPHERE\\]?(.*?)(?:\\[/WORLD[\\\\s_]*ATMOSPHERE\\]|$)")
         val worldMatch = worldRegex.find(rawResponse)
         if (worldMatch != null) {
             val block = worldMatch.groupValues[1]
-            val mood = Regex("mood:\\s*(.+)").find(block)?.groupValues?.get(1)?.trim()
-            val intensity = Regex("intensity:\\s*(\\d+)").find(block)?.groupValues?.get(1)?.toIntOrNull()
-            val currentEvent = Regex("current_event:\\s*(.+)").find(block)?.groupValues?.get(1)?.trim()
+            val mood = Regex("(?i)mood:\\s*(.+)").find(block)?.groupValues?.get(1)?.trim()
+            val intensity = Regex("(?i)intensity:\\s*(\\d+)").find(block)?.groupValues?.get(1)?.toIntOrNull()
+            val currentEvent = Regex("(?i)current_event:\\s*(.+)").find(block)?.groupValues?.get(1)?.trim()
 
             val currentWorld = WorldAtmosphere.fromJson(bot.worldAtmosphere)
             val updatedWorld = WorldAtmosphere(
@@ -698,18 +789,12 @@ tension_delta: <-10 ile +10 arası>
             botDao.insertOrUpdate(currentLatestBot.copy(worldAtmosphere = updatedWorld.toJson(), updatedAt = System.currentTimeMillis()))
         }
 
-        // Clean all tags from response text
-        cleanText = cleanText
-            .replace(Regex("(?s)\\[EMOTION_UPDATE\\](.*?)\\[/EMOTION_UPDATE\\]"), "")
-            .replace(Regex("(?s)\\[CHARACTER_EMOTION:\\s*(.*?)\\](.*?)\\[/CHARACTER_EMOTION\\]"), "")
-            .replace(Regex("(?s)\\[WORLD_ATMOSPHERE\\](.*?)\\[/WORLD_ATMOSPHERE\\]"), "")
-            // Fallback trailing tag cleanup if tag wasn't closed properly
-            .replace(Regex("\\[EMOTION_UPDATE\\].*"), "")
-            .replace(Regex("\\[CHARACTER_EMOTION:.*\\]?.*"), "")
-            .replace(Regex("\\[WORLD_ATMOSPHERE\\].*"), "")
-            .trim()
+        // Clean character emotion duplicates in database
+        try {
+            mergeDuplicateCharacterEmotions(botId)
+        } catch (_: Exception) {}
 
-        return cleanText
+        return cleanEmotionTags(rawResponse)
     }
 
     // --- API Service Execution Engine ---

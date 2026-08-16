@@ -49,6 +49,15 @@ import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Public
+import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.material3.CircularProgressIndicator
@@ -118,6 +127,43 @@ data class ModelSpec(
     val description: String
 )
 
+@Composable
+fun SettingsSectionHeader(
+    title: String,
+    subtitle: String? = null,
+    icon: ImageVector? = null,
+    color: Color = EmochiPrimary
+) {
+    Column(modifier = Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 6.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (icon != null) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = color,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+            }
+            Text(
+                text = title,
+                color = EmochiTextPrimary,
+                fontSize = 14.5.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
+        if (!subtitle.isNullOrBlank()) {
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = subtitle,
+                color = EmochiTextMuted,
+                fontSize = 11.sp,
+                lineHeight = 15.sp
+            )
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GlobalSettingsModal(
@@ -133,11 +179,11 @@ fun GlobalSettingsModal(
     var openaiApiKey by remember { mutableStateOf(settings.openaiApiKey) }
     var backupApiKey by remember { mutableStateOf(settings.backupApiKey) }
 
+    var selectedProvider by remember { mutableStateOf(settings.selectedProvider.ifBlank { "gemini" }) }
     var selectedModel by remember { mutableStateOf(settings.selectedModel) }
     var fallbackModel by remember { mutableStateOf(settings.fallbackModel) }
     var responseLength by remember { mutableStateOf(settings.responseLength) }
     var enableNsfw by remember { mutableStateOf(settings.enableNsfw) }
-    var enableOoc by remember { mutableStateOf(settings.enableOoc) }
     var enableFlirty by remember { mutableStateOf(settings.enableFlirty) }
     var enableHardcore by remember { mutableStateOf(settings.enableHardcore) }
     var enableFetish by remember { mutableStateOf(settings.enableFetish) }
@@ -215,7 +261,7 @@ fun GlobalSettingsModal(
             key = "gemini-2.5-flash",
             name = "Gemini 2.5 Flash",
             provider = "Google Gemini",
-            tokenCostRate = "🟢 Düşük (~0.5x Token Tüketimi)",
+            tokenCostRate = "🟢 Düşük (~0.5x Token)",
             badgeColor = Color(0xFF4CAF50),
             description = "En gelişmiş, dengeli ve hızlı Gemini modeli. Düşük token harcaması ile yüksek kaliteli rol yapma yanıtları verir."
         ),
@@ -231,7 +277,7 @@ fun GlobalSettingsModal(
             key = "gemini-2.5-pro",
             name = "Gemini 2.5 Pro",
             provider = "Google Gemini",
-            tokenCostRate = "🔴 Yüksek (~2.5x Token Tüketimi)",
+            tokenCostRate = "🔴 Yüksek (~2.5x Token)",
             badgeColor = Color(0xFFE91E63),
             description = "Üst düzey zeka, derin kurgu ve detaylı roman kalitesinde tutarlı karakter anlatımı."
         ),
@@ -239,7 +285,7 @@ fun GlobalSettingsModal(
             key = "llama-3.3-70b-versatile",
             name = "Groq Llama 3.3 70B",
             provider = "Groq API",
-            tokenCostRate = "🟡 Orta (~1.0x Token Tüketimi)",
+            tokenCostRate = "🟡 Orta (~1.0x Token)",
             badgeColor = Color(0xFFFF9800),
             description = "Groq sunucularında ultra hızlı yanıt süresi ve doğal Türkçe rol yapma kabiliyeti."
         ),
@@ -247,7 +293,7 @@ fun GlobalSettingsModal(
             key = "deepseek-r1-distill-llama-70b",
             name = "Groq DeepSeek R1",
             provider = "Groq API",
-            tokenCostRate = "🔴 Yüksek (~2.0x Token Tüketimi)",
+            tokenCostRate = "🔴 Yüksek (~2.0x Token)",
             badgeColor = Color(0xFF9C27B0),
             description = "Derin mantık ve karmaşık kurgu senaryolarında akıl yürütme odaklı karakter yanıtları."
         ),
@@ -255,7 +301,7 @@ fun GlobalSettingsModal(
             key = "claude-3-5-sonnet-20241022",
             name = "Claude 3.5 Sonnet",
             provider = "Anthropic",
-            tokenCostRate = "🔴 Çok Yüksek (~3.0x Token Tüketimi)",
+            tokenCostRate = "🔴 Çok Yüksek (~3.0x Token)",
             badgeColor = Color(0xFFF44336),
             description = "Edebi anlatım, yüksek duygusal derinlik ve roman kalitesinde akıcı diyaloglar."
         ),
@@ -263,7 +309,7 @@ fun GlobalSettingsModal(
             key = "claude-3-5-haiku-20241022",
             name = "Claude 3.5 Haiku",
             provider = "Anthropic",
-            tokenCostRate = "🟡 Orta (~1.2x Token Tüketimi)",
+            tokenCostRate = "🟡 Orta (~1.2x Token)",
             badgeColor = Color(0xFFFFC107),
             description = "Hızlı ve seri Claude kalitesi. Kısa ve orta boy diyaloglar için ideal."
         ),
@@ -271,7 +317,7 @@ fun GlobalSettingsModal(
             key = "gpt-4o-mini",
             name = "OpenAI GPT-4o Mini",
             provider = "OpenAI",
-            tokenCostRate = "🟢 Düşük (~0.8x Token Tüketimi)",
+            tokenCostRate = "🟢 Düşük (~0.8x Token)",
             badgeColor = Color(0xFF4CAF50),
             description = "Ekonomik, tutarlı ve akıcı OpenAI sohbet altyapısı."
         ),
@@ -279,17 +325,13 @@ fun GlobalSettingsModal(
             key = "deepseek-chat",
             name = "DeepSeek V3",
             provider = "DeepSeek",
-            tokenCostRate = "🟢 Düşük (~0.6x Token Tüketimi)",
+            tokenCostRate = "🟢 Düşük (~0.6x Token)",
             badgeColor = Color(0xFF009688),
             description = "Bütçe dostu, geniş bağlamlı yüksek akıl yürütme gücü sunan model."
         )
     )
 
-    val modelsMap = modelsList.associate { it.key to "${it.name} [${it.tokenCostRate}]" }
-
-    var modelDropdownExpanded by remember { mutableStateOf(false) }
     var fallbackDropdownExpanded by remember { mutableStateOf(false) }
-
     val totalTokensUsed = settings.totalPromptTokens + settings.totalCandidateTokens
 
     Dialog(onDismissRequest = onDismiss) {
@@ -306,13 +348,14 @@ fun GlobalSettingsModal(
                     .padding(20.dp)
                     .verticalScroll(rememberScrollState())
             ) {
+                // Modal Header
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "Genel AI & Model Ayarları",
+                        text = "Genel AI & Uygulama Ayarları",
                         color = EmochiTextPrimary,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold
@@ -322,93 +365,446 @@ fun GlobalSettingsModal(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(10.dp))
 
-                // Model Stats Dashboard Card
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = EmochiCard),
-                    shape = RoundedCornerShape(14.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, EmochiBorder),
-                    modifier = Modifier.fillMaxWidth()
+                // SECTION 1: API PROVIDERS & MODEL SELECTION
+                SettingsSectionHeader(
+                    title = "🤖 API Sağlayıcıları & Model Seçimi",
+                    subtitle = "Tüm botlar için varsayılan sağlayıcıyı, API anahtarlarını ve aktif AI modelini ayarlayın.",
+                    icon = Icons.Default.Key
+                )
+
+                // Eye Icon for Key Visibility
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column(modifier = Modifier.padding(14.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.Speed,
-                                contentDescription = null,
-                                tint = EmochiPrimary,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "Model & Token Kullanım Paneli",
-                                color = EmochiTextPrimary,
-                                fontSize = 13.5.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.height(14.dp))
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text("Girdi Token", color = EmochiTextMuted, fontSize = 11.sp)
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text("${settings.totalPromptTokens}", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                            }
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text("Çıktı Token", color = EmochiTextMuted, fontSize = 11.sp)
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text("${settings.totalCandidateTokens}", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                            }
-                            Column(modifier = Modifier.weight(1.2f)) {
-                                Text("Maliyet Tahmini", color = EmochiTextMuted, fontSize = 11.sp)
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text("Ücretsiz", color = Color(0xFFA78BFA), fontSize = 12.5.sp, fontWeight = FontWeight.ExtraBold)
-                                    Text(" / Ücretli", color = EmochiTextMuted, fontSize = 11.5.sp)
-                                }
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(12.dp))
+                    TextButton(onClick = { showKeys = !showKeys }) {
+                        Icon(
+                            imageVector = if (showKeys) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                            contentDescription = null,
+                            tint = EmochiPrimary,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
                         Text(
-                            text = "Toplam Harcanan: $totalTokensUsed token",
-                            color = EmochiTextSecondary,
-                            fontSize = 11.5.sp,
-                            fontWeight = FontWeight.Medium
+                            text = if (showKeys) "Anahtarları Gizle" else "Anahtarları Göster",
+                            color = EmochiPrimary,
+                            fontSize = 11.sp
                         )
                     }
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Response Length Options
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.Tune,
-                        contentDescription = null,
-                        tint = Color(0xFFA78BFA),
-                        modifier = Modifier.size(16.dp)
+                // Primary Provider Selector Segmented Buttons
+                Text("Ana Sağlayıcı Seçin:", color = EmochiTextPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Spacer(modifier = Modifier.height(4.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    val providers = listOf(
+                        "gemini" to "Google Gemini",
+                        "groq" to "Groq API",
+                        "claude" to "Claude",
+                        "openai" to "OpenAI / DeepSeek"
                     )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "Yanıt Uzunluğu (Token Tüketim Dengesi)",
-                        color = EmochiTextPrimary,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
+                    providers.forEach { (pKey, pLabel) ->
+                        val isSel = selectedProvider == pKey
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(if (isSel) EmochiPrimary.copy(alpha = 0.2f) else EmochiCard)
+                                .border(
+                                    width = if (isSel) 1.5.dp else 1.dp,
+                                    color = if (isSel) EmochiPrimary else EmochiBorder,
+                                    shape = RoundedCornerShape(10.dp)
+                                )
+                                .clickable {
+                                    selectedProvider = pKey
+                                    val providerModels = modelsList.filter {
+                                        when (pKey) {
+                                            "gemini" -> it.provider == "Google Gemini"
+                                            "groq" -> it.provider == "Groq API"
+                                            "claude" -> it.provider == "Anthropic"
+                                            "openai" -> it.provider == "OpenAI" || it.provider == "DeepSeek"
+                                            else -> false
+                                        }
+                                    }
+                                    if (providerModels.none { it.key == selectedModel } && providerModels.isNotEmpty()) {
+                                        selectedModel = providerModels.first().key
+                                    }
+                                }
+                                .padding(vertical = 8.dp, horizontal = 2.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = pLabel,
+                                color = if (isSel) EmochiPrimary else EmochiTextSecondary,
+                                fontSize = 10.5.sp,
+                                fontWeight = if (isSel) FontWeight.Bold else FontWeight.Medium,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                maxLines = 1
+                            )
+                        }
+                    }
                 }
-                Spacer(modifier = Modifier.height(8.dp))
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Provider Card 1: Google Gemini
+                val isGeminiActive = selectedProvider == "gemini"
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = EmochiCard),
+                    shape = RoundedCornerShape(14.dp),
+                    border = androidx.compose.foundation.BorderStroke(if (isGeminiActive) 2.dp else 1.dp, if (isGeminiActive) EmochiPrimary else EmochiBorder),
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = Color(0xFF4CAF50), modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("1. Google Gemini", color = EmochiTextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                            }
+                            if (isGeminiActive) {
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(Color(0xFF4CAF50).copy(alpha = 0.2f))
+                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                ) {
+                                    Text("AKTİF SAĞLAYICI", color = Color(0xFF4CAF50), fontSize = 9.5.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(6.dp))
+                        OutlinedTextField(
+                            value = geminiApiKey,
+                            onValueChange = { geminiApiKey = it },
+                            placeholder = { Text("Gemini API Key...", fontSize = 11.5.sp, color = EmochiTextMuted) },
+                            visualTransformation = if (showKeys) VisualTransformation.None else PasswordVisualTransformation(),
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            colors = customTextFieldColors()
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text("Model Seçimi:", color = EmochiTextSecondary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        modelsList.filter { it.provider == "Google Gemini" }.forEach { spec ->
+                            val isSelected = selectedModel == spec.key
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 2.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(if (isSelected) EmochiPrimary.copy(alpha = 0.15f) else EmochiSurface)
+                                    .border(1.dp, if (isSelected) EmochiPrimary else EmochiBorder, RoundedCornerShape(8.dp))
+                                    .clickable {
+                                        selectedProvider = "gemini"
+                                        selectedModel = spec.key
+                                    }
+                                    .padding(8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(spec.name, color = if (isSelected) Color.White else EmochiTextPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    Text(spec.tokenCostRate, color = spec.badgeColor, fontSize = 10.sp)
+                                }
+                                if (isSelected) {
+                                    Icon(Icons.Default.CheckCircle, contentDescription = null, tint = EmochiPrimary, modifier = Modifier.size(16.dp))
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Provider Card 2: Groq API
+                val isGroqActive = selectedProvider == "groq"
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = EmochiCard),
+                    shape = RoundedCornerShape(14.dp),
+                    border = androidx.compose.foundation.BorderStroke(if (isGroqActive) 2.dp else 1.dp, if (isGroqActive) EmochiPrimary else EmochiBorder),
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Speed, contentDescription = null, tint = Color(0xFFFF9800), modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("2. Groq API (Llama 3.3 & DeepSeek R1)", color = EmochiTextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                            }
+                            if (isGroqActive) {
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(Color(0xFFFF9800).copy(alpha = 0.2f))
+                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                ) {
+                                    Text("AKTİF SAĞLAYICI", color = Color(0xFFFF9800), fontSize = 9.5.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(6.dp))
+                        OutlinedTextField(
+                            value = groqApiKey,
+                            onValueChange = { groqApiKey = it },
+                            placeholder = { Text("gsk_...", fontSize = 11.5.sp, color = EmochiTextMuted) },
+                            visualTransformation = if (showKeys) VisualTransformation.None else PasswordVisualTransformation(),
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            colors = customTextFieldColors()
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text("Model Seçimi:", color = EmochiTextSecondary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        modelsList.filter { it.provider == "Groq API" }.forEach { spec ->
+                            val isSelected = selectedModel == spec.key
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 2.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(if (isSelected) EmochiPrimary.copy(alpha = 0.15f) else EmochiSurface)
+                                    .border(1.dp, if (isSelected) EmochiPrimary else EmochiBorder, RoundedCornerShape(8.dp))
+                                    .clickable {
+                                        selectedProvider = "groq"
+                                        selectedModel = spec.key
+                                    }
+                                    .padding(8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(spec.name, color = if (isSelected) Color.White else EmochiTextPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    Text(spec.tokenCostRate, color = spec.badgeColor, fontSize = 10.sp)
+                                }
+                                if (isSelected) {
+                                    Icon(Icons.Default.CheckCircle, contentDescription = null, tint = EmochiPrimary, modifier = Modifier.size(16.dp))
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Provider Card 3: Anthropic Claude
+                val isClaudeActive = selectedProvider == "claude"
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = EmochiCard),
+                    shape = RoundedCornerShape(14.dp),
+                    border = androidx.compose.foundation.BorderStroke(if (isClaudeActive) 2.dp else 1.dp, if (isClaudeActive) EmochiPrimary else EmochiBorder),
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Psychology, contentDescription = null, tint = Color(0xFFF44336), modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("3. Anthropic Claude", color = EmochiTextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                            }
+                            if (isClaudeActive) {
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(Color(0xFFF44336).copy(alpha = 0.2f))
+                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                ) {
+                                    Text("AKTİF SAĞLAYICI", color = Color(0xFFF44336), fontSize = 9.5.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(6.dp))
+                        OutlinedTextField(
+                            value = claudeApiKey,
+                            onValueChange = { claudeApiKey = it },
+                            placeholder = { Text("sk-ant-...", fontSize = 11.5.sp, color = EmochiTextMuted) },
+                            visualTransformation = if (showKeys) VisualTransformation.None else PasswordVisualTransformation(),
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            colors = customTextFieldColors()
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text("Model Seçimi:", color = EmochiTextSecondary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        modelsList.filter { it.provider == "Anthropic" }.forEach { spec ->
+                            val isSelected = selectedModel == spec.key
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 2.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(if (isSelected) EmochiPrimary.copy(alpha = 0.15f) else EmochiSurface)
+                                    .border(1.dp, if (isSelected) EmochiPrimary else EmochiBorder, RoundedCornerShape(8.dp))
+                                    .clickable {
+                                        selectedProvider = "claude"
+                                        selectedModel = spec.key
+                                    }
+                                    .padding(8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(spec.name, color = if (isSelected) Color.White else EmochiTextPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    Text(spec.tokenCostRate, color = spec.badgeColor, fontSize = 10.sp)
+                                }
+                                if (isSelected) {
+                                    Icon(Icons.Default.CheckCircle, contentDescription = null, tint = EmochiPrimary, modifier = Modifier.size(16.dp))
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Provider Card 4: OpenAI / DeepSeek
+                val isOpenaiActive = selectedProvider == "openai"
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = EmochiCard),
+                    shape = RoundedCornerShape(14.dp),
+                    border = androidx.compose.foundation.BorderStroke(if (isOpenaiActive) 2.dp else 1.dp, if (isOpenaiActive) EmochiPrimary else EmochiBorder),
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Chat, contentDescription = null, tint = Color(0xFF009688), modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("4. OpenAI & DeepSeek", color = EmochiTextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                            }
+                            if (isOpenaiActive) {
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(Color(0xFF009688).copy(alpha = 0.2f))
+                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                ) {
+                                    Text("AKTİF SAĞLAYICI", color = Color(0xFF009688), fontSize = 9.5.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(6.dp))
+                        OutlinedTextField(
+                            value = openaiApiKey,
+                            onValueChange = { openaiApiKey = it },
+                            placeholder = { Text("sk-...", fontSize = 11.5.sp, color = EmochiTextMuted) },
+                            visualTransformation = if (showKeys) VisualTransformation.None else PasswordVisualTransformation(),
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            colors = customTextFieldColors()
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text("Model Seçimi:", color = EmochiTextSecondary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        modelsList.filter { it.provider == "OpenAI" || it.provider == "DeepSeek" }.forEach { spec ->
+                            val isSelected = selectedModel == spec.key
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 2.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(if (isSelected) EmochiPrimary.copy(alpha = 0.15f) else EmochiSurface)
+                                    .border(1.dp, if (isSelected) EmochiPrimary else EmochiBorder, RoundedCornerShape(8.dp))
+                                    .clickable {
+                                        selectedProvider = "openai"
+                                        selectedModel = spec.key
+                                    }
+                                    .padding(8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(spec.name, color = if (isSelected) Color.White else EmochiTextPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    Text(spec.tokenCostRate, color = spec.badgeColor, fontSize = 10.sp)
+                                }
+                                if (isSelected) {
+                                    Icon(Icons.Default.CheckCircle, contentDescription = null, tint = EmochiPrimary, modifier = Modifier.size(16.dp))
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Backup Gemini Key Field
+                Spacer(modifier = Modifier.height(6.dp))
+                Text("Yedek Gemini API Key (Aşımda veya Hatalarda Kullanılır):", color = EmochiTextSecondary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                OutlinedTextField(
+                    value = backupApiKey,
+                    onValueChange = { backupApiKey = it },
+                    placeholder = { Text("Yedek Gemini Key...", fontSize = 11.5.sp, color = EmochiTextMuted) },
+                    visualTransformation = if (showKeys) VisualTransformation.None else PasswordVisualTransformation(),
+                    modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
+                    singleLine = true,
+                    colors = customTextFieldColors()
+                )
+
+                // Active Selected Model Details Card
+                Spacer(modifier = Modifier.height(10.dp))
+                val currentSelectedSpec = modelsList.find { it.key == selectedModel } ?: modelsList.first()
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = EmochiSurface),
+                    shape = RoundedCornerShape(14.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.5.dp, Color(0xFF10B981)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.TrackChanges, contentDescription = null, tint = Color(0xFFEF4444), modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Aktif Seçili Model: ${currentSelectedSpec.name}", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+                            Text(currentSelectedSpec.tokenCostRate, color = Color(0xFF10B981), fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
+                        }
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(currentSelectedSpec.description, color = EmochiTextSecondary, fontSize = 11.sp, lineHeight = 15.sp)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+                Divider(color = EmochiBorder)
+
+                // SECTION 2: RESPONSE SETTINGS
+                SettingsSectionHeader(
+                    title = "💬 Yanıt Ayarları",
+                    subtitle = "Varsayılan yanıt uzunluğu, yedek model ve otomatik geçiş seçenekleri.",
+                    icon = Icons.Default.Tune
+                )
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     val options = listOf(
-                        Triple("short", "Kısa (Min.\nToken)", Icons.Default.FlashOn to Color(0xFFFBBF24)),
+                        Triple("short", "Kısa (Min. Token)", Icons.Default.FlashOn to Color(0xFFFBBF24)),
                         Triple("standard", "Standart RP", Icons.Default.Description to Color(0xFFFBBF24)),
                         Triple("long", "Uzun Roman", Icons.Default.List to Color(0xFFA78BFA))
                     )
@@ -426,331 +822,29 @@ fun GlobalSettingsModal(
                                     shape = RoundedCornerShape(14.dp)
                                 )
                                 .clickable { responseLength = key }
-                                .padding(horizontal = 8.dp, vertical = 12.dp),
+                                .padding(horizontal = 6.dp, vertical = 10.dp),
                             contentAlignment = Alignment.Center
                         ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.Center
-                            ) {
-                                Icon(
-                                    imageVector = icon,
-                                    contentDescription = null,
-                                    tint = tintColor,
-                                    modifier = Modifier.size(14.dp)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(icon, contentDescription = null, tint = tintColor, modifier = Modifier.size(14.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
                                 Text(
                                     text = label,
                                     color = if (isSelected) Color.White else EmochiTextSecondary,
                                     fontSize = 11.sp,
-                                    fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.SemiBold,
-                                    lineHeight = 14.sp
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
                                 )
                             }
                         }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(14.dp))
-
-                // +18 / NSFW Toggle
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = EmochiCard),
-                    shape = RoundedCornerShape(14.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, EmochiBorder),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(14.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = Icons.Default.AutoAwesome,
-                                    contentDescription = null,
-                                    tint = Color(0xFFA78BFA),
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = "+18 Yetişkin / Filtresiz RP Modu",
-                                    color = EmochiTextPrimary,
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = "Gerilim, cinsellik, karanlık ve ham duyguların sansürsüz dürüstçe işlenmesine izin verir.",
-                                color = EmochiTextMuted,
-                                fontSize = 11.sp,
-                                lineHeight = 15.sp
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Switch(
-                            checked = enableNsfw,
-                            onCheckedChange = { enableNsfw = it },
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = Color(0xFF1A1B2E),
-                                checkedTrackColor = EmochiPrimary
-                            )
-                        )
                     }
                 }
 
                 Spacer(modifier = Modifier.height(10.dp))
-
-                // Parantez İçi OOC Yönlendirme Switch
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = EmochiCard),
-                    shape = RoundedCornerShape(14.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, EmochiBorder),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(14.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = Icons.Default.Chat,
-                                    contentDescription = null,
-                                    tint = Color(0xFFA78BFA),
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = "Parantez İçi OOC Yönlendirme",
-                                    color = EmochiTextPrimary,
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = "Sohbet esnasında parantez içindeki ( . . . ) bilgilerinin AI'a hikaye dışı meta yönlendirme komutu olarak iletilir.",
-                                color = EmochiTextMuted,
-                                fontSize = 11.sp,
-                                lineHeight = 15.sp
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Switch(
-                            checked = enableOoc,
-                            onCheckedChange = { enableOoc = it },
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = Color(0xFF1A1B2E),
-                                checkedTrackColor = EmochiPrimary
-                            )
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(14.dp))
-
-                // Primary AI Model Selection
-                Text(text = "Ana AI Modeli", color = EmochiTextPrimary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                Spacer(modifier = Modifier.height(4.dp))
-                ExposedDropdownMenuBox(
-                    expanded = modelDropdownExpanded,
-                    onExpandedChange = { modelDropdownExpanded = !modelDropdownExpanded },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    val currentSpec = modelsList.find { it.key == selectedModel } ?: modelsList.first()
-
-                    // Dropdown trigger card redesigned as requested
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = EmochiCard),
-                        shape = RoundedCornerShape(14.dp),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, EmochiBorder),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .menuAnchor()
-                            .clickable { modelDropdownExpanded = true }
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(14.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.AutoAwesome,
-                                contentDescription = null,
-                                tint = Color(0xFFA78BFA),
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Column {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(
-                                        text = currentSpec.name,
-                                        color = Color.White,
-                                        fontSize = 14.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Box(
-                                        modifier = Modifier
-                                            .size(8.dp)
-                                            .clip(CircleShape)
-                                            .background(Color(0xFF10B981))
-                                    )
-                                }
-                                Spacer(modifier = Modifier.height(2.dp))
-                                Text(
-                                    text = currentSpec.tokenCostRate,
-                                    color = EmochiTextMuted,
-                                    fontSize = 11.sp
-                                )
-                            }
-                            Spacer(modifier = Modifier.weight(1f))
-                            Icon(
-                                imageVector = Icons.Default.KeyboardArrowDown,
-                                contentDescription = null,
-                                tint = EmochiTextSecondary,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                    }
-
-                    ExposedDropdownMenu(
-                        expanded = modelDropdownExpanded,
-                        onDismissRequest = { modelDropdownExpanded = false },
-                        modifier = Modifier
-                            .background(EmochiCard)
-                            .padding(vertical = 4.dp)
-                    ) {
-                        modelsList.forEach { spec ->
-                            DropdownMenuItem(
-                                text = {
-                                    Column(modifier = Modifier.padding(vertical = 4.dp)) {
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Text(
-                                                text = spec.name,
-                                                color = EmochiTextPrimary,
-                                                fontSize = 13.sp,
-                                                fontWeight = FontWeight.Bold
-                                            )
-                                            Box(
-                                                modifier = Modifier
-                                                    .clip(RoundedCornerShape(6.dp))
-                                                    .background(spec.badgeColor.copy(alpha = 0.2f))
-                                                    .padding(horizontal = 6.dp, vertical = 2.dp)
-                                            ) {
-                                                Text(
-                                                    text = spec.provider,
-                                                    color = spec.badgeColor,
-                                                    fontSize = 10.sp,
-                                                    fontWeight = FontWeight.Bold
-                                                )
-                                            }
-                                        }
-                                        Spacer(modifier = Modifier.height(2.dp))
-                                        Text(
-                                            text = "Token Miktarı: ${spec.tokenCostRate}",
-                                            color = EmochiPrimary,
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.SemiBold
-                                        )
-                                        Text(
-                                            text = spec.description,
-                                            color = EmochiTextMuted,
-                                            fontSize = 10.5.sp,
-                                            maxLines = 2
-                                        )
-                                    }
-                                },
-                                onClick = {
-                                    selectedModel = spec.key
-                                    modelDropdownExpanded = false
-                                }
-                            )
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // Selected Model Features Info Box matching screenshot
-                val currentSelectedSpec = modelsList.find { it.key == selectedModel } ?: modelsList.first()
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = EmochiSurface),
-                    shape = RoundedCornerShape(14.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.5.dp, Color(0xFF10B981)),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.padding(14.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = Icons.Default.TrackChanges,
-                                    contentDescription = null,
-                                    tint = Color(0xFFEF4444),
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = "Seçili Model Özellikleri",
-                                    color = Color.White,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(6.dp)
-                                        .clip(CircleShape)
-                                        .background(Color(0xFF10B981))
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = currentSelectedSpec.tokenCostRate,
-                                    color = Color(0xFF10B981),
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                        }
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = currentSelectedSpec.description,
-                            color = EmochiTextSecondary,
-                            fontSize = 11.5.sp,
-                            lineHeight = 15.sp
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(14.dp))
-
-                // Fallback Model
-                Text(text = "Yedek Model (Hata / Kota Aşımında Geçilir)", color = EmochiTextPrimary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                Text("Yedek Model (Hata / Kota Aşımında Otomatik Kullanılır):", color = EmochiTextSecondary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                 ExposedDropdownMenuBox(
                     expanded = fallbackDropdownExpanded,
                     onExpandedChange = { fallbackDropdownExpanded = !fallbackDropdownExpanded },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 4.dp)
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
                 ) {
                     val currentFallbackSpec = modelsList.find { it.key == fallbackModel } ?: modelsList.first()
                     OutlinedTextField(
@@ -759,9 +853,7 @@ fun GlobalSettingsModal(
                         readOnly = true,
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = fallbackDropdownExpanded) },
                         colors = customTextFieldColors(),
-                        modifier = Modifier
-                            .menuAnchor()
-                            .fillMaxWidth()
+                        modifier = Modifier.menuAnchor().fillMaxWidth()
                     )
                     ExposedDropdownMenu(
                         expanded = fallbackDropdownExpanded,
@@ -771,18 +863,9 @@ fun GlobalSettingsModal(
                         modelsList.forEach { spec ->
                             DropdownMenuItem(
                                 text = {
-                                    Column(modifier = Modifier.padding(vertical = 4.dp)) {
-                                        Text(
-                                            text = "${spec.name} (${spec.provider})",
-                                            color = EmochiTextPrimary,
-                                            fontSize = 12.5.sp,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                        Text(
-                                            text = "Tüketim: ${spec.tokenCostRate}",
-                                            color = EmochiPrimary,
-                                            fontSize = 11.sp
-                                        )
+                                    Column {
+                                        Text(spec.name, color = EmochiTextPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                        Text(spec.tokenCostRate, color = EmochiPrimary, fontSize = 10.5.sp)
                                     }
                                 },
                                 onClick = {
@@ -794,127 +877,7 @@ fun GlobalSettingsModal(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
-                Divider(color = EmochiBorder)
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Language Selection Section
-                Text(text = "🌐 Uygulama & Yanıt Dili (App Language)", color = EmochiTextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                Text(
-                    text = "Senaryo veya karakter metinleri hangi dilde yazılırsa yazılsın, yapay zeka seçilen dilde otomatik olarak yanıt verir.",
-                    color = EmochiTextMuted,
-                    fontSize = 11.sp,
-                    modifier = Modifier.padding(bottom = 8.dp)
-                )
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    androidx.compose.material3.FilterChip(
-                        selected = appLanguage == "tr",
-                        onClick = { appLanguage = "tr" },
-                        label = { Text("🇹🇷 Türkçe (Varsayılan)", color = if (appLanguage == "tr") Color(0xFF1A1B2E) else EmochiTextPrimary, fontWeight = FontWeight.Bold) },
-                        colors = androidx.compose.material3.FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = EmochiPrimary,
-                            containerColor = EmochiCard
-                        )
-                    )
-                    androidx.compose.material3.FilterChip(
-                        selected = appLanguage == "en",
-                        onClick = { appLanguage = "en" },
-                        label = { Text("🇬🇧 English", color = if (appLanguage == "en") Color(0xFF1A1B2E) else EmochiTextPrimary, fontWeight = FontWeight.Bold) },
-                        colors = androidx.compose.material3.FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = EmochiPrimary,
-                            containerColor = EmochiCard
-                        )
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-                Divider(color = EmochiBorder)
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // API Key Options Section
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(text = "API Anahtarları (Gemini, Groq, Claude, OpenAI)", color = EmochiTextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                    IconButton(onClick = { showKeys = !showKeys }) {
-                        Icon(if (showKeys) Icons.Default.VisibilityOff else Icons.Default.Visibility, contentDescription = null, tint = EmochiPrimary)
-                    }
-                }
-
-                Text(
-                    text = "Boş bırakılan servisler için sistem anahtarı veya yedek Gemini anahtarı kullanılır.",
-                    color = EmochiTextMuted,
-                    fontSize = 11.sp,
-                    modifier = Modifier.padding(bottom = 8.dp)
-                )
-
-                // Gemini Key
-                Text("Gemini API Key", color = EmochiTextPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                OutlinedTextField(
-                    value = geminiApiKey,
-                    onValueChange = { geminiApiKey = it },
-                    placeholder = { Text("Gemini API Key...", fontSize = 12.sp, color = EmochiTextMuted) },
-                    visualTransformation = if (showKeys) VisualTransformation.None else PasswordVisualTransformation(),
-                    modifier = Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 8.dp),
-                    singleLine = true,
-                    colors = customTextFieldColors()
-                )
-
-                // Groq Key
-                Text("Groq API Key (Llama 3.3, DeepSeek R1)", color = EmochiTextPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                OutlinedTextField(
-                    value = groqApiKey,
-                    onValueChange = { groqApiKey = it },
-                    placeholder = { Text("gsk_...", fontSize = 12.sp, color = EmochiTextMuted) },
-                    visualTransformation = if (showKeys) VisualTransformation.None else PasswordVisualTransformation(),
-                    modifier = Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 8.dp),
-                    singleLine = true,
-                    colors = customTextFieldColors()
-                )
-
-                // Claude Key
-                Text("Claude (Anthropic) API Key", color = EmochiTextPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                OutlinedTextField(
-                    value = claudeApiKey,
-                    onValueChange = { claudeApiKey = it },
-                    placeholder = { Text("sk-ant-...", fontSize = 12.sp, color = EmochiTextMuted) },
-                    visualTransformation = if (showKeys) VisualTransformation.None else PasswordVisualTransformation(),
-                    modifier = Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 8.dp),
-                    singleLine = true,
-                    colors = customTextFieldColors()
-                )
-
-                // OpenAI / DeepSeek Key
-                Text("OpenAI / DeepSeek Key", color = EmochiTextPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                OutlinedTextField(
-                    value = openaiApiKey,
-                    onValueChange = { openaiApiKey = it },
-                    placeholder = { Text("sk-...", fontSize = 12.sp, color = EmochiTextMuted) },
-                    visualTransformation = if (showKeys) VisualTransformation.None else PasswordVisualTransformation(),
-                    modifier = Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 8.dp),
-                    singleLine = true,
-                    colors = customTextFieldColors()
-                )
-
-                // Backup Key
-                Text("Yedek Gemini Key", color = EmochiTextPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                OutlinedTextField(
-                    value = backupApiKey,
-                    onValueChange = { backupApiKey = it },
-                    placeholder = { Text("Yedek Gemini Key...", fontSize = 12.sp, color = EmochiTextMuted) },
-                    visualTransformation = if (showKeys) VisualTransformation.None else PasswordVisualTransformation(),
-                    modifier = Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 12.dp),
-                    singleLine = true,
-                    colors = customTextFieldColors()
-                )
-
-                // Switches
+                Spacer(modifier = Modifier.height(8.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -922,116 +885,24 @@ fun GlobalSettingsModal(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text("Otomatik Model/API Geçişi", color = EmochiTextPrimary, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
-                        Text("Modelde hata veya kota aşımı olursa otomatik yedeğe geç.", color = EmochiTextSecondary, fontSize = 11.sp)
+                        Text("Modelde hata veya kota aşımı olursa otomatik yedek modele geç.", color = EmochiTextSecondary, fontSize = 11.sp)
                     }
                     Switch(
                         checked = enableAutoFallback,
                         onCheckedChange = { enableAutoFallback = it },
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = Color(0xFF1A1B2E),
-                            checkedTrackColor = EmochiPrimary
-                        )
+                        colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFF1A1B2E), checkedTrackColor = EmochiPrimary)
                     )
                 }
 
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(14.dp))
+                Divider(color = EmochiBorder)
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Sesli Okuma (Text-To-Speech)", color = EmochiTextPrimary, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
-                        Text("Yanıtlara sesli okuma butonu ekle ve okuma hızını ayarla.", color = EmochiTextSecondary, fontSize = 11.sp)
-                    }
-                    Switch(
-                        checked = enableTts,
-                        onCheckedChange = { enableTts = it },
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = Color(0xFF1A1B2E),
-                            checkedTrackColor = EmochiPrimary
-                        )
-                    )
-                }
-
-                if (enableTts) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 8.dp)
-                            .background(EmochiCard, RoundedCornerShape(12.dp))
-                            .border(1.dp, EmochiBorder, RoundedCornerShape(12.dp))
-                            .padding(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Text(
-                            text = "⚡ Okuma Hızı: ${"%.1f".format(ttsSpeed)}x",
-                            color = EmochiTextPrimary,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            listOf(0.8f to "0.8x (Yavaş)", 1.0f to "1.0x (Normal)", 1.25f to "1.25x (Hızlı)", 1.5f to "1.5x (Çok Hızlı)").forEach { (sp, lbl) ->
-                                val sel = ttsSpeed == sp
-                                Box(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .background(if (sel) EmochiPrimary.copy(alpha = 0.25f) else EmochiSurface)
-                                        .border(1.dp, if (sel) EmochiPrimary else EmochiBorder, RoundedCornerShape(8.dp))
-                                        .clickable { ttsSpeed = sp }
-                                        .padding(vertical = 8.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(lbl, color = if (sel) EmochiPrimary else EmochiTextSecondary, fontSize = 10.sp, fontWeight = if (sel) FontWeight.Bold else FontWeight.Normal)
-                                }
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(4.dp))
-
-                        Text(
-                            text = "🎵 Ses Tonu (Pitch): ${"%.1f".format(ttsPitch)}x",
-                            color = EmochiTextPrimary,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            listOf(0.8f to "Kalın (0.8x)", 1.0f to "Normal (1.0x)", 1.2f to "İnce (1.2x)").forEach { (p, lbl) ->
-                                val sel = ttsPitch == p
-                                Box(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .background(if (sel) EmochiPrimary.copy(alpha = 0.25f) else EmochiSurface)
-                                        .border(1.dp, if (sel) EmochiPrimary else EmochiBorder, RoundedCornerShape(8.dp))
-                                        .clickable { ttsPitch = p }
-                                        .padding(vertical = 8.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(lbl, color = if (sel) EmochiPrimary else EmochiTextSecondary, fontSize = 10.sp, fontWeight = if (sel) FontWeight.Bold else FontWeight.Normal)
-                                }
-                            }
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(18.dp))
-
-                // İÇERİK FİLTRELERİ (NSFW) Section (Matching Screenshot 1)
-                Text(
-                    text = "İÇERİK FİLTRELERİ (NSFW)",
-                    color = Color(0xFFE53935),
-                    fontSize = 13.5.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(bottom = 8.dp)
+                // SECTION 3: CONTENT FILTERS (NSFW)
+                SettingsSectionHeader(
+                    title = "🔞 İçerik Filtreleri",
+                    subtitle = "Yetişkin içerik (+18) ve alt kategori filtresi ayarları.",
+                    icon = Icons.Default.Warning,
+                    color = Color(0xFFE53935)
                 )
 
                 Card(
@@ -1041,7 +912,7 @@ fun GlobalSettingsModal(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(modifier = Modifier.padding(vertical = 4.dp, horizontal = 12.dp)) {
-                        FilterToggleRow(label = "🔓  18+ (NSFW) Kilidini Aç", checked = enableNsfw) { enableNsfw = it }
+                        FilterToggleRow(label = "🔓  18+ (NSFW) Genel Kilidini Aç", checked = enableNsfw) { enableNsfw = it }
                         Divider(color = Color(0xFF2D1E2A))
                         FilterToggleRow(label = "💖  Çapkınlık (Flirty)", checked = enableFlirty) { enableFlirty = it }
                         Divider(color = Color(0xFF2D1E2A))
@@ -1057,56 +928,159 @@ fun GlobalSettingsModal(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(20.dp))
+                Spacer(modifier = Modifier.height(14.dp))
+                Divider(color = EmochiBorder)
 
-                Button(
-                    onClick = {
-                        onSaveSettings(
-                            settings.copy(
-                                customApiKey = geminiApiKey.trim(),
-                                groqApiKey = groqApiKey.trim(),
-                                claudeApiKey = claudeApiKey.trim(),
-                                openaiApiKey = openaiApiKey.trim(),
-                                backupApiKey = backupApiKey.trim(),
-                                selectedModel = selectedModel,
-                                fallbackModel = fallbackModel,
-                                responseLength = responseLength,
-                                enableNsfw = enableNsfw,
-                                enableOoc = enableOoc,
-                                enableFlirty = enableFlirty,
-                                enableHardcore = enableHardcore,
-                                enableFetish = enableFetish,
-                                enableDarkRp = enableDarkRp,
-                                enableSweet = enableSweet,
-                                enablePrimal = enablePrimal,
-                                enableAutoFallback = enableAutoFallback,
-                                enableTts = enableTts,
-                                ttsSpeed = ttsSpeed,
-                                ttsPitch = ttsPitch,
-                                selectedVoiceName = selectedVoiceName,
-                                appLanguage = appLanguage
-                            )
-                        )
-                        onDismiss()
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = EmochiPrimary, contentColor = Color(0xFF1A1B2E)),
+                // SECTION 4: TEXT-TO-SPEECH (TTS)
+                SettingsSectionHeader(
+                    title = "🔊 Sesli Okuma (TTS)",
+                    subtitle = "Yanıtlara sesli okuma butonu ekle, hız ve ses tonunu ayarla.",
+                    icon = Icons.Default.VolumeUp
+                )
+
+                Row(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Ayarları Kaydet", fontWeight = FontWeight.Bold)
+                    Text("Sesli Okuma Özelliğini Etkinleştir", color = EmochiTextPrimary, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
+                    Switch(
+                        checked = enableTts,
+                        onCheckedChange = { enableTts = it },
+                        colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFF1A1B2E), checkedTrackColor = EmochiPrimary)
+                    )
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
-                Divider(color = EmochiBorder)
-                Spacer(modifier = Modifier.height(16.dp))
+                if (enableTts) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 8.dp)
+                            .background(EmochiCard, RoundedCornerShape(12.dp))
+                            .border(1.dp, EmochiBorder, RoundedCornerShape(12.dp))
+                            .padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text("⚡ Okuma Hızı: ${"%.1f".format(ttsSpeed)}x", color = EmochiTextPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            listOf(0.8f to "0.8x", 1.0f to "1.0x", 1.25f to "1.25x", 1.5f to "1.5x").forEach { (sp, lbl) ->
+                                val sel = ttsSpeed == sp
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(if (sel) EmochiPrimary.copy(alpha = 0.25f) else EmochiSurface)
+                                        .border(1.dp, if (sel) EmochiPrimary else EmochiBorder, RoundedCornerShape(8.dp))
+                                        .clickable { ttsSpeed = sp }
+                                        .padding(vertical = 6.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(lbl, color = if (sel) EmochiPrimary else EmochiTextSecondary, fontSize = 10.5.sp, fontWeight = if (sel) FontWeight.Bold else FontWeight.Normal)
+                                }
+                            }
+                        }
 
-                // Export / Import section
-                Text(text = "Yedekleme & Geri Yükleme (JSON / Dosya)", color = EmochiTextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                Text(
-                    text = "Tüm botlarınızı ve sohbet geçmişinizi yedekleyin, dosyaya aktarın veya hazır karakter/yedek dosyalarını geri yükleyin.",
-                    color = EmochiTextSecondary,
-                    fontSize = 11.5.sp,
-                    modifier = Modifier.padding(top = 2.dp, bottom = 8.dp)
+                        Text("🎵 Ses Tonu (Pitch): ${"%.1f".format(ttsPitch)}x", color = EmochiTextPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            listOf(0.8f to "Kalın (0.8)", 1.0f to "Normal (1.0)", 1.2f to "İnce (1.2)").forEach { (p, lbl) ->
+                                val sel = ttsPitch == p
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(if (sel) EmochiPrimary.copy(alpha = 0.25f) else EmochiSurface)
+                                        .border(1.dp, if (sel) EmochiPrimary else EmochiBorder, RoundedCornerShape(8.dp))
+                                        .clickable { ttsPitch = p }
+                                        .padding(vertical = 6.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(lbl, color = if (sel) EmochiPrimary else EmochiTextSecondary, fontSize = 10.5.sp, fontWeight = if (sel) FontWeight.Bold else FontWeight.Normal)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+                Divider(color = EmochiBorder)
+
+                // SECTION 5: LANGUAGE
+                SettingsSectionHeader(
+                    title = "🌐 Uygulama & Yanıt Dili",
+                    subtitle = "Yapay zeka yanıtlarının verileceği varsayılan dil.",
+                    icon = Icons.Default.Language
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    androidx.compose.material3.FilterChip(
+                        selected = appLanguage == "tr",
+                        onClick = { appLanguage = "tr" },
+                        label = { Text("🇹🇷 Türkçe (Varsayılan)", color = if (appLanguage == "tr") Color(0xFF1A1B2E) else EmochiTextPrimary, fontWeight = FontWeight.Bold) },
+                        colors = androidx.compose.material3.FilterChipDefaults.filterChipColors(selectedContainerColor = EmochiPrimary, containerColor = EmochiCard)
+                    )
+                    androidx.compose.material3.FilterChip(
+                        selected = appLanguage == "en",
+                        onClick = { appLanguage = "en" },
+                        label = { Text("🇬🇧 English", color = if (appLanguage == "en") Color(0xFF1A1B2E) else EmochiTextPrimary, fontWeight = FontWeight.Bold) },
+                        colors = androidx.compose.material3.FilterChipDefaults.filterChipColors(selectedContainerColor = EmochiPrimary, containerColor = EmochiCard)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+                Divider(color = EmochiBorder)
+
+                // SECTION 6: TOKEN USAGE
+                SettingsSectionHeader(
+                    title = "📊 Token Kullanım İstatistikleri",
+                    subtitle = "Toplam harcanan girdi ve çıktı token verileri.",
+                    icon = Icons.Default.Speed
+                )
+
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = EmochiCard),
+                    shape = RoundedCornerShape(14.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, EmochiBorder),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Girdi Token", color = EmochiTextMuted, fontSize = 11.sp)
+                                Text("${settings.totalPromptTokens}", color = Color.White, fontSize = 13.5.sp, fontWeight = FontWeight.Bold)
+                            }
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Çıktı Token", color = EmochiTextMuted, fontSize = 11.sp)
+                                Text("${settings.totalCandidateTokens}", color = Color.White, fontSize = 13.5.sp, fontWeight = FontWeight.Bold)
+                            }
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Maliyet", color = EmochiTextMuted, fontSize = 11.sp)
+                                Text("Ücretsiz", color = Color(0xFFA78BFA), fontSize = 13.sp, fontWeight = FontWeight.ExtraBold)
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "Toplam Harcanan: $totalTokensUsed token",
+                            color = EmochiTextSecondary,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+                Divider(color = EmochiBorder)
+
+                // SECTION 7: BACKUP & RESTORE
+                SettingsSectionHeader(
+                    title = "💾 Yedekleme & Geri Yükleme",
+                    subtitle = "Tüm botlarınızı ve verilerinizi dosyaya aktarın veya yedekten yükleyin.",
+                    icon = Icons.Default.Save
                 )
 
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -1131,18 +1105,16 @@ fun GlobalSettingsModal(
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(10.dp)
                     ) {
-                        Text("📋 Kopyala", color = EmochiPrimary, fontSize = 11.5.sp)
+                        Text("📋 Kopyala", color = EmochiPrimary, fontSize = 11.sp)
                     }
 
                     Button(
-                        onClick = {
-                            saveFileLauncher.launch("emochi_backup_${System.currentTimeMillis() / 1000}.json")
-                        },
+                        onClick = { saveFileLauncher.launch("emochi_backup_${System.currentTimeMillis() / 1000}.json") },
                         colors = ButtonDefaults.buttonColors(containerColor = EmochiCard),
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(10.dp)
                     ) {
-                        Text("💾 Kaydet", color = EmochiPrimary, fontSize = 11.5.sp)
+                        Text("💾 Kaydet", color = EmochiPrimary, fontSize = 11.sp)
                     }
 
                     Button(
@@ -1157,8 +1129,7 @@ fun GlobalSettingsModal(
                                         putExtra(Intent.EXTRA_TEXT, json)
                                         type = "text/plain"
                                     }
-                                    val shareIntent = Intent.createChooser(sendIntent, "Yedeği Paylaş")
-                                    context.startActivity(shareIntent)
+                                    context.startActivity(Intent.createChooser(sendIntent, "Yedeği Paylaş"))
                                 } catch (e: Exception) {
                                     statusMessage = "Paylaşım hatası: ${e.message}"
                                 } finally {
@@ -1170,31 +1141,13 @@ fun GlobalSettingsModal(
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(10.dp)
                     ) {
-                        Text("📤 Paylaş", color = EmochiPrimary, fontSize = 11.5.sp)
+                        Text("📤 Paylaş", color = EmochiPrimary, fontSize = 11.sp)
                     }
                 }
 
-                if (exportJson.isNotBlank()) {
-                    OutlinedTextField(
-                        value = exportJson,
-                        onValueChange = {},
-                        readOnly = true,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(90.dp)
-                            .padding(top = 8.dp),
-                        colors = customTextFieldColors()
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(14.dp))
-
-                Text(text = "Geri Yükle & Karakter Yükle", color = EmochiTextPrimary, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
-                
+                Spacer(modifier = Modifier.height(8.dp))
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 4.dp),
+                    modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     Button(
@@ -1203,7 +1156,7 @@ fun GlobalSettingsModal(
                         modifier = Modifier.weight(1.2f),
                         shape = RoundedCornerShape(10.dp)
                     ) {
-                        Text("📂 Dosya Seç (.json)", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                        Text("📂 Dosya Seç (.json)", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
 
                     Button(
@@ -1217,63 +1170,54 @@ fun GlobalSettingsModal(
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(10.dp)
                     ) {
-                        Text("📋 Yapıştır", color = EmochiPrimary, fontSize = 11.5.sp)
+                        Text("📋 Yapıştır", color = EmochiPrimary, fontSize = 11.sp)
                     }
                 }
 
-                OutlinedTextField(
-                    value = importJson,
-                    onValueChange = { importJson = it },
-                    placeholder = { Text("Yedek JSON veya karakter verisini yapıştırın...", fontSize = 12.sp, color = EmochiTextMuted) },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(90.dp)
-                        .padding(top = 6.dp),
-                    colors = customTextFieldColors()
-                )
-
-                Button(
-                    onClick = {
-                        if (importJson.isBlank()) return@Button
-                        scope.launch {
-                            isBusy = true
-                            try {
-                                onImportData(importJson)
-                                Toast.makeText(context, "Geri yükleme tamamlandı!", Toast.LENGTH_SHORT).show()
-                                statusMessage = "Tüm botlar ve veriler başarıyla yüklendi."
-                                importJson = ""
-                            } catch (e: Exception) {
-                                statusMessage = "İçe aktarma hatası: ${e.message}"
-                            } finally {
-                                isBusy = false
+                if (importJson.isNotBlank()) {
+                    OutlinedTextField(
+                        value = importJson,
+                        onValueChange = { importJson = it },
+                        modifier = Modifier.fillMaxWidth().height(80.dp).padding(top = 4.dp),
+                        colors = customTextFieldColors()
+                    )
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                isBusy = true
+                                try {
+                                    onImportData(importJson)
+                                    Toast.makeText(context, "Geri yükleme tamamlandı!", Toast.LENGTH_SHORT).show()
+                                    statusMessage = "Veriler yüklendi."
+                                    importJson = ""
+                                } catch (e: Exception) {
+                                    statusMessage = "Hata: ${e.message}"
+                                } finally {
+                                    isBusy = false
+                                }
                             }
-                        }
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = EmochiPrimary, contentColor = Color(0xFF1A1B2E)),
-                    enabled = importJson.isNotBlank() && !isBusy,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 6.dp),
-                    shape = RoundedCornerShape(10.dp)
-                ) {
-                    Text("✅ İçe Aktarımı Başlat", fontWeight = FontWeight.Bold, fontSize = 12.5.sp)
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = EmochiPrimary, contentColor = Color(0xFF1A1B2E)),
+                        enabled = !isBusy,
+                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Text("✅ Yüklemeyi Başlat", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    }
                 }
 
                 statusMessage?.let { msg ->
-                    Text(text = msg, color = EmochiTextSecondary, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
+                    Text(text = msg, color = EmochiTextSecondary, fontSize = 11.5.sp, modifier = Modifier.padding(top = 4.dp))
                 }
 
-                Spacer(modifier = Modifier.height(18.dp))
+                Spacer(modifier = Modifier.height(14.dp))
                 Divider(color = EmochiBorder)
-                Spacer(modifier = Modifier.height(16.dp))
 
-                // Sürüm & Güncelleme Sistemi Section
-                Text(text = "🚀 Velora Sürüm & Güncelleme Kontrolü", color = EmochiTextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                Text(
-                    text = "Mevcut Sürüm: Velora v1.2.0 (Build 2026.08) • Son Güncelleme Korumalı",
-                    color = EmochiTextMuted,
-                    fontSize = 11.5.sp,
-                    modifier = Modifier.padding(top = 2.dp, bottom = 10.dp)
+                // SECTION 8: VERSION & UPDATES
+                SettingsSectionHeader(
+                    title = "🚀 Velora Sürüm & Güncelleme",
+                    subtitle = "Mevcut sürüm: Velora v1.4 • Güncelleme kontrolleri.",
+                    icon = Icons.Default.AutoAwesome
                 )
 
                 Card(
@@ -1283,24 +1227,62 @@ fun GlobalSettingsModal(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(12.dp),
+                        modifier = Modifier.fillMaxWidth().padding(12.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text("Yeni Sürüm Var Mı?", color = EmochiTextPrimary, fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
-                            Text("Tek tıkla APK güncellemelerini ve yenilikleri kontrol edin.", color = EmochiTextSecondary, fontSize = 11.sp)
+                            Text("Sürüm Kontrolü", color = EmochiTextPrimary, fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
+                            Text("APK güncellemelerini denetleyin.", color = EmochiTextSecondary, fontSize = 11.sp)
                         }
                         Button(
                             onClick = { showUpdateModal = true },
                             colors = ButtonDefaults.buttonColors(containerColor = EmochiPrimary, contentColor = Color(0xFF1A1B2E)),
                             shape = RoundedCornerShape(10.dp)
                         ) {
-                            Text("Güncelle", fontWeight = FontWeight.Bold, fontSize = 11.5.sp)
+                            Text("Güncelle", fontWeight = FontWeight.Bold, fontSize = 11.sp)
                         }
                     }
+                }
+
+                Spacer(modifier = Modifier.height(18.dp))
+
+                // SAVE BUTTON
+                Button(
+                    onClick = {
+                        onSaveSettings(
+                            settings.copy(
+                                customApiKey = geminiApiKey.trim(),
+                                groqApiKey = groqApiKey.trim(),
+                                claudeApiKey = claudeApiKey.trim(),
+                                openaiApiKey = openaiApiKey.trim(),
+                                backupApiKey = backupApiKey.trim(),
+                                selectedProvider = selectedProvider,
+                                selectedModel = selectedModel,
+                                fallbackModel = fallbackModel,
+                                responseLength = responseLength,
+                                enableNsfw = enableNsfw,
+                                enableFlirty = enableFlirty,
+                                enableHardcore = enableHardcore,
+                                enableFetish = enableFetish,
+                                enableDarkRp = enableDarkRp,
+                                enableSweet = enableSweet,
+                                enablePrimal = enablePrimal,
+                                enableAutoFallback = enableAutoFallback,
+                                enableTts = enableTts,
+                                ttsSpeed = ttsSpeed,
+                                ttsPitch = ttsPitch,
+                                selectedVoiceName = selectedVoiceName,
+                                appLanguage = appLanguage
+                            )
+                        )
+                        onDismiss()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = EmochiPrimary, contentColor = Color(0xFF1A1B2E)),
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text("Ayarları Kaydet", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                 }
             }
         }
@@ -1384,12 +1366,13 @@ fun BotSettingsModal(
                     .padding(20.dp)
                     .verticalScroll(rememberScrollState())
             ) {
+                // Header
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Bot Profil & Hafıza Ayarları", color = EmochiTextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                    Text("Bot Profil & Özel Ayarlar", color = EmochiTextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Bold)
                     IconButton(onClick = onDismiss) {
                         Icon(Icons.Default.Close, contentDescription = "Kapat", tint = EmochiTextSecondary)
                     }
@@ -1397,9 +1380,127 @@ fun BotSettingsModal(
 
                 Spacer(modifier = Modifier.height(10.dp))
 
+                // Emotion Bar
                 EmotionStatusSection(bot = bot, characterEmotions = characterEmotions)
 
                 Spacer(modifier = Modifier.height(14.dp))
+
+                // SECTION 1: IDENTITY & SCENARIO
+                SettingsSectionHeader(
+                    title = "🎭 Kimlik & Senaryo",
+                    subtitle = "Karakterinizin temel bilgilerini, kişiliğini ve senaryo bağlamını düzenleyin.",
+                    icon = Icons.Default.Person
+                )
+
+                if (bot.mode == "personal") {
+                    Text("Karakter Adı", color = EmochiTextPrimary, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
+                    OutlinedTextField(
+                        value = aiName,
+                        onValueChange = { aiName = it },
+                        modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
+                        colors = customTextFieldColors(),
+                        singleLine = true
+                    )
+
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text("Kişilik Detayları", color = EmochiTextPrimary, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
+                    OutlinedTextField(
+                        value = personality,
+                        onValueChange = { personality = it },
+                        modifier = Modifier.fillMaxWidth().height(100.dp).padding(top = 2.dp),
+                        colors = customTextFieldColors()
+                    )
+                } else {
+                    Text("Evren / Dünya Adı", color = EmochiTextPrimary, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
+                    OutlinedTextField(
+                        value = universeName,
+                        onValueChange = { universeName = it },
+                        modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
+                        colors = customTextFieldColors(),
+                        singleLine = true
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+                Text("Senaryo & Bağlam", color = EmochiTextPrimary, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
+                OutlinedTextField(
+                    value = scenario,
+                    onValueChange = { scenario = it },
+                    modifier = Modifier.fillMaxWidth().height(100.dp).padding(top = 2.dp),
+                    colors = customTextFieldColors()
+                )
+
+                if (bot.mode == "universe") {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text("Karakter Kadrosu", color = EmochiTextPrimary, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
+                    charList.forEachIndexed { index, char ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            OutlinedTextField(
+                                value = char.name,
+                                onValueChange = { newName ->
+                                    charList = charList.toMutableList().apply {
+                                        this[index] = this[index].copy(name = newName)
+                                    }
+                                },
+                                placeholder = { Text("İsim", fontSize = 11.sp, color = EmochiTextMuted) },
+                                modifier = Modifier.weight(1f),
+                                colors = customTextFieldColors(),
+                                singleLine = true
+                            )
+                            OutlinedTextField(
+                                value = char.desc,
+                                onValueChange = { newDesc ->
+                                    charList = charList.toMutableList().apply {
+                                        this[index] = this[index].copy(desc = newDesc)
+                                    }
+                                },
+                                placeholder = { Text("Tanım", fontSize = 11.sp, color = EmochiTextMuted) },
+                                modifier = Modifier.weight(2f),
+                                colors = customTextFieldColors(),
+                                singleLine = true
+                            )
+                            IconButton(onClick = {
+                                charList = charList.toMutableList().apply { removeAt(index) }
+                            }) {
+                                Icon(Icons.Default.Close, contentDescription = "Sil", tint = EmochiError, modifier = Modifier.size(18.dp))
+                            }
+                        }
+                    }
+                    TextButton(
+                        onClick = {
+                            charList = charList.toMutableList().apply { add(KeyCharacter(name = "", desc = "")) }
+                        }
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = null, tint = EmochiPrimary, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Karakter Ekle", color = EmochiPrimary, fontSize = 12.sp)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+                Text("Senin Karakterin (Kullanıcı Adı)", color = EmochiTextPrimary, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
+                OutlinedTextField(
+                    value = userCharName,
+                    onValueChange = { userCharName = it },
+                    placeholder = { Text("İsim", fontSize = 12.sp, color = EmochiTextMuted) },
+                    modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
+                    colors = customTextFieldColors(),
+                    singleLine = true
+                )
+
+                Spacer(modifier = Modifier.height(14.dp))
+                Divider(color = EmochiBorder)
+
+                // SECTION 2: IMAGES & VISUALS
+                SettingsSectionHeader(
+                    title = "🖼️ Görseller",
+                    subtitle = "Karakter avatarı ve sohbet ekranı duvar kağıdını seçin.",
+                    icon = Icons.Default.Image
+                )
 
                 // Avatar Photo Picker UI
                 Card(
@@ -1434,9 +1535,9 @@ fun BotSettingsModal(
                         }
 
                         Column(modifier = Modifier.weight(1f)) {
-                            Text("Bot Görseli / Fotoğrafı", color = EmochiTextPrimary, fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
-                            Text("Galeriden veya URL ile kapak resmi yükle", color = EmochiTextMuted, fontSize = 11.sp)
-                            
+                            Text("Bot Görseli / Avatar", color = EmochiTextPrimary, fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
+                            Text("Galeriden kapak resmi yükle", color = EmochiTextMuted, fontSize = 11.sp)
+
                             Row(modifier = Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                 Button(
                                     onClick = { photoPickerLauncher.launch("image/*") },
@@ -1496,7 +1597,7 @@ fun BotSettingsModal(
                         Column(modifier = Modifier.weight(1f)) {
                             Text("Sohbet Arka Plan Resmi", color = EmochiTextPrimary, fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
                             Text("Sohbet içi özel duvar kağıdı belirleyin", color = EmochiTextMuted, fontSize = 11.sp)
-                            
+
                             Row(
                                 modifier = Modifier.padding(top = 6.dp),
                                 horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -1534,88 +1635,148 @@ fun BotSettingsModal(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.height(14.dp))
+                Divider(color = EmochiBorder)
 
-                // Bot Privacy Toggle Card (Public / Private) - Templates cannot be public
-                if (!bot.isTemplate && !bot.id.startsWith("starter_") && !bot.id.startsWith("preset_")) {
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = EmochiCard),
-                        shape = RoundedCornerShape(14.dp),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, EmochiBorder),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = if (isPublic) "🌐 Herkese Açık Bot" else "🔒 Sadece Kendine Özel",
-                                    color = EmochiTextPrimary,
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Text(
-                                    text = if (isPublic) "Diğer kullanıcılar 'Keşfet' bölümünde botunuzu bulabilir." else "Bu bot gizlidir, sadece siz görebilirsiniz.",
-                                    color = EmochiTextMuted,
-                                    fontSize = 11.sp
-                                )
-                            }
-                            Switch(
-                                checked = isPublic,
-                                onCheckedChange = { isPublic = it },
-                                colors = SwitchDefaults.colors(
-                                    checkedThumbColor = Color(0xFF1A1B2E),
-                                    checkedTrackColor = EmochiPrimary
-                                )
-                            )
-                        }
-                    }
+                // SECTION 3: PER-BOT SPECIFIC SETTINGS
+                SettingsSectionHeader(
+                    title = "⚙️ Bu Bota Özel Ayarlar",
+                    subtitle = "Bu karaktere özel yönlendirme, yanıt uzunluğu ve +18 izinlerini yapılandırın.",
+                    icon = Icons.Default.Settings
+                )
 
-                    Spacer(modifier = Modifier.height(12.dp))
-                }
-
-                // Per-Bot Token Usage Stats Card
-                val botTotalTokens = bot.totalPromptTokens + bot.totalCandidateTokens
+                // 1) OOC Switch Card (Moved here as requested)
                 Card(
                     colors = CardDefaults.cardColors(containerColor = EmochiCard),
                     shape = RoundedCornerShape(14.dp),
                     border = androidx.compose.foundation.BorderStroke(1.dp, EmochiBorder),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Column(modifier = Modifier.padding(12.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Speed, contentDescription = null, tint = EmochiPrimary, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Bot Token Kullanım Sayacı", color = EmochiTextPrimary, fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "💬 Parantez İçi Yönlendirme (OOC)",
+                                color = EmochiTextPrimary,
+                                fontSize = 12.5.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "Sohbet esnasında parantez içindeki ( ... ) ifadeler AI'a hikaye dışı meta yönlendirme komutu olarak iletilir.",
+                                color = EmochiTextMuted,
+                                fontSize = 11.sp,
+                                lineHeight = 15.sp
+                            )
                         }
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Switch(
+                            checked = enableOoc,
+                            onCheckedChange = { enableOoc = it },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color(0xFF1A1B2E),
+                                checkedTrackColor = EmochiPrimary
+                            )
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // 2) Per-Bot Response Length
+                Text("Bu Bota Özel Yanıt Uzunluğu", color = EmochiTextPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Text("Boş veya varsayılan bırakılırsa Genel Ayarlar'daki yanıt uzunluğu kullanılır.", color = EmochiTextMuted, fontSize = 11.sp)
+                Spacer(modifier = Modifier.height(4.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    listOf(
+                        "default" to "Varsayılan",
+                        "short" to "Kısa",
+                        "standard" to "Standart",
+                        "long" to "Uzun Roman"
+                    ).forEach { (key, label) ->
+                        val isSelected = customLength == key
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(if (isSelected) EmochiPrimary.copy(alpha = 0.2f) else EmochiCard)
+                                .border(1.dp, if (isSelected) EmochiPrimary else EmochiBorder, RoundedCornerShape(8.dp))
+                                .clickable { customLength = key }
+                                .padding(vertical = 8.dp),
+                            contentAlignment = Alignment.Center
                         ) {
-                            Column {
-                                Text("Girdi Token", color = EmochiTextMuted, fontSize = 11.sp)
-                                Text("${bot.totalPromptTokens}", color = EmochiTextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                            }
-                            Column {
-                                Text("Çıktı Token", color = EmochiTextMuted, fontSize = 11.sp)
-                                Text("${bot.totalCandidateTokens}", color = EmochiTextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                            }
-                            Column {
-                                Text("Toplam Token", color = EmochiTextMuted, fontSize = 11.sp)
-                                Text("$botTotalTokens", color = EmochiPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                            }
+                            Text(
+                                text = label,
+                                color = if (isSelected) EmochiPrimary else EmochiTextSecondary,
+                                fontSize = 10.5.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                            )
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(10.dp))
 
-                // Neural Vault Button (Screenshot 2 Trigger)
+                // 3) Per-Bot +18 NSFW Switch Card
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = EmochiCard),
+                    shape = RoundedCornerShape(14.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, EmochiBorder),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "🔞 +18 / Filtresiz RP İzni",
+                                color = EmochiTextPrimary,
+                                fontSize = 12.5.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "Bu karaktere özel sansürsüz içerik izni tanımlar. Boş bırakılırsa genel ayar geçerlidir.",
+                                color = EmochiTextMuted,
+                                fontSize = 11.sp,
+                                lineHeight = 14.sp
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Switch(
+                            checked = isNsfw,
+                            onCheckedChange = { isNsfw = it },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color(0xFF1A1B2E),
+                                checkedTrackColor = EmochiPrimary
+                            )
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+                Divider(color = EmochiBorder)
+
+                // SECTION 4: MEMORY & NEURAL VAULT
+                SettingsSectionHeader(
+                    title = "🧠 Hafıza & Neural Vault",
+                    subtitle = "Karakter hafıza yönetimi ve gelişmiş bellek kasası.",
+                    icon = Icons.Default.Psychology
+                )
+
+                // Neural Vault Button
                 Button(
                     onClick = { showNeuralVault = true },
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF141424), contentColor = Color(0xFF2196F3)),
@@ -1644,209 +1805,8 @@ fun BotSettingsModal(
                     )
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
-
-                if (bot.mode == "personal") {
-                    Text("Karakter Adı", color = EmochiTextPrimary, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
-                    OutlinedTextField(
-                        value = aiName,
-                        onValueChange = { aiName = it },
-                        modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
-                        colors = customTextFieldColors(),
-                        singleLine = true
-                    )
-
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Text("Kişilik Detayları", color = EmochiTextPrimary, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
-                    OutlinedTextField(
-                        value = personality,
-                        onValueChange = { personality = it },
-                        modifier = Modifier.fillMaxWidth().height(100.dp).padding(top = 2.dp),
-                        colors = customTextFieldColors()
-                    )
-                } else {
-                    Text("Evren / Dünya Adı", color = EmochiTextPrimary, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
-                    OutlinedTextField(
-                        value = universeName,
-                        onValueChange = { universeName = it },
-                        modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
-                        colors = customTextFieldColors(),
-                        singleLine = true
-                    )
-                }
-
                 Spacer(modifier = Modifier.height(10.dp))
-                Text("Senaryo & Bağlam", color = EmochiTextPrimary, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
-                OutlinedTextField(
-                    value = scenario,
-                    onValueChange = { scenario = it },
-                    modifier = Modifier.fillMaxWidth().height(100.dp).padding(top = 2.dp),
-                    colors = customTextFieldColors()
-                )
 
-                // Per Bot Response Length
-                Spacer(modifier = Modifier.height(10.dp))
-                Text("Bu Bot İçin Özel Yanıt Uzunluğu", color = EmochiTextPrimary, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    listOf(
-                        "default" to "Genel",
-                        "short" to "Kısa",
-                        "standard" to "Standart",
-                        "long" to "Uzun"
-                    ).forEach { (key, label) ->
-                        val isSelected = customLength == key
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(if (isSelected) EmochiPrimary.copy(alpha = 0.2f) else EmochiCard)
-                                .border(1.dp, if (isSelected) EmochiPrimary else EmochiBorder, RoundedCornerShape(8.dp))
-                                .clickable { customLength = key }
-                                .padding(vertical = 8.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = label,
-                                color = if (isSelected) EmochiPrimary else EmochiTextSecondary,
-                                fontSize = 11.sp,
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                            )
-                        }
-                    }
-                }
-
-                // Per Bot +18 NSFW Switch
-                Spacer(modifier = Modifier.height(10.dp))
-                Column {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("+18 / Filtresiz RP İzni", color = EmochiTextPrimary, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
-                        Switch(
-                            checked = isNsfw,
-                            onCheckedChange = { isNsfw = it },
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = Color(0xFF1A1B2E),
-                                checkedTrackColor = EmochiPrimary
-                            )
-                        )
-                    }
-                    Text(
-                        text = "💡 Bot düzeyinde +18 iznidir. Genel Ayarlar'da NSFW kapalıysa bu seçenek pasif kalır.",
-                        color = EmochiTextMuted,
-                        fontSize = 10.5.sp
-                    )
-                }
-
-                // Per Bot OOC Parantez İçi Switch Card
-                Spacer(modifier = Modifier.height(10.dp))
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = EmochiCard),
-                    shape = RoundedCornerShape(14.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, EmochiBorder),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "💬 (... Parantez İçi Yönlendirme / OOC)",
-                                color = EmochiTextPrimary,
-                                fontSize = 12.5.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                text = "Mesajınızdaki parantez içi (... Bu böyle olmalı) ifadelerini hikaye dışı AI komutu kabul eder.",
-                                color = EmochiTextMuted,
-                                fontSize = 11.sp,
-                                lineHeight = 14.sp,
-                                modifier = Modifier.padding(top = 2.dp)
-                            )
-                        }
-                        Switch(
-                            checked = enableOoc,
-                            onCheckedChange = { enableOoc = it },
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = Color(0xFF1A1B2E),
-                                checkedTrackColor = EmochiPrimary
-                            )
-                        )
-                    }
-                }
-
-                if (bot.mode == "universe") {
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Text("Karakter Kadrosu", color = EmochiTextPrimary, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
-                    charList.forEachIndexed { index, char ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            OutlinedTextField(
-                                value = char.name,
-                                onValueChange = { newName ->
-                                    charList = charList.toMutableList().apply {
-                                        this[index] = this[index].copy(name = newName)
-                                    }
-                                },
-                                placeholder = { Text("İsim", fontSize = 11.sp, color = EmochiTextMuted) },
-                                modifier = Modifier.weight(1f),
-                                colors = customTextFieldColors(),
-                                singleLine = true
-                            )
-                            OutlinedTextField(
-                                value = char.desc,
-                                onValueChange = { newDesc ->
-                                    charList = charList.toMutableList().apply {
-                                        this[index] = this[index].copy(desc = newDesc)
-                                    }
-                                },
-                                placeholder = { Text("Tanım", fontSize = 11.sp, color = EmochiTextMuted) },
-                                modifier = Modifier.weight(2f),
-                                colors = customTextFieldColors(),
-                                singleLine = true
-                            )
-                            IconButton(onClick = {
-                                charList = charList.toMutableList().apply { removeAt(index) }
-                            }) {
-                                Icon(Icons.Default.Close, contentDescription = "Sil", tint = EmochiError, modifier = Modifier.size(18.dp))
-                            }
-                        }
-                    }
-                    TextButton(
-                        onClick = {
-                            charList = charList.toMutableList().apply { add(KeyCharacter(name = "", desc = "")) }
-                        }
-                    ) {
-                        Icon(Icons.Default.Add, contentDescription = null, tint = EmochiPrimary, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Karakter Ekle", color = EmochiPrimary, fontSize = 12.sp)
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
-                Text("Senin Karakterin", color = EmochiTextPrimary, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
-                OutlinedTextField(
-                    value = userCharName,
-                    onValueChange = { userCharName = it },
-                    placeholder = { Text("İsim", fontSize = 12.sp, color = EmochiTextMuted) },
-                    modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
-                    colors = customTextFieldColors(),
-                    singleLine = true
-                )
-
-                Spacer(modifier = Modifier.height(12.dp))
                 Text("Kalıcı Hafıza (Asla Silinmez)", color = EmochiPrimary, fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
                 Text(
                     text = "AI'nın her zaman bilmesini istediğiniz kuralları, ilişkileri veya gerçekleri buraya yazın.",
@@ -1860,12 +1820,12 @@ fun BotSettingsModal(
                     colors = customTextFieldColors()
                 )
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(10.dp))
                 Text("Otomatik Hikaye Durumu", color = EmochiTextPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(80.dp)
+                        .height(70.dp)
                         .clip(RoundedCornerShape(8.dp))
                         .background(EmochiCard)
                         .border(1.dp, EmochiBorder, RoundedCornerShape(8.dp))
@@ -1875,7 +1835,7 @@ fun BotSettingsModal(
                     Text(
                         text = storyNotes.ifBlank { "Henüz kayıtlı hikaye durumu yok." },
                         color = EmochiTextSecondary,
-                        fontSize = 11.5.sp
+                        fontSize = 11.sp
                     )
                 }
 
@@ -1884,7 +1844,7 @@ fun BotSettingsModal(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(80.dp)
+                        .height(70.dp)
                         .clip(RoundedCornerShape(8.dp))
                         .background(EmochiCard)
                         .border(1.dp, EmochiBorder, RoundedCornerShape(8.dp))
@@ -1894,12 +1854,64 @@ fun BotSettingsModal(
                     Text(
                         text = memoryNotes.ifBlank { "Henüz kayıtlı hafıza özeti yok." },
                         color = EmochiTextSecondary,
-                        fontSize = 11.5.sp
+                        fontSize = 11.sp
                     )
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(14.dp))
+                Divider(color = EmochiBorder)
 
+                // SECTION 5: SHARING & VISIBILITY
+                if (!bot.isTemplate && !bot.id.startsWith("starter_") && !bot.id.startsWith("preset_")) {
+                    SettingsSectionHeader(
+                        title = "🌐 Paylaşım & Görünürlük",
+                        subtitle = "Botun görünürlük ayarı.",
+                        icon = Icons.Default.Public
+                    )
+
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = EmochiCard),
+                        shape = RoundedCornerShape(14.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, EmochiBorder),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = if (isPublic) "🌐 Herkese Açık Bot" else "🔒 Sadece Kendine Özel",
+                                    color = EmochiTextPrimary,
+                                    fontSize = 12.5.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = if (isPublic) "Diğer kullanıcılar 'Keşfet' bölümünde botunuzu bulabilir." else "Bu bot gizlidir, sadece siz görebilirsiniz.",
+                                    color = EmochiTextMuted,
+                                    fontSize = 11.sp
+                                )
+                            }
+                            Switch(
+                                checked = isPublic,
+                                onCheckedChange = { isPublic = it },
+                                colors = SwitchDefaults.colors(
+                                    checkedThumbColor = Color(0xFF1A1B2E),
+                                    checkedTrackColor = EmochiPrimary
+                                )
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+                    Divider(color = EmochiBorder)
+                }
+
+                // SAVE BUTTON
+                Spacer(modifier = Modifier.height(10.dp))
                 Button(
                     onClick = {
                         val updated = bot.copy(
@@ -1927,12 +1939,19 @@ fun BotSettingsModal(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp)
                 ) {
-                    Text("Değişiklikleri Kaydet", fontWeight = FontWeight.Bold)
+                    Text("Değişiklikleri Kaydet", fontWeight = FontWeight.Bold, fontSize = 13.5.sp)
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(14.dp))
                 Divider(color = EmochiBorder)
-                Spacer(modifier = Modifier.height(16.dp))
+
+                // SECTION 6: DANGEROUS ACTIONS
+                SettingsSectionHeader(
+                    title = "⚠️ Tehlikeli İşlemler",
+                    subtitle = "Sohbet geçmişini sıfırlama veya botu tamamen silme.",
+                    icon = Icons.Default.Warning,
+                    color = EmochiError
+                )
 
                 if (!confirmResetChat) {
                     Button(

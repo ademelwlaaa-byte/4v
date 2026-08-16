@@ -22,4 +22,7 @@ interface CharacterEmotionDao {
 
     @Query("DELETE FROM character_emotions WHERE botId = :botId")
     suspend fun deleteEmotionsForBot(botId: String)
+
+    @Query("DELETE FROM character_emotions WHERE id = :id")
+    suspend fun deleteEmotionById(id: Long)
 }
