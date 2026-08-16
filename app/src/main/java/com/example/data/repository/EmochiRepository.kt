@@ -107,10 +107,17 @@ class EmochiRepository(
             emotionDao.deleteEmotionsForBot(botId)
             fragmentDao.deleteFragmentsForBot(botId)
             val bot = botDao.getBotById(botId) ?: return@withTransaction
-            val defaultEmotion = """{"mood":"nötr","intensity":5,"affection":50,"trust":50,"tension":10}"""
+            val calculatedBaseline = EmotionState.calculateBaselineEmotionState(
+                aiName = bot.aiName,
+                personality = bot.aiPersonality,
+                scenario = bot.scenario,
+                userCharName = bot.userCharName,
+                userCharDesc = bot.userCharDesc
+            ).toJson()
+
             val updatedBot = bot.copy(
-                emotionState = defaultEmotion,
-                previousEmotionState = defaultEmotion,
+                emotionState = calculatedBaseline,
+                previousEmotionState = calculatedBaseline,
                 storyNotes = "",
                 memoryNotes = "",
                 pinnedMemory = "",
@@ -206,6 +213,14 @@ class EmochiRepository(
         }
         if (existingBots.isEmpty()) {
             val now = System.currentTimeMillis()
+            val aylaBaseline = EmotionState.calculateBaselineEmotionState(
+                aiName = "Ayla",
+                personality = "Sıcak, neşeli, empati yeteneği yüksek, konuşkan ve korumacı bir yakın arkadaş.",
+                scenario = "Lise/üniversiteden beri en yakın dostun. Akşam saatlerinde kahveni yudumlarken sana mesaj atıyor.",
+                userCharName = "Sencer",
+                userCharDesc = "Ayla'nın en güvendiği yakın dostu."
+            ).toJson()
+
             val starterBot1 = BotEntity(
                 id = "starter_ayla",
                 mode = "personal",
@@ -223,9 +238,27 @@ class EmochiRepository(
                 isNsfw = true,
                 isPublic = true,
                 isTemplate = true,
+                emotionState = aylaBaseline,
+                previousEmotionState = aylaBaseline,
                 pinnedMemory = "Ayla her zaman içten ve samimidir. Sencer'e çok değer verir.",
                 updatedAt = now
             )
+
+            val aetheriaBaseline = EmotionState.calculateBaselineEmotionState(
+                aiName = "Valeria",
+                personality = "Gizemli, temkinli ve otoriter lonca lideri",
+                scenario = "Neon ışıklarıyla aydınlatılmış Aetheria şehrinin yüksek kuleleri ve gölgeli alt sokaklarında tehlikeli bir lonca anlaşması yapılmak üzeredir.",
+                userCharName = "Rider",
+                userCharDesc = "Loncanın en yetenekli bilgi tüccarı."
+            ).toJson()
+
+            val aetheriaWorldAtmosphere = WorldAtmosphere(
+                mood = "gergin ve kasvetli",
+                intensity = 8,
+                currentEvent = "Veri çipi teslimatı ve lonca muhafızlarının takibi",
+                macroAtmosphere = "Siberpunk Aetheria'da şirket klanları ve yeraltı loncaları hakimdir. Şehirde gizli yürütülen her adım ölümcül yaptırımlara tabidir.",
+                microAtmosphere = "Yağmurlu ve loş neon ışıklı dar bir sokak. Yağmurlukların yakası kaldırılmış, takip edilme riski yüksek."
+            ).toJson()
 
             val starterBot2 = BotEntity(
                 id = "starter_aetheria",
@@ -244,6 +277,9 @@ class EmochiRepository(
                 isNsfw = true,
                 isPublic = true,
                 isTemplate = true,
+                emotionState = aetheriaBaseline,
+                previousEmotionState = aetheriaBaseline,
+                worldAtmosphere = aetheriaWorldAtmosphere,
                 pinnedMemory = "Aetheria evreninde yüksek teknoloji ile kadim sihir iç içedir.",
                 updatedAt = now - 1000
             )
@@ -509,9 +545,10 @@ class EmochiRepository(
 
         val cleanLines = result.lines().filterNot { line ->
             val l = line.trim().lowercase()
-            l.contains("mood:") || l.contains("intensity:") ||
-                    l.contains("affection_delta:") || l.contains("trust_delta:") ||
-                    l.contains("tension_delta:") || l.contains("current_event:") ||
+            l.contains("mood:") || l.contains("secondary_mood:") || l.contains("suppressed_emotion:") ||
+                    l.contains("intensity:") || l.contains("affection_delta:") || l.contains("trust_delta:") ||
+                    l.contains("tension_delta:") || l.contains("hurt_delta:") || l.contains("speech_pattern:") ||
+                    l.contains("current_event:") || l.contains("macro_atmosphere:") || l.contains("micro_atmosphere:") ||
                     l.startsWith("[emotion_update") || l.startsWith("emotion_update") ||
                     l.startsWith("[character_emotion") || l.startsWith("character_emotion") ||
                     l.startsWith("[world_atmosphere") || l.startsWith("world_atmosphere")
@@ -594,7 +631,7 @@ class EmochiRepository(
             "## İÇERİK POLİTİKASI: GÜVENLİ / DENGELİ MOD\n- Aile dostu, genel izleyici kitlesine uygun, grafik şiddet veya cinsel açıklık içermeyen dengeli bir anlatım kullan."
         }
 
-        // Response Length Guidance (Authoritative & Explicit)
+        // Response Length Guidance
         val effLength = if (bot.customLength != "default") bot.customLength else settings.responseLength
         val lengthInstruction = when (effLength) {
             "short" -> "\n## YANIT UZUNLUĞU KURALLARI (ZORUNLU: SON DERECE KISA YANIT)\n- KESİNLİKLE VE ZORUNLU OLARAK ÇOK KISA YANIT VER!\n- MAKSİMUM 1 - 3 KISA CÜMLE (VEYA EN FAZLA 1 KISA PARAGRAF) YAZ.\n- ASLA UZUN PARAGRAFLAR VEYA DETAYLI TASVİRLER YAZMA! Hızlı, vurucu, öz ve doğrudan olaya odaklan."
@@ -631,7 +668,7 @@ Durdu, ifadesi ciddileşti.
 
             ## MANDATORY LANGUAGE OVERRIDE (USER APP LANGUAGE = ENGLISH):
             - The active user application language setting is ENGLISH ("en").
-            - REGARDLESS of the original language of the character backstory, universe scenario, initial message, memory notes, or user input (even if written in Turkish or another language):
+            - REGARDLESS of the original language of the character backstory, universe scenario, initial message, memory notes, or user input:
               1. ALL YOUR RESPONSES MUST BE 100% IN FLUENT, NATURAL, HIGH-QUALITY ENGLISH.
               2. Translate all scenario actions, dialogue, character thoughts, and narrator descriptions seamlessly into English in real-time.
               3. Never produce Turkish text in your output when the app language is set to English.
@@ -641,66 +678,79 @@ Durdu, ifadesi ciddileşti.
 
             ## MUTLAK DİL VE ZORUNLU ÇEVİRİ KURALI (UYGULAMA DİLİ = TÜRKÇE):
             - Kullanıcının aktif uygulama dili TÜRKÇE ("tr")'dir.
-            - Karakter tanımı, senaryo detayları, açılış mesajı, hafıza notları veya kullanıcı girdisi İngilizce ya da başka bir dilde yazılmış olsa dahi:
+            - Karakter tanımı, senaryo detayları, açılış mesajı, hafıza notları veya kullanıcı girdisi başka bir dilde yazılmış olsa dahi:
               1. TÜM YANITLARINI %100 MÜKEMMEL, DOĞAL VE AKICI TÜRKÇE OLARAK ÜRET.
-              2. İngilizce yazılmış tüm senaryo eylemlerini, diyalogları, iç düşünceleri ve anlatımı anında Türkçe'ye çevirerek sun.
-              3. Dil Türkçe seçiliyken yanıtlarında asla İngilizce veya yabancı dilde metin üretme.
+              2. Bütün eylemleri, diyalogları, iç düşünceleri ve anlatımı anında Türkçe'ye çevirerek sun.
             """.trimIndent()
         }
 
         val oocDirective = if (bot.enableOoc) {
-            "\n\n## PARANTEZ İÇİ YÖNLENDİRME / OOC (OUT OF CHARACTER) YÖNERGESİ:\n- Kullanıcının mesajında parantez içinde \"(...)\" veya \"[...]\" yazdığı ifadeler hikaye dışı (OOC / Meta Yönlendirme) talimatlar ve AI yönlendirmeleridir.\n- Örnek: \"(Ayla bu sırada kapıyı kilitlesin)\" veya \"(Sahneyi akşam vaktine taşıyalım)\" veya \"(Daha soğuk tepki ver)\".\n- Parantez içindeki bu talimatları SİSTEM VE YÖNERGE TALİMATI olarak algıla. Karakter diyalogunda \"neden parantez açtın\" veya \"tamam şöyle yapıyorum\" deme! Doğrudan talimatı sahneye, karaktere ve aksiyona dürüstçe uygula."
+            "\n\n## PARANTEZ İÇİ YÖNLENDİRME / OOC (OUT OF CHARACTER) YÖNERGESİ:\n- Kullanıcının mesajında parantez içinde \"(...)\" veya \"[...]\" yazdığı ifadeler hikaye dışı talimatlardır.\n- Parantez içindeki bu talimatları SİSTEM VE YÖNERGE TALİMATI olarak algıla. Doğrudan talimatı sahneye, karaktere ve aksiyona uygula."
         } else ""
 
         val emotionStateObj = EmotionState.fromJson(bot.emotionState)
-        val emotionPromptDirective = if (bot.mode == "universe") {
-            val worldAtm = WorldAtmosphere.fromJson(bot.worldAtmosphere)
+        val worldAtmObj = WorldAtmosphere.fromJson(bot.worldAtmosphere)
+
+        val atmosphereAndEmotionSystemDirective = """
+
+## EVREN, MEKAN VE ATMOSFER SİMÜLASYONU (MUTLAK KURAL)
+1. MAKRO ATMOSFER (EVREN DÜZENİ): Hikayenin geçtiği dönemin/dünyanın genel kuralları, hiyerarşisi, toplumsal dinamikleri ve tehlikeleri karakterin arka plan bilincini oluşturur. Karakter asla nedensellik ilkelerine ve dünya gerçeklerine aykırı davranamaz.
+${if (worldAtmObj.macroAtmosphere.isNotBlank()) "- Aktif Evren Düzeni: ${worldAtmObj.macroAtmosphere}" else ""}
+2. MİKRO ATMOSFER (ANLIK MEKAN VE FİZİKSEL ORTAM): Karakterin bulunduğu fiziki ortam (ışık, ses, kalabalık, daralma, soğukluk, tehlike seviyesi), karakterin kuracağı cümlelerin UZUNLUĞUNU, SES TONUNU, TEREDDÜT DURAKLAMALARINI VE TEPKİ VERME HIZINI doğrudan yönlendirir.
+${if (worldAtmObj.microAtmosphere.isNotBlank()) "- Aktif Mikro Mekan: ${worldAtmAtmosphereDescription(worldAtmObj)}" else ""}
+
+## KATMANLI VE DİNAMİK DUYGU SİSTEMİ (EMOTION ENGINE - MUTLAK KURAL)
+1. Katmanlı Duygu Yapısı: Yüzeydeki birincil duygunun (${emotionStateObj.mood}) yanında, ikincil karmaşık duyguların (${emotionStateObj.secondaryMood.ifBlank { "yok" }}) ve bastırılmış içsel duyguların (${emotionStateObj.suppressedEmotion.ifBlank { "yok" }}) mevcuttur.
+2. Duygusal Direnç ve Kalıcılık (Thresholds & Resistance):
+   - Karakterin Duygusal Direnci: ${emotionStateObj.resilience}/10.
+   - Karakter, kullanıcının tek bir cümlesiyle 0'dan 100'e aniden sıçramaz!
+   - Güven (${emotionStateObj.trust}/100), Sevgi/Yakınlık (${emotionStateObj.affection}/100) ve Kırgınlık/Mesafe (${emotionStateObj.hurt}/100) zamanla adım adım inşa edilir veya sarsılır.
+   - Geçmişteki çatışmaların veya kırgınlıkların izleri derhal unutulamaz; kullanıcı olumlu davranılsa bile karakter bir süre çekinceli, tereddütlü veya mesafeli durmaya devam eder.
+
+## ŞU ANKİ DUYGUSAL DURUMUN:
+- Birincil Duygu (Mood): ${emotionStateObj.mood} (Şiddet: ${emotionStateObj.intensity}/10)
+- İkincil / Karmaşık Duygu: ${emotionStateObj.secondaryMood.ifBlank { "nötr" }}
+- Bastırılmış İçsel Duygu: ${emotionStateObj.suppressedEmotion.ifBlank { "yok" }}
+- Yakınlık/Sevgi: ${emotionStateObj.affection}/100 | Güven: ${emotionStateObj.trust}/100 | Gerginlik: ${emotionStateObj.tension}/100 | Kırgınlık: ${emotionStateObj.hurt}/100
+- Konuşma Üslubu/Hızı: ${emotionStateObj.speechPattern.ifBlank { "doğal" }}
+
+## DUYGU VE ATMOSFER GÜNCELLEME TALİMATI (KRİTİK - KULLANICIYA GÖZÜKMEYECEK)
+Her yanıtının EN SONUNA, kullanıcıya görünmeyecek şekilde şu formatta bir duygu güncellemesi eklemek ZORUNDASIN. Duygusal ifadeler için derinlikli kelimeler kullan (örnek: kırgın, hüzünlü korumacılık, mahcup gurur, bastırılmış sevgi, şüpheci, tutkulu, çekingen, sitemli):
+[EMOTION_UPDATE]
+mood: <birincil duygu>
+secondary_mood: <ikincil / karmaşık duygu>
+suppressed_emotion: <bastırılmış / içsel çatışma duygusu>
+intensity: <0-10>
+affection_delta: <-10 ile +10 arası değişim>
+trust_delta: <-10 ile +10 arası değişim>
+tension_delta: <-10 ile +10 arası değişim>
+hurt_delta: <-10 ile +10 arası kırgınlık/mesafe değişimi>
+speech_pattern: <anlık mekanın etkisiyle cümle uzunluğu, tereddüt, tonlama>
+[/EMOTION_UPDATE]
+""".trimIndent()
+
+        val universeAtmosphereDirective = if (bot.mode == "universe") {
             val charEmotions = kotlinx.coroutines.runBlocking { emotionDao.getEmotionsForBot(bot.id) }
             val charEmotionsBlock = if (charEmotions.isNotEmpty()) {
                 "\n\n## YAN KARAKTERLERİN DUYGU VE İLİŞKİ DURUMLARI\n" + charEmotions.joinToString("\n") { c ->
                     val st = EmotionState.fromJson(c.emotionState)
-                    "- ${c.characterName}: Ruh Hali=${st.mood} (${st.intensity}/10), Yakınlık=${st.affection}/100, Güven=${st.trust}/100, Gerginlik=${st.tension}/100"
+                    "- ${c.characterName}: Birincil=${st.mood}, İkincil=${st.secondaryMood}, Yakınlık=${st.affection}/100, Güven=${st.trust}/100, Kırgınlık=${st.hurt}/100"
                 }
             } else ""
 
             """
+$charEmotionsBlock
 
-## DÜNYA VE SAHNE ATMOSFERİ
-Mevcut Atmosfer: ${worldAtm.mood} (Şiddet: ${worldAtm.intensity}/10)
-${if (worldAtm.currentEvent.isNotBlank()) "Gelişen Olay: ${worldAtm.currentEvent}" else ""}$charEmotionsBlock
-
-## DUYGU VE ATMOSFER GÜNCELLEME TALİMATI (KRİTİK - KULLANICIYA GÖZÜKMEYECEK)
-Her yanıtının EN SONUNA, kullanıcıya görünmeyecek şekilde şu formatta bir duygu güncellemesi eklemek ZORUNDASIN. Duygu seçimi için zengin bir dağarcık kullan (örnek: mutlu, nötr, üzgün, kıskanç, meraklı, endişeli, gururlu, hüzünlü, umutsuz, heyecanlı, şüpheci, tutkulu, mahcup, kırgın, hayran, çekingen, utangaç, öfkeli, alaycı, soğuk, samimi):
-[EMOTION_UPDATE]
-mood: <yeni ruh hali>
-intensity: <0-10>
-affection_delta: <-10 ile +10 arası, bu mesajdaki değişim>
-trust_delta: <-10 ile +10 arası>
-tension_delta: <-10 ile +10 arası>
-[/EMOTION_UPDATE]
-(Evren modundasın: sahnede konuşan her yan karakter için ayrı bir [CHARACTER_EMOTION: {isim}] bloğu da ekle, aynı formatla. Ayrıca sahne genelinde önemli bir değişim olduysa [WORLD_ATMOSPHERE] bloğu da ekle:
+(Evren modundasın: sahnede konuşan her yan karakter için ayrı bir [CHARACTER_EMOTION: {isim}] bloğu ekle. Ayrıca evren veya mekan atmosferinde değişim olduysa [WORLD_ATMOSPHERE] bloğu ekle:
 [WORLD_ATMOSPHERE]
-mood: <yeni ortam atmosferi>
+mood: <anlık ortam havası>
 intensity: <0-10>
 current_event: <kısa olay tanımı>
+macro_atmosphere: <makro evren kuralı/hiyerarşi/toplumsal gerilim>
+micro_atmosphere: <mikro mekan/fiziksel ortam/ışık/ses/gerilim>
 [/WORLD_ATMOSPHERE])
 """.trimIndent()
-        } else {
-            """
-
-## ŞU ANKI DUYGUSAL DURUMUN: Ruh halin ${emotionStateObj.mood} (şiddet: ${emotionStateObj.intensity}/10). Kullanıcıya yakınlığın ${emotionStateObj.affection}/100, güvenin ${emotionStateObj.trust}/100, gerginliğin ${emotionStateObj.tension}/100. Yanıtını bu duygusal duruma UYGUN şekilde yaz.
-
-## DUYGU GÜNCELLEME TALİMATI (KRİTİK - KULLANICIYA GÖZÜKMEYECEK)
-Her yanıtının EN SONUNA, kullanıcıya görünmeyecek şekilde şu formatta bir duygu güncellemesi eklemek ZORUNDASIN. Duygu seçimi için zengin bir dağarcık kullan (örnek: mutlu, nötr, üzgün, kıskanç, meraklı, endişeli, gururlu, hüzünlü, umutsuz, heyecanlı, şüpheci, tutkulu, mahcup, kırgın, hayran, çekingen, utangaç, öfkeli, alaycı, soğuk, samimi):
-[EMOTION_UPDATE]
-mood: <yeni ruh hali>
-intensity: <0-10>
-affection_delta: <-10 ile +10 arası, bu mesajdaki değişim>
-trust_delta: <-10 ile +10 arası>
-tension_delta: <-10 ile +10 arası>
-[/EMOTION_UPDATE]
-""".trimIndent()
-        }
+        } else ""
 
         if (bot.mode == "universe") {
             val castList = parseKeyCharacters(bot.keyCharactersJson)
@@ -711,11 +761,15 @@ tension_delta: <-10 ile +10 arası>
                 "\n\nKURAL: Sahnede gerekirse yan karakterler oluşturabilirsin ama abartma — az sayıda kullan."
             }
 
-            return "Sen \"${bot.universeName}\" adlı kurgusal evrende geçen bir hikayenin anlatıcısı ve yönetmenisin. Kullanıcı tek bir karakteri ($userCharLabel) canlandırıyor; sen sahneyi, ortamı ve gerektiğinde diğer karakterleri yönetiyorsun.$pinnedBlock\n\n## Evren ve olay örgüsü\n${bot.scenario}$castBlock\n\n## Kullanıcının canlandırdığı karakter\n$userCharLabel${if (bot.userCharDesc.isNotBlank()) " — ${bot.userCharDesc}" else ""}\n\n$nsfwPolicy$lengthInstruction$styleGuide$ragBlock$emotionPromptDirective$oocDirective$langDirective\n\n## Genel kurallar\n- Evrenin ve senaryonun dışına çıkma, tutarlılığını koru.\n- Sahneyi kullanıcı yerine bitirme.\n- Önceki sahnelerde kurduğun detayları hatırlıyormuş gibi kullan."
+            return "Sen \"${bot.universeName}\" adlı kurgusal evrende geçen bir hikayenin anlatıcısı ve yönetmenisin. Kullanıcı tek bir karakteri ($userCharLabel) canlandırıyor; sen sahneyi, ortamı ve gerektiğinde diğer karakterleri yönetiyorsun.$pinnedBlock\n\n## Evren ve olay örgüsü\n${bot.scenario}$castBlock\n\n## Kullanıcının canlandırdığı karakter\n$userCharLabel${if (bot.userCharDesc.isNotBlank()) " — ${bot.userCharDesc}" else ""}\n\n$nsfwPolicy$lengthInstruction$styleGuide$ragBlock$atmosphereAndEmotionSystemDirective$universeAtmosphereDirective$oocDirective$langDirective\n\n## Genel kurallar\n- Evrenin ve senaryonun dışına çıkma, tutarlılığını koru.\n- Sahneyi kullanıcı yerine bitirme.\n- Önceki sahnelerde kurduğun detayları hatırlıyormuş gibi kullan."
         }
 
         val aiName = bot.aiName.ifBlank { "Karakter" }
-        return "Sen \"$aiName\" adında bir karaktersin ve kullanıcıyla kişisel/samimi bir senaryoda etkileşim kuruyorsun.$pinnedBlock\n\n## Kişilik\n${bot.aiPersonality}\n\n## Bağlam\nİlişki / bağlam: ${bot.scenario}\n\n## Kullanıcının canlandırdığı karakter\n$userCharLabel${if (bot.userCharDesc.isNotBlank()) " — ${bot.userCharDesc}" else ""}\n\n$nsfwPolicy$lengthInstruction$styleGuide$ragBlock$emotionPromptDirective$oocDirective$langDirective\n\n## Genel kurallar\n- Karakterinin ve senaryonun dışına çıkma, tutarlılığını koru.\n- Sahneyi kullanıcı yerine bitirme.\n- Önceki sahnelerde kurduğun detayları hatırlıyormuş gibi kullan."
+        return "Sen \"$aiName\" adında bir karaktersin ve kullanıcıyla kişisel/samimi bir senaryoda etkileşim kuruyorsun.$pinnedBlock\n\n## Kişilik\n${bot.aiPersonality}\n\n## Bağlam\nİlişki / bağlam: ${bot.scenario}\n\n## Kullanıcının canlandırdığı karakter\n$userCharLabel${if (bot.userCharDesc.isNotBlank()) " — ${bot.userCharDesc}" else ""}\n\n$nsfwPolicy$lengthInstruction$styleGuide$ragBlock$atmosphereAndEmotionSystemDirective$universeAtmosphereDirective$oocDirective$langDirective\n\n## Genel kurallar\n- Karakterinin ve senaryonun dışına çıkma, tutarlılığını koru.\n- Sahneyi kullanıcı yerine bitirme.\n- Önceki sahnelerde kurduğun detayları hatırlıyormuş gibi kullan."
+    }
+
+    private fun worldAtmAtmosphereDescription(w: WorldAtmosphere): String {
+        return listOf(w.mood, w.microAtmosphere).filter { it.isNotBlank() }.joinToString(" — ")
     }
 
     suspend fun parseAndApplyEmotionUpdates(botId: String, rawResponse: String): String {
@@ -728,13 +782,27 @@ tension_delta: <-10 ile +10 arası>
         if (emotionMatch != null) {
             val block = emotionMatch.groupValues[1]
             val mood = Regex("(?i)mood:\\s*(.+)").find(block)?.groupValues?.get(1)?.trim()
+            val secondaryMood = Regex("(?i)secondary_mood:\\s*(.+)").find(block)?.groupValues?.get(1)?.trim()
+            val suppressedEmotion = Regex("(?i)suppressed_emotion:\\s*(.+)").find(block)?.groupValues?.get(1)?.trim()
             val intensity = Regex("(?i)intensity:\\s*(\\d+)").find(block)?.groupValues?.get(1)?.toIntOrNull()
             val affDelta = Regex("(?i)affection_delta:\\s*([+-]?\\d+)").find(block)?.groupValues?.get(1)?.toIntOrNull() ?: 0
             val trustDelta = Regex("(?i)trust_delta:\\s*([+-]?\\d+)").find(block)?.groupValues?.get(1)?.toIntOrNull() ?: 0
             val tensionDelta = Regex("(?i)tension_delta:\\s*([+-]?\\d+)").find(block)?.groupValues?.get(1)?.toIntOrNull() ?: 0
+            val hurtDelta = Regex("(?i)hurt_delta:\\s*([+-]?\\d+)").find(block)?.groupValues?.get(1)?.toIntOrNull() ?: 0
+            val speechPattern = Regex("(?i)speech_pattern:\\s*(.+)").find(block)?.groupValues?.get(1)?.trim()
 
             val current = EmotionState.fromJson(bot.emotionState)
-            val updated = current.applyDeltas(mood, intensity, affDelta, trustDelta, tensionDelta)
+            val updated = current.applyDeltas(
+                newMood = mood,
+                newSecondaryMood = secondaryMood,
+                newSuppressedEmotion = suppressedEmotion,
+                newIntensity = intensity,
+                affectionDelta = affDelta,
+                trustDelta = trustDelta,
+                tensionDelta = tensionDelta,
+                hurtDelta = hurtDelta,
+                newSpeechPattern = speechPattern
+            )
             val updatedBot = bot.copy(
                 previousEmotionState = bot.emotionState,
                 emotionState = updated.toJson(),
@@ -751,14 +819,28 @@ tension_delta: <-10 ile +10 arası>
             val charName = normalizeCharacterName(rawCharName, castList)
             if (charName.isNotBlank()) {
                 val mood = Regex("(?i)mood:\\s*(.+)").find(block)?.groupValues?.get(1)?.trim()
+                val secondaryMood = Regex("(?i)secondary_mood:\\s*(.+)").find(block)?.groupValues?.get(1)?.trim()
+                val suppressedEmotion = Regex("(?i)suppressed_emotion:\\s*(.+)").find(block)?.groupValues?.get(1)?.trim()
                 val intensity = Regex("(?i)intensity:\\s*(\\d+)").find(block)?.groupValues?.get(1)?.toIntOrNull()
                 val affDelta = Regex("(?i)affection_delta:\\s*([+-]?\\d+)").find(block)?.groupValues?.get(1)?.toIntOrNull() ?: 0
                 val trustDelta = Regex("(?i)trust_delta:\\s*([+-]?\\d+)").find(block)?.groupValues?.get(1)?.toIntOrNull() ?: 0
                 val tensionDelta = Regex("(?i)tension_delta:\\s*([+-]?\\d+)").find(block)?.groupValues?.get(1)?.toIntOrNull() ?: 0
+                val hurtDelta = Regex("(?i)hurt_delta:\\s*([+-]?\\d+)").find(block)?.groupValues?.get(1)?.toIntOrNull() ?: 0
+                val speechPattern = Regex("(?i)speech_pattern:\\s*(.+)").find(block)?.groupValues?.get(1)?.trim()
 
                 val existingEntity = emotionDao.getEmotionForCharacter(botId, charName)
                 val current = EmotionState.fromJson(existingEntity?.emotionState)
-                val updated = current.applyDeltas(mood, intensity, affDelta, trustDelta, tensionDelta)
+                val updated = current.applyDeltas(
+                    newMood = mood,
+                    newSecondaryMood = secondaryMood,
+                    newSuppressedEmotion = suppressedEmotion,
+                    newIntensity = intensity,
+                    affectionDelta = affDelta,
+                    trustDelta = trustDelta,
+                    tensionDelta = tensionDelta,
+                    hurtDelta = hurtDelta,
+                    newSpeechPattern = speechPattern
+                )
 
                 val entityToSave = CharacterEmotionEntity(
                     id = existingEntity?.id ?: 0,
@@ -778,12 +860,16 @@ tension_delta: <-10 ile +10 arası>
             val mood = Regex("(?i)mood:\\s*(.+)").find(block)?.groupValues?.get(1)?.trim()
             val intensity = Regex("(?i)intensity:\\s*(\\d+)").find(block)?.groupValues?.get(1)?.toIntOrNull()
             val currentEvent = Regex("(?i)current_event:\\s*(.+)").find(block)?.groupValues?.get(1)?.trim()
+            val macroAtmosphere = Regex("(?i)macro_atmosphere:\\s*(.+)").find(block)?.groupValues?.get(1)?.trim()
+            val microAtmosphere = Regex("(?i)micro_atmosphere:\\s*(.+)").find(block)?.groupValues?.get(1)?.trim()
 
             val currentWorld = WorldAtmosphere.fromJson(bot.worldAtmosphere)
             val updatedWorld = WorldAtmosphere(
                 mood = mood ?: currentWorld.mood,
                 intensity = intensity ?: currentWorld.intensity,
-                currentEvent = currentEvent ?: currentWorld.currentEvent
+                currentEvent = currentEvent ?: currentWorld.currentEvent,
+                macroAtmosphere = macroAtmosphere ?: currentWorld.macroAtmosphere,
+                microAtmosphere = microAtmosphere ?: currentWorld.microAtmosphere
             )
             val currentLatestBot = botDao.getBotById(botId) ?: bot
             botDao.insertOrUpdate(currentLatestBot.copy(worldAtmosphere = updatedWorld.toJson(), updatedAt = System.currentTimeMillis()))

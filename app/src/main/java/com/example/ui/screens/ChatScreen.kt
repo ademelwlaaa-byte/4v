@@ -6,7 +6,13 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -21,6 +27,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
@@ -212,6 +219,7 @@ fun RpAtmosphericBackground() {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun ChatScreen(
     bot: BotEntity,
@@ -354,6 +362,8 @@ fun ChatScreen(
         )
     } else {
     Box(modifier = Modifier.fillMaxSize()) {
+        val isImeVisible = WindowInsets.isImeVisible
+
         // Base atmospheric wallpaper (full bleed across entire screen)
         RpAtmosphericBackground()
 
@@ -407,18 +417,19 @@ fun ChatScreen(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(Color(0xEA070512))
+                        .background(Color(0xDC070512))
                         .statusBarsPadding()
+                        .animateContentSize(animationSpec = tween(220, easing = FastOutSlowInEasing))
                 ) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 6.dp)
+                            .padding(horizontal = 12.dp, vertical = if (isImeVisible) 4.dp else 6.dp)
                     ) {
                         // Back button (Left)
                         Box(
                             modifier = Modifier
-                                .size(38.dp)
+                                .size(if (isImeVisible) 34.dp else 38.dp)
                                 .align(Alignment.CenterStart)
                                 .clip(RoundedCornerShape(12.dp))
                                 .background(Color(0x90130F26))
@@ -430,115 +441,121 @@ fun ChatScreen(
                                 imageVector = Icons.Default.ArrowBack,
                                 contentDescription = "Geri",
                                 tint = Color.White,
-                                modifier = Modifier.size(19.dp)
+                                modifier = Modifier.size(if (isImeVisible) 17.dp else 19.dp)
                             )
                         }
 
-                        // Truly Centered Stack (Avatar + Bot Name + Mood Emoji)
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Center,
-                            modifier = Modifier
-                                .align(Alignment.Center)
-                                .then(
-                                    if (bot.mode == "personal") {
-                                        Modifier.clickable { isStatsExpanded = !isStatsExpanded }
-                                    } else Modifier
-                                )
-                                .padding(horizontal = 50.dp)
+                        // Truly Centered Stack (Avatar + Bot Name + Mood Emoji) - Hidden when keyboard is open
+                        androidx.compose.animation.AnimatedVisibility(
+                            visible = !isImeVisible,
+                            enter = fadeIn(tween(200)) + expandVertically(tween(200)),
+                            exit = fadeOut(tween(200)) + shrinkVertically(tween(200)),
+                            modifier = Modifier.align(Alignment.Center)
                         ) {
-                            // Avatar Box
-                            Box(
-                                contentAlignment = Alignment.BottomEnd,
-                                modifier = Modifier.size(44.dp)
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center,
+                                modifier = Modifier
+                                    .then(
+                                        if (bot.mode == "personal") {
+                                            Modifier.clickable { isStatsExpanded = !isStatsExpanded }
+                                        } else Modifier
+                                    )
+                                    .padding(horizontal = 50.dp)
                             ) {
+                                // Avatar Box
                                 Box(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .clip(CircleShape)
-                                        .background(Color(0x30A855F7).copy(alpha = pulseGlowAlpha * 0.5f))
-                                )
-
-                                Box(
-                                    modifier = Modifier
-                                        .size(42.dp)
-                                        .align(Alignment.Center)
-                                        .clip(CircleShape)
-                                        .border(
-                                            width = 1.8.dp,
-                                            brush = Brush.sweepGradient(
-                                                listOf(Color(0xFFE9D5FF), Color(0xFFC084FC), Color(0xFF7C3AED), Color(0xFFE9D5FF))
-                                            ),
-                                            shape = CircleShape
-                                        )
-                                        .padding(1.5.dp)
-                                ) {
-                                    if (bot.id == "starter_ayla" || bot.aiName.equals("Ayla", ignoreCase = true)) {
-                                        androidx.compose.foundation.Image(
-                                            painter = androidx.compose.ui.res.painterResource(id = com.example.R.drawable.img_ayla_avatar),
-                                            contentDescription = displayName,
-                                            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                                            modifier = Modifier.fillMaxSize().clip(CircleShape)
-                                        )
-                                    } else if (bot.id == "starter_aetheria" || bot.universeName.contains("Aetheria", ignoreCase = true) || bot.aiName.contains("Aetheria", ignoreCase = true)) {
-                                        androidx.compose.foundation.Image(
-                                            painter = androidx.compose.ui.res.painterResource(id = com.example.R.drawable.img_aetheria_universe),
-                                            contentDescription = displayName,
-                                            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                                            modifier = Modifier.fillMaxSize().clip(CircleShape)
-                                        )
-                                    } else if (bot.avatarUrl.isNotBlank()) {
-                                        coil.compose.AsyncImage(
-                                            model = bot.avatarUrl,
-                                            contentDescription = displayName,
-                                            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                                            modifier = Modifier.fillMaxSize().clip(CircleShape)
-                                        )
-                                    } else {
-                                        OrbView(hue = hue, size = 38.dp)
-                                    }
-                                }
-
-                                Box(
-                                    modifier = Modifier
-                                        .size(12.dp)
-                                        .clip(CircleShape)
-                                        .background(Color(0xFF10B981).copy(alpha = pulseGlowAlpha))
-                                        .padding(1.dp),
-                                    contentAlignment = Alignment.Center
+                                    contentAlignment = Alignment.BottomEnd,
+                                    modifier = Modifier.size(44.dp)
                                 ) {
                                     Box(
                                         modifier = Modifier
-                                            .size(9.dp)
+                                            .fillMaxSize()
                                             .clip(CircleShape)
-                                            .background(Color(0xFF10B981))
-                                            .border(1.dp, Color(0xFF070512), CircleShape)
+                                            .background(Color(0x30A855F7).copy(alpha = pulseGlowAlpha * 0.5f))
                                     )
+
+                                    Box(
+                                        modifier = Modifier
+                                            .size(42.dp)
+                                            .align(Alignment.Center)
+                                            .clip(CircleShape)
+                                            .border(
+                                                width = 1.8.dp,
+                                                brush = Brush.sweepGradient(
+                                                    listOf(Color(0xFFE9D5FF), Color(0xFFC084FC), Color(0xFF7C3AED), Color(0xFFE9D5FF))
+                                                ),
+                                                shape = CircleShape
+                                            )
+                                            .padding(1.5.dp)
+                                    ) {
+                                        if (bot.id == "starter_ayla" || bot.aiName.equals("Ayla", ignoreCase = true)) {
+                                            androidx.compose.foundation.Image(
+                                                painter = androidx.compose.ui.res.painterResource(id = com.example.R.drawable.img_ayla_avatar),
+                                                contentDescription = displayName,
+                                                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                                modifier = Modifier.fillMaxSize().clip(CircleShape)
+                                            )
+                                        } else if (bot.id == "starter_aetheria" || bot.universeName.contains("Aetheria", ignoreCase = true) || bot.aiName.contains("Aetheria", ignoreCase = true)) {
+                                            androidx.compose.foundation.Image(
+                                                painter = androidx.compose.ui.res.painterResource(id = com.example.R.drawable.img_aetheria_universe),
+                                                contentDescription = displayName,
+                                                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                                modifier = Modifier.fillMaxSize().clip(CircleShape)
+                                            )
+                                        } else if (bot.avatarUrl.isNotBlank()) {
+                                            coil.compose.AsyncImage(
+                                                model = bot.avatarUrl,
+                                                contentDescription = displayName,
+                                                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                                modifier = Modifier.fillMaxSize().clip(CircleShape)
+                                            )
+                                        } else {
+                                            OrbView(hue = hue, size = 38.dp)
+                                        }
+                                    }
+
+                                    Box(
+                                        modifier = Modifier
+                                            .size(12.dp)
+                                            .clip(CircleShape)
+                                            .background(Color(0xFF10B981).copy(alpha = pulseGlowAlpha))
+                                            .padding(1.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(9.dp)
+                                                .clip(CircleShape)
+                                                .background(Color(0xFF10B981))
+                                                .border(1.dp, Color(0xFF070512), CircleShape)
+                                        )
+                                    }
                                 }
-                            }
 
-                            Spacer(modifier = Modifier.height(2.dp))
+                                Spacer(modifier = Modifier.height(2.dp))
 
-                            // Bot Name (+ Mood Emoji on SAME LINE for Personal Mode)
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.Center
-                            ) {
-                                Text(
-                                    text = displayName,
-                                    color = Color.White,
-                                    fontSize = 14.5.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    maxLines = 2,
-                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                                )
-                                if (bot.mode == "personal") {
-                                    Spacer(modifier = Modifier.width(4.dp))
+                                // Bot Name (+ Mood Emoji on SAME LINE for Personal Mode)
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.Center
+                                ) {
                                     Text(
-                                        text = if (isSending) "✨" else emotionState.getMoodEmoji(),
-                                        fontSize = 13.5.sp
+                                        text = displayName,
+                                        color = Color.White,
+                                        fontSize = 14.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
                                     )
+                                    if (bot.mode == "personal") {
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            text = if (isSending) "✨" else emotionState.getMoodEmoji(),
+                                            fontSize = 13.5.sp
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -548,29 +565,37 @@ fun ChatScreen(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier.align(Alignment.CenterEnd)
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(38.dp)
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(Color(0x90130F26))
-                                    .border(1.dp, Color(0x508B5CF6), RoundedCornerShape(12.dp))
-                                    .clickable { showBackgroundPicker = true }
-                                    .testTag("wallpaper_picker_button"),
-                                contentAlignment = Alignment.Center
+                            AnimatedVisibility(
+                                visible = !isImeVisible,
+                                enter = fadeIn(tween(200)),
+                                exit = fadeOut(tween(200))
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.Wallpaper,
-                                    contentDescription = "Arka Plan",
-                                    tint = Color(0xFFC084FC),
-                                    modifier = Modifier.size(18.dp)
-                                )
+                                Box(
+                                    modifier = Modifier
+                                        .size(38.dp)
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(Color(0x90130F26))
+                                        .border(1.dp, Color(0x508B5CF6), RoundedCornerShape(12.dp))
+                                        .clickable { showBackgroundPicker = true }
+                                        .testTag("wallpaper_picker_button"),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Wallpaper,
+                                        contentDescription = "Arka Plan",
+                                        tint = Color(0xFFC084FC),
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
                             }
 
-                            Spacer(modifier = Modifier.width(6.dp))
+                            if (!isImeVisible) {
+                                Spacer(modifier = Modifier.width(6.dp))
+                            }
 
                             Box(
                                 modifier = Modifier
-                                    .size(38.dp)
+                                    .size(if (isImeVisible) 34.dp else 38.dp)
                                     .clip(RoundedCornerShape(12.dp))
                                     .background(Color(0x90130F26))
                                     .border(1.dp, Color(0x508B5CF6), RoundedCornerShape(12.dp))
@@ -582,14 +607,18 @@ fun ChatScreen(
                                     imageVector = Icons.Default.Settings,
                                     contentDescription = "Ayarlar",
                                     tint = Color(0xFFA78BFA),
-                                    modifier = Modifier.size(18.dp)
+                                    modifier = Modifier.size(if (isImeVisible) 17.dp else 18.dp)
                                 )
                             }
                         }
                     }
 
-                    // Expandable Header Stats Banner (Personal Mode Only)
-                    AnimatedVisibility(visible = isStatsExpanded && bot.mode == "personal") {
+                    // Expandable Header Stats Banner (Personal Mode Only) - Only when keyboard is closed
+                    AnimatedVisibility(
+                        visible = !isImeVisible && isStatsExpanded && bot.mode == "personal",
+                        enter = fadeIn(tween(200)) + expandVertically(tween(200)),
+                        exit = fadeOut(tween(200)) + shrinkVertically(tween(200))
+                    ) {
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -638,7 +667,7 @@ fun ChatScreen(
                         }
                     }
 
-                    if (isSpeaking) {
+                    if (isSpeaking && !isImeVisible) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -667,7 +696,7 @@ fun ChatScreen(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(Color(0xEA070512))
+                        .background(Color(0xDC070512))
                         .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom))
                 ) {
                 // Quick RP prompt suggestion chips
@@ -1398,7 +1427,23 @@ fun ChatScreen(
 
                 val showScrollToBottom = remember {
                     derivedStateOf {
-                        listState.canScrollForward
+                        val layoutInfo = listState.layoutInfo
+                        val totalItems = layoutInfo.totalItemsCount
+                        if (totalItems == 0) return@derivedStateOf false
+
+                        val lastVisibleItem = layoutInfo.visibleItemsInfo.lastOrNull() ?: return@derivedStateOf false
+                        val itemsFromEnd = totalItems - 1 - lastVisibleItem.index
+
+                        if (itemsFromEnd >= 2) {
+                            true
+                        } else if (itemsFromEnd == 1) {
+                            true
+                        } else {
+                            // On last visible item: check if scrolled up by at least ~180px
+                            val viewportEnd = layoutInfo.viewportEndOffset
+                            val itemBottom = lastVisibleItem.offset + lastVisibleItem.size
+                            (itemBottom - viewportEnd) > 180
+                        }
                     }
                 }
 
