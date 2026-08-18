@@ -118,7 +118,7 @@ class EmochiViewModel(application: Application) : AndroidViewModel(application) 
                             _isSpeaking.value = false
                         }
                     })
-                    val result = tts?.setLanguage(Locale("tr", "TR"))
+                    val result = tts?.setLanguage(Locale.forLanguageTag("tr-TR"))
                     if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
                         tts?.setLanguage(Locale.getDefault())
                     }
@@ -323,6 +323,76 @@ class EmochiViewModel(application: Application) : AndroidViewModel(application) 
                     repository.updateMemorySummaries(currentBot, finalMsgs)
                 }
             } catch (e: Exception) {
+                val now = System.currentTimeMillis()
+                val failedAiMsg = MessageEntity(
+                    id = UUID.randomUUID().toString(),
+                    botId = botId,
+                    role = "assistant",
+                    text = "Yanıt alınamadı: ${e.message ?: "Ağ/API Hatası"}",
+                    timestamp = (now + 10L).coerceAtLeast(System.currentTimeMillis()),
+                    status = "failed"
+                )
+                repository.saveMessage(failedAiMsg)
+                _errorMessage.value = e.message ?: "Yanıt oluşturulamadı."
+            } finally {
+                if (sendMutex.isLocked) {
+                    sendMutex.unlock()
+                }
+                _isSending.value = false
+            }
+        }
+    }
+
+    fun retryMessage(msgId: String) {
+        val botId = _activeBotId.value ?: return
+        if (_isSending.value) return
+        _isSending.value = true
+
+        viewModelScope.launch {
+            if (!sendMutex.tryLock()) {
+                _isSending.value = false
+                return@launch
+            }
+            val currentBot = activeBot.value ?: repository.getBot(botId) ?: run {
+                sendMutex.unlock()
+                _isSending.value = false
+                return@launch
+            }
+            try {
+                _errorMessage.value = null
+                // Delete failed message entity
+                repository.deleteMessage(msgId)
+
+                val currentMsgs = repository.getMessageListForBot(botId)
+                val replyText = repository.generateAiReply(currentBot, currentMsgs)
+
+                val now = System.currentTimeMillis()
+                val aiMsg = MessageEntity(
+                    id = UUID.randomUUID().toString(),
+                    botId = botId,
+                    role = "assistant",
+                    text = replyText,
+                    timestamp = now,
+                    status = "success"
+                )
+                repository.saveMessage(aiMsg)
+                repository.saveBot(currentBot.copy(updatedAt = now))
+
+                val finalMsgs = currentMsgs + aiMsg
+                if (finalMsgs.size % 6 == 0) {
+                    repository.updateMemorySummaries(currentBot, finalMsgs)
+                }
+            } catch (e: Exception) {
+                val now = System.currentTimeMillis()
+                val failedAiMsg = MessageEntity(
+                    id = UUID.randomUUID().toString(),
+                    botId = botId,
+                    role = "assistant",
+                    text = "Yanıt alınamadı: ${e.message ?: "Ağ/API Hatası"}",
+                    timestamp = now,
+                    status = "failed"
+                )
+                repository.saveMessage(failedAiMsg)
                 _errorMessage.value = e.message ?: "Yanıt oluşturulamadı."
             } finally {
                 if (sendMutex.isLocked) {

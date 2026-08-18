@@ -80,7 +80,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.local.BotEntity
+import com.example.data.local.EmotionState
+import com.example.data.local.WorldAtmosphere
 import com.example.data.repository.KeyCharacter
+import com.example.ui.components.AppBackground
 import com.example.ui.components.OrbView
 import com.example.ui.theme.EmochiError
 import kotlinx.coroutines.launch
@@ -141,6 +144,29 @@ fun CreateBotWizardScreen(
             }
             array.toString()
         }
+        val baselineEmotion = EmotionState.calculateBaselineEmotionState(
+            aiName = if (mode == "personal") aiName.trim() else universeName.trim(),
+            personality = aiPersonality.trim(),
+            scenario = scenario.trim(),
+            userCharName = userCharName.trim(),
+            userCharDesc = userCharDesc.trim()
+        ).toJson()
+
+        val initialWorldAtmosphere = if (mode == "universe") {
+            val intensityInt = when (intensity) {
+                "düşük" -> 3
+                "yüksek" -> 8
+                else -> 5
+            }
+            WorldAtmosphere(
+                mood = "sakin ve beklentili",
+                intensity = intensityInt,
+                currentEvent = "Açılış sahnesi ve hikayenin başlangıcı",
+                macroAtmosphere = "${universeName.trim()} evreninin genel düzeni ve toplumsal kuralları hakim.",
+                microAtmosphere = "Hikayenin başladığı fiziki mekan ve başlangıç ortamı."
+            ).toJson()
+        } else ""
+
         return BotEntity(
             id = UUID.randomUUID().toString(),
             mode = mode,
@@ -159,6 +185,9 @@ fun CreateBotWizardScreen(
             customLength = "default",
             isNsfw = true,
             isPublic = isPublic,
+            emotionState = baselineEmotion,
+            previousEmotionState = baselineEmotion,
+            worldAtmosphere = initialWorldAtmosphere,
             updatedAt = System.currentTimeMillis()
         )
     }
@@ -195,43 +224,9 @@ fun CreateBotWizardScreen(
     )
 
     Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    listOf(
-                        Color(0xFF0C051E),
-                        Color(0xFF060312),
-                        Color(0xFF150830)
-                    )
-                )
-            )
+        modifier = Modifier.fillMaxSize()
     ) {
-        // Starry Cosmic Backdrop Canvas
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            val random = Random(42)
-            repeat(60) {
-                val x = random.nextFloat() * size.width
-                val y = random.nextFloat() * size.height
-                val radius = random.nextFloat() * 1.8f + 0.6f
-                val alpha = random.nextFloat() * 0.6f + 0.2f
-                drawCircle(
-                    color = Color.White.copy(alpha = alpha),
-                    radius = radius,
-                    center = Offset(x, y)
-                )
-            }
-            // Purple Glow at bottom
-            drawCircle(
-                brush = Brush.radialGradient(
-                    colors = listOf(Color(0x606B21A8), Color.Transparent),
-                    center = Offset(size.width / 2f, size.height * 0.95f),
-                    radius = size.width * 0.8f
-                ),
-                radius = size.width * 0.8f,
-                center = Offset(size.width / 2f, size.height * 0.95f)
-            )
-        }
+        AppBackground()
 
         Scaffold(
             containerColor = Color.Transparent,

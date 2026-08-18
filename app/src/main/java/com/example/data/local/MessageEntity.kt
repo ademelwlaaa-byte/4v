@@ -22,5 +22,6 @@ data class MessageEntity(
     val botId: String,
     val role: String, // "user" or "assistant"
     val text: String,
-    val timestamp: Long = System.currentTimeMillis()
+    val timestamp: Long = System.currentTimeMillis(),
+    val status: String = "success" // "success", "failed", "pending"
 )

@@ -13,6 +13,7 @@ import com.example.data.local.CharacterEmotionEntity
 import com.example.data.local.EmotionState
 import com.example.data.local.MemoryFragmentEntity
 import com.example.data.local.MessageEntity
+import com.example.data.local.StoryProgressEntity
 import com.example.data.local.UserSettingsEntity
 import com.example.data.local.WorldAtmosphere
 import com.squareup.moshi.Moshi
@@ -61,6 +62,15 @@ class EmochiRepository(
     private val settingsDao = db.userSettingsDao()
     private val fragmentDao = db.memoryFragmentDao()
     private val emotionDao = db.characterEmotionDao()
+    private val storyProgressDao = db.storyProgressDao()
+
+    private fun loadAssetText(fileName: String): String? {
+        return try {
+            context?.assets?.open(fileName)?.bufferedReader()?.use { it.readText() }
+        } catch (_: Exception) {
+            null
+        }
+    }
 
     fun getCharacterEmotionsFlow(botId: String) = emotionDao.getEmotionsForBotFlow(botId)
     suspend fun getCharacterEmotions(botId: String) = emotionDao.getEmotionsForBot(botId)
@@ -631,12 +641,12 @@ class EmochiRepository(
             "## İÇERİK POLİTİKASI: GÜVENLİ / DENGELİ MOD\n- Aile dostu, genel izleyici kitlesine uygun, grafik şiddet veya cinsel açıklık içermeyen dengeli bir anlatım kullan."
         }
 
-        // Response Length Guidance
+        // Response Length Guidance & Content Length Rule
         val effLength = if (bot.customLength != "default") bot.customLength else settings.responseLength
         val lengthInstruction = when (effLength) {
             "short" -> "\n## YANIT UZUNLUĞU KURALLARI (ZORUNLU: SON DERECE KISA YANIT)\n- KESİNLİKLE VE ZORUNLU OLARAK ÇOK KISA YANIT VER!\n- MAKSİMUM 1 - 3 KISA CÜMLE (VEYA EN FAZLA 1 KISA PARAGRAF) YAZ.\n- ASLA UZUN PARAGRAFLAR VEYA DETAYLI TASVİRLER YAZMA! Hızlı, vurucu, öz ve doğrudan olaya odaklan."
-            "long" -> "\n## YANIT UZUNLUĞU KURALLARI (ZORUNLU: ÇOK UZUN VE DESTANSI YANIT)\n- KESİNLİKLE VE ZORUNLU OLARAK EN AZ 5 - 8 UZUN PARAGRAF METİN ÜRET!\n- Detaylı çevre ve ortam tasvirleri, karakterin iç dünyası ve düşünceleri, mimikler, duyusal ayrıntılar ve zengin diyaloglar ekleyerek metni olabildiğince uzat ve edebi kıl."
-            else -> "\n## YANIT UZUNLUĞU KURALLARI (DENGELİ DETAY)\n- Yanıtını 3-4 zengin paragraf tut. Diyalog, atmosfer ve eylemleri dengeli harmanla."
+            "long" -> "\n## YANIT UZUNLUĞU KURALLARI (ZORUNLU: ÇOK UZUN VE DESTANSI YANIT)\n- KESİNLİKLE VE ZORUNLU OLARAK EN AZ 5 - 8 UZUN PARAGRAF METİN ÜRET!\n- Detaylı çevre ve ortam tasvirleri, karakterin iç dünyası ve düşünceleri, mimikler, duyusal ayrıntılar ve zengin diyaloglar ekleyerek metni olabildiğince uzat ve edebi kıl.\n- ZORUNLU KURAL: Yanıtın, referans/kaynak metinden KESİNLİKLE DAHA KISA OLMAMALI. En az kaynak metnin yaklaşık kelime sayısı uzunluğunda, gerekirse daha uzun yaz. Kısaltma, özetleme, atlama yapma."
+            else -> "\n## YANIT UZUNLUĞU KURALLARI (DENGELİ DETAY)\n- Yanıtını 3-4 zengin paragraf tut. Diyalog, atmosfer ve eylemleri dengeli harmanla.\n- ZORUNLU KURAL: Yanıtın, referans/kaynak metinden KESİNLİKLE DAHA KISA OLMAMALI. En az kaynak metnin yaklaşık kelime sayısı uzunluğunda, gerekirse daha uzun yaz. Kısaltma, özetleme, atlama yapma."
         }
 
         val userCharLabel = bot.userCharName.ifBlank { "kullanıcı" }
@@ -672,6 +682,7 @@ Durdu, ifadesi ciddileşti.
               1. ALL YOUR RESPONSES MUST BE 100% IN FLUENT, NATURAL, HIGH-QUALITY ENGLISH.
               2. Translate all scenario actions, dialogue, character thoughts, and narrator descriptions seamlessly into English in real-time.
               3. Never produce Turkish text in your output when the app language is set to English.
+              4. Always write with flawless grammar, spelling, and punctuation.
             """.trimIndent()
         } else {
             """
@@ -681,6 +692,7 @@ Durdu, ifadesi ciddileşti.
             - Karakter tanımı, senaryo detayları, açılış mesajı, hafıza notları veya kullanıcı girdisi başka bir dilde yazılmış olsa dahi:
               1. TÜM YANITLARINI %100 MÜKEMMEL, DOĞAL VE AKICI TÜRKÇE OLARAK ÜRET.
               2. Bütün eylemleri, diyalogları, iç düşünceleri ve anlatımı anında Türkçe'ye çevirerek sun.
+              3. Yanıtlarını her zaman doğru Türkçe yazım ve noktalama kurallarına uyarak yaz, yazım hatası yapma.
             """.trimIndent()
         }
 
@@ -1159,21 +1171,46 @@ micro_atmosphere: <mikro mekan/fiziksel ortam/ışık/ses/gerilim>
         return result
     }
 
+    private suspend fun <T> retryWithBackoff(
+        maxAttempts: Int = 3,
+        initialDelayMs: Long = 2000L,
+        factor: Double = 2.0,
+        block: suspend (attempt: Int) -> T
+    ): T {
+        var currentDelay = initialDelayMs
+        var lastException: Exception? = null
+        for (attempt in 1..maxAttempts) {
+            try {
+                return block(attempt)
+            } catch (e: Exception) {
+                lastException = e
+                android.util.Log.e("EmochiRepository", "API Istek Deneme $attempt/$maxAttempts Basarisiz: ${e.message}", e)
+                if (attempt < maxAttempts) {
+                    kotlinx.coroutines.delay(currentDelay)
+                    currentDelay = (currentDelay * factor).toLong()
+                }
+            }
+        }
+        throw lastException ?: IllegalStateException("İstek $maxAttempts deneme sonrasında yanıt vermedi.")
+    }
+
     private suspend fun callGeminiApi(
         apiKey: String,
         model: String,
         systemPrompt: String,
-        messages: List<MessageEntity>
+        messages: List<MessageEntity>,
+        enableNsfw: Boolean = true
     ): Pair<String, Pair<Long, Long>> = withContext(Dispatchers.IO) {
         val sanitizedModel = sanitizeModelName(model)
         val geminiContents = formatMessagesForGemini(messages)
 
+        val threshold = if (enableNsfw) "BLOCK_NONE" else "BLOCK_MEDIUM_AND_ABOVE"
         val safetySettings = listOf(
-            com.example.data.api.GeminiSafetySetting("HARM_CATEGORY_HARASSMENT", "BLOCK_NONE"),
-            com.example.data.api.GeminiSafetySetting("HARM_CATEGORY_HATE_SPEECH", "BLOCK_NONE"),
-            com.example.data.api.GeminiSafetySetting("HARM_CATEGORY_SEXUALLY_EXPLICIT", "BLOCK_NONE"),
-            com.example.data.api.GeminiSafetySetting("HARM_CATEGORY_DANGEROUS_CONTENT", "BLOCK_NONE"),
-            com.example.data.api.GeminiSafetySetting("HARM_CATEGORY_CIVIC_INTEGRITY", "BLOCK_NONE")
+            com.example.data.api.GeminiSafetySetting("HARM_CATEGORY_HARASSMENT", threshold),
+            com.example.data.api.GeminiSafetySetting("HARM_CATEGORY_HATE_SPEECH", threshold),
+            com.example.data.api.GeminiSafetySetting("HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold),
+            com.example.data.api.GeminiSafetySetting("HARM_CATEGORY_DANGEROUS_CONTENT", threshold),
+            com.example.data.api.GeminiSafetySetting("HARM_CATEGORY_CIVIC_INTEGRITY", threshold)
         )
 
         val request = GeminiRequest(
@@ -1194,8 +1231,14 @@ micro_atmosphere: <mikro mekan/fiziksel ortam/ışık/ses/gerilim>
                     request = request
                 )
 
-                val text = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
-                    ?: throw IllegalStateException("Gemini boş yanıt döndürdü.")
+                val candidate = response.candidates?.firstOrNull()
+                val finishReason = candidate?.finishReason
+                val text = candidate?.content?.parts?.firstOrNull()?.text
+
+                if (text.isNullOrBlank()) {
+                    val reason = if (!finishReason.isNullOrBlank() && finishReason != "STOP") " (Filtre/Neden: $finishReason)" else ""
+                    throw IllegalStateException("Gemini yanıtı içerik/güvenlik filtresine takıldı$reason. Lütfen Ayarlar -> +18 Ayarları kısmından güvenlik seviyelerini kontrol edin.")
+                }
 
                 val promptTokens = response.usageMetadata?.promptTokenCount?.toLong() ?: 0L
                 val candTokens = response.usageMetadata?.candidatesTokenCount?.toLong() ?: 0L
@@ -1368,9 +1411,11 @@ micro_atmosphere: <mikro mekan/fiziksel ortam/ışık/ses/gerilim>
         val systemPrompt = buildSystemPrompt(effectiveBot, settings, relevantFragments = relevantFragments)
 
         var primaryException: Exception? = null
-        // Primary Execution
+        // Primary Execution (3 retries with exponential backoff: 2s, 4s, 8s)
         try {
-            val result = executeModelRequest(selectedModel, settings, systemPrompt, effectiveMessages, botId = effectiveBot.id)
+            val result = retryWithBackoff(maxAttempts = 3, initialDelayMs = 2000L) {
+                executeModelRequest(selectedModel, settings, systemPrompt, effectiveMessages, botId = effectiveBot.id)
+            }
             recordTokenUsage(effectiveBot.id, result.second.first, result.second.second)
             return@withContext parseAndApplyEmotionUpdates(effectiveBot.id, result.first)
         } catch (e: Exception) {
@@ -1380,7 +1425,7 @@ micro_atmosphere: <mikro mekan/fiziksel ortam/ışık/ses/gerilim>
             primaryException = e
         }
 
-        // Auto Fallback to Gemini Secondary Model
+        // Auto Fallback to Gemini Secondary Model (3 retries with exponential backoff)
         val fallbackModel = sanitizeModelName(settings.fallbackModel.ifBlank { "gemini-2.5-flash" })
         val customKey = settings.customApiKey.trim()
         val buildConfigKey = getBuildConfigKey()
@@ -1398,7 +1443,9 @@ micro_atmosphere: <mikro mekan/fiziksel ortam/ışık/ses/gerilim>
         var fallbackErr: Exception? = null
         for (k in candidateKeys) {
             try {
-                val result = callGeminiApi(k, fallbackModel, systemPrompt, effectiveMessages)
+                val result = retryWithBackoff(maxAttempts = 3, initialDelayMs = 2000L) {
+                    callGeminiApi(k, fallbackModel, systemPrompt, effectiveMessages, enableNsfw = settings.enableNsfw)
+                }
                 recordTokenUsage(effectiveBot.id, result.second.first, result.second.second)
                 return@withContext parseAndApplyEmotionUpdates(effectiveBot.id, result.first)
             } catch (e: Exception) {
@@ -1408,7 +1455,7 @@ micro_atmosphere: <mikro mekan/fiziksel ortam/ışık/ses/gerilim>
         throw fallbackErr ?: primaryException ?: IllegalStateException("Yanıtlama başarısız oldu.")
     }
 
-    private fun generateDeterministicBookReply(
+    private suspend fun generateDeterministicBookReply(
         bot: BotEntity,
         messages: List<MessageEntity>
     ): String {
@@ -1416,10 +1463,27 @@ micro_atmosphere: <mikro mekan/fiziksel ortam/ışık/ses/gerilim>
         val userStep = userMsgs.size
         val lastUserMsg = userMsgs.lastOrNull()?.text ?: ""
 
+        var progress = storyProgressDao.getProgressOnce(bot.id) ?: StoryProgressEntity(botId = bot.id)
+
+        val b1Text = loadAssetText("Bolum1_KozmikSurukleniş.md")
+        val b2Text = loadAssetText("Bolum2_Sartlar.md")
+        val b3Text = loadAssetText("Bolum3_DenemeSuresi_v2.md")
+        val b3KisaKacis = loadAssetText("Bolum3_AlternatifDal_KisaKacis.md")
+        val b3Kacis = loadAssetText("Bolum3_AlternatifDal_Kacis.md")
+        val b3Thor = loadAssetText("Bolum3_AlternatifDal_ThorBulma.md")
+
         return when (userStep) {
             1 -> {
                 // Choice 1 Response
-                val intro = if (lastUserMsg.contains("2") || lastUserMsg.contains("odaklan") || lastUserMsg.contains("derinden")) {
+                val isDeep = lastUserMsg.contains("2") || lastUserMsg.contains("odaklan") || lastUserMsg.contains("derinden")
+                progress = if (isDeep) {
+                    progress.copy(fatigue = progress.fatigue + 1, chapterNumber = 1)
+                } else {
+                    progress.copy(chapterNumber = 1)
+                }
+                storyProgressDao.insertOrUpdate(progress)
+
+                val intro = if (isDeep) {
                     """Zihnini görünün derinliklerine zorladın. Mavi hologramın detaylarını sökmeye çalıştın: masadaki dosyaların üzerindeki isimleri, Tony Stark'ın endişeli kaş çatışını, Wanda'nın pencerelerden dışarı bakışını, Steve Rogers'ın masaya koyduğu ellerini. Ekstra detaylar zihnine bir sel gibi aktı ama bedeli ağır oldu: gözlerinin arkasında keskin bir sancı saplandı, burnundan ince bir kan sızdı.
 
 Görü dağıldığında şakakların zonkluyordu ama koordinatlar ve odadaki herkesin pozisyonu zihnine kazınmıştı."""
@@ -1429,37 +1493,9 @@ Görü dağıldığında şakakların zonkluyordu ama koordinatlar ve odadaki he
 Görü eridiğinde burnun kanamıyordu, başın dönmüyordu. Fiziksel olarak tam gücündeydin."""
                 }
 
-                intro + """
+                val mainPart = b1Text ?: """Toplantı odası etrafında maviye çalan bir statik içinde şekillendi, sessiz ve ödünç alınmış bir an — gerçekten orada değildin..."""
 
----
-
-Toplantı odası etrafında maviye çalan bir statik içinde şekillendi, sessiz ve ödünç alınmış bir an — gerçekten orada değildin, her zamanki gibi kendi gücünün kenarında bir hayalet gibi süzülüyordun.
-
-*"Kozmik Sürükleniş,"* dedi bir adam — koyu saçlı, keçi sakallı, odadaki en zeki kişi olduğundan bir kez bile şüphe etmemiş birinin duruşuna sahip. Tony Stark. Yüzünü yüzlerce manşetten tanıyordun. *"Dosya derinliği yok, talep yok, iletişim yok. Bu adam neden listede ki?"* Bir başkası cevap verdi — sarışın, çenesi sanki bir asker afişi için yontulmuş gibi. Steve Rogers olduğunu, yüzünü görmeden bile tahmin edebilirdin.
-
-Kadın hologramdan gözlerini ayırmadan cevap verdi. Kızıl saçlı, omuzlarındaki durgunluk Stark'ın bütün gece söylediklerinden daha tehlikeli okunuyordu. *"Çünkü tam olarak bazen ihtiyacımız olan tip. Yalnız kurt, muazzam potansiyel. Onu davet edersek, gelebilir. Ya da kaybolabilir. Kumar bu."*
-
-İçinde bir şey çok sessizleşti bunu duyunca. Haksız değildi. Rahatsız edici derecede haksız değildi, ve bunun seni bu kadar rahatsız etmesinden hoşlanmadın.
-
-Sarışın olan —Thor olmalıydı— masaya doğru eğildi, gözleri senin enerji imzanın titreyen okumasına kısılmış, tanıdık bir şeyin tadına bakar gibi. *"Kozmik Sürükleniş'in enerjisi… eski Asgard gezginlerini yankılıyor. Bence önce onu arayalım. Diğerleri güçlü. Ama bu olan… farklı hissettiriyor."*
-
-Görü kenarlardan solmaya başladı, kavrayışın her zamanki gibi iki dakika sınırından sonra inceliyordu. Yakaladığın son şey Stark'tı, masaya bakıp sırıtıyordu, bunun nasıl biteceğini şimdiden biliormuş gibi.
-
-*"Oylama vakti. Kozmik Sürükleniş'i listenin başına koyuyorum — merak ettim."*
-
-Sonra mavi, siyaha yerini bıraktı, ve sen çatıda geri döndün, nefesin kesik kesik, bakır tadı dilinde soluyordu.
-
-Şu anda senin hakkında oylama yapıyorlardı.
-
----
-
-Gidebilirdin. Daha azı için odalardan çıkmıştın.
-
-Ama kızıl saçlının sesindeki bir şey göğsüne yapışıp kaldı — *gelebilir ya da kaybolabilir, kumar bu* — sanki her iki sonuçla da barışmış gibi konuşuyordu. Sanki senden korkmuyordu, ama seni sahiplenmeye de çalışmıyordu. Hayatında seninle bu şekilde konuşan tam olarak sıfır insanla karşılaşmıştın.
-
-Kendine merak ettiğin için gittiğini söyledin. Kendine keşif için gittiğini söyledin. Neredeyse ama tam olarak değil doğru olan şekillerde kendine yalan söylemekte çok iyileşmiştin.
-
-Işınlandın.
+                intro + "\n\n---\n\n" + mainPart + """
 
 ---
 
@@ -1471,7 +1507,19 @@ Işınlandın.
             }
             2 -> {
                 // Choice 2 Response
-                val intro = if (lastUserMsg.contains("3") || lastUserMsg.contains("Geri çekil") || lastUserMsg.contains("gitme")) {
+                val isAvoid = lastUserMsg.contains("3") || lastUserMsg.contains("Geri çekil") || lastUserMsg.contains("gitme")
+                val isObserved = lastUserMsg.contains("2") || lastUserMsg.contains("gözlemle") || lastUserMsg.contains("uzaktan")
+
+                progress = if (isAvoid) {
+                    progress.copy(firstImpressionAvengers = "avoided")
+                } else if (isObserved) {
+                    progress.copy(firstImpressionAvengers = "calculated")
+                } else {
+                    progress.copy(firstImpressionAvengers = "impulsive")
+                }
+                storyProgressDao.insertOrUpdate(progress)
+
+                val intro = if (isAvoid) {
                     """İçindeki uyarı çanları galip geldi ve çatının kenarından bir adım geri çekildin. Çatının gölgelerine saklanarak Kule'den uzaklaşmayı seçtin.
 
 Ancak tam o anda zihnindeki mavi hologram çılgınca parıldadı. S.H.I.E.L.D. uyduları uzam sapmanı önceden tespit etmiş ve koordinatlarını kilitlemişti! Ani bir kuantum çökmesiyle etrafındaki gerçeklik yırtıldı ve bir enerji dalgası seni doğrudan Stark Tower'ın yüksek tavanlı toplantı salonunun ortasına savurdu. Kule'ye kendi isteğinle girmemiştin ama kaçınma çaban bile seni kaderinden uzaklaştıramadı."""
@@ -1513,7 +1561,19 @@ Sessizliği kıran Thor oldu, ve bunu geniş, memnun bir gülümsemeyle yaptı, 
             }
             3 -> {
                 // Choice 3 Response
-                val responseText = if (lastUserMsg.contains("2") || lastUserMsg.contains("Alaycı") || lastUserMsg.contains("esprili") || lastUserMsg.contains("masraflı")) {
+                val isWitty = lastUserMsg.contains("2") || lastUserMsg.contains("Alaycı") || lastUserMsg.contains("esprili") || lastUserMsg.contains("masraflı")
+                val isSilent = lastUserMsg.contains("3") || lastUserMsg.contains("Hiç isim") || lastUserMsg.contains("sessizlik")
+
+                progress = if (isWitty) {
+                    progress.copy(tonyAffinity = progress.tonyAffinity + 1)
+                } else if (isSilent) {
+                    progress.copy(mysteryFactor = progress.mysteryFactor + 1, steveTrust = progress.steveTrust - 1)
+                } else {
+                    progress
+                }
+                storyProgressDao.insertOrUpdate(progress)
+
+                val responseText = if (isWitty) {
                     """Sessizliği, kimseye hız borçlu olmadığını netleştirecek kadar uzun bıraktın.
 
 *"Giriş kartı masraflı geldi Stark,"* dedin hafif bir tebessümle. *"Aiden diyabilirsin."*
@@ -1600,47 +1660,11 @@ Tebrikler! Bölüm 1'i başarıyla tamamladın."""
             }
             5 -> {
                 // Chapter 2 Start -> Up to Chapter 2 Choice 1
-                """# 📖 BÖLÜM 2: ŞARTLAR
+                progress = progress.copy(chapterNumber = 2)
+                storyProgressDao.insertOrUpdate(progress)
 
-Kahve geldi, sonunda — Stark'ın emrettiği, birinin utana sıkıla önüne bıraktığı kahve. İçmedin. Fincanı elinle sarıp ısısını hissetmekle yetindin, alışkanlık, hiçbir şeyi kabul etmeden önce onun ne olduğunu anlamaya çalışan bir alışkanlık. Zehir mi, ilaç mı, sadece kahve mi — büyük ihtimalle sadece kahveydi, ama "büyük ihtimalle" son on beş yıldır senin için yeterli bir güvence olmadı hiç.
-
-Masaya oturdun sonunda. Kendi kararınla, kimsenin ısrarı yüzünden değil — bu ayrımı kendine net bir şekilde belirttin, sanki oturmak bir teslimiyet değil de bir gözlem noktası değiştirmekmiş gibi.
-
-*"Tamam,"* dedi Stark, ellerini masaya koyup öne eğilerek. *"Konuşalım gerçekçi olarak. Sen kimsin, ne istiyorsun, biz ne teklif ediyoruz — hepsini masaya yatıralım, sonra sen ışınlanıp gidersen bari zaman kaybetmemiş oluruz."*
-
-*"Adil,"* dedin. Sesin hâlâ düzdü ama bir şey —çok hafif, neredeyse fark edilmez— gevşemişti içinde. Belki masaya oturmak gerçekten bir şeyi değiştirmişti.
-
-Steve öne çıktı, kollarını masaya koyarak, sesindeki komuta tonunu bilerek yumuşatarak. *"S.H.I.E.L.D. seni sekiz aydır arıyor. Biz bunu biliyoruz çünkü onlar bizi de arıyorlar zaman zaman, işbirliği yapalım diye. Sana teklifimiz basit: Avengers'a katılırsan, senin için açılan her dosya kapanır. Hükümetlerin peşinden gelmesi durur. Resmi bir statün olur — silahlı bir kaçak değil, tanınan bir müttefik."*
-
-*"Ve karşılığında?"* dedin, sesin hâlâ nötr ama gözlerin ondan ayrılmadı.
-
-*"Karşılığında kurallara uyarsın,"* dedi Steve, dürüstçe, süslemeden. *"Sivillere zarar yok. Emir zinciri var, tam bir ordu değil ama tam bir anarşi de değil. Ve şeffaflık — gücünün ne olduğunu, sınırlarının ne olduğunu bilmemiz gerekiyor. Güven iki taraflı işler."*
-
-Güven kelimesi göğsünde tanıdık bir şekilde sıkıştı — hafif, otomatik bir savunma refleksi, yıllar içinde o kadar derine işlemiş ki artık düşünmeden tepki veriyordu. *"Güven,"* dedin, kelimeyi neredeyse tadına bakar gibi tekrarlayarak. *"İlginç kelime, hiç tanımadığınız birine söylemek için."*
-
-*"Bu yüzden buradayız,"* dedi kızıl saçlı kadın — sonunda konuşuyordu, sesi masadaki herkesten daha sakin, daha az ikna etmeye çalışan bir ton taşıyordu. *"Tanımıyoruz. Ama tanışmak isteriz. Fark bu."*
-
-Ona baktın biraz daha uzun süreyle normalden. *"İsmin?"*
-
-*"Natasha,"* dedi. *"Natasha Romanoff."*
-
-*"Romanoff,"* dedin, dosyalarda gördüğün bir isimdi ama hiç yüz yüze gelmemiştin. *"Kızıl Oda. Eski KGB. Şimdi Amerika'nın en güvenilir casusu."* Ağzının kenarında hafif, neredeyse görünmeyen bir kıvrım oluştu. *"İnsan değişebiliyormuş demek."*
-
-Bu, odada gözle görülür bir tepki yarattı — Steve'in çenesi hafifçe gerildi, Stark'ın kaşları kalktı, ama Natasha'nın yüzünde hiçbir şey değişmedi, sadece gözlerinde bir şey parladı, neredeyse eğlenmiş gibi. *"Dosyaların iyiymiş,"* dedi. *"Ama eksik. Herkesinki eksik."*
-
-*"Benimki de eksik olsun o zaman,"* dedin. *"Adil olur."*
-
----
-
-Sohbet bir süre böyle devam etti — soru, yarım cevap, karşı soru, senin verdiğin her parça karşılığında bir parça geri aldığın eski bir alışkanlıkla. Ama bir noktada Stark, sabırsızlığını daha fazla saklayamadı.
-
-*"Tamam, teoriler güzel,"* dedi, elini masaya hafifçe vurarak. *"Ama ben mühendisim. Sayı severim. 'Kozmik enerji imzası' diyorsunuz, ben ne demek istediğinizi anlamıyorum. Bize bir şey göster."*
-
-Odadaki hava bir anda değişti. Thor'un yüzündeki merak daha da belirginleşti, Steve'in eli hafifçe geriye çekildi —yine o eski refleks, kalkanına doğru— ve Natasha, tamamen hareketsiz kalarak izlemeye devam etti.
-
-*"Ne görmek istiyorsun,"* dedin, ses tonun tehdit değildi ama bir uyarıydı, sakin ve düz. *"Uyarayım — 'göstermek' burada tehlikesiz bir kelime değil."*
-
-*"Kontrollü bir şey,"* dedi Steve hızlıca, Stark'a bir bakış fırlatarak. *"Küçük ölçekli. Yeter ki gerçek olduğunu görelim."*
+                val b2Full = b2Text ?: """# 📖 BÖLÜM 2: ŞARTLAR"""
+                b2Full + """
 
 ---
 
@@ -1898,23 +1922,11 @@ Kule'deki ilk gecesinde temkinli bir iyimserlikle kararını şekillendirdi."""
 Tebrikler! Bölüm 2'yi başarıyla tamamladın."""
             }
             11 -> {
-                """# 📖 BÖLÜM 3: DENEME SÜRESİ
+                progress = progress.copy(chapterNumber = 3)
+                storyProgressDao.insertOrUpdate(progress)
 
-Uyumadın. Beklemiyordun zaten uyumayı — ama yine de sabahın erken saatlerinde, gökyüzü hâlâ o belirsiz gri-maviye dönmemişken, pencerenin önünden ayrılıp odanın içinde volta atmaya başladığını fark ettiğinde, vücudunun ne kadar yorgun olduğunu hatırladın. Görüyle harcadığın enerji, ışınlanmanın bedeli — hepsi birikmiş, omuzlarına yük gibi oturmuştu. Yorgunluk, senin türün için garip bir kavramdı; kas yorgunluğu değildi bu, daha çok bir pilin yavaşça boşalması gibiydi, ve dolması da normal bir uykudan çok daha uzun sürerdi.
-
-Kapı çalındı. Sert değil, aceleci değil — iki kere, kısa aralıklarla.
-
-Kapıyı açtığında Steve'i buldun, elinde bir tablet, üstünde dün geceki üniformasından farklı, gündelik bir tişört. *"Erken kalkmışsın,"* dedi, seni süzerek. *"Ya da hiç yatmamışsın."*
-
-*"İkinci seçenek,"* dedin, kapıyı tamamen açmadan.
-
-*"Anlıyorum,"* dedi, ve gerçekten anladığını hissettirecek kadar basit söyledi bunu — acımadan, yargılamadan. *"Bak, tam bir cevap istemiyoruz senden bugün. Ama eğer kalmayı düşünüyorsan — resmi olarak değil, sadece bir süreliğine, görelim nasıl gidiyor diye — sana bir teklifim var. Deneme süresi. Otuz gün. Bu süre boyunca Tower'da kalırsın, ekiple biraz zaman geçirirsin, belki küçük bir görev bile alırsın. Sonunda karar sende. İstersen gidersin, kimse peşinden koşmaz."*
-
-*"Otuz gün,"* diye tekrarladın, kelimenin ağırlığını tartarak. On beş yıldır hiçbir yerde otuz saat bile kalmamıştın, bir kaçış rotası hazır tutmadan.
-
-*"Otuz gün,"* diye onayladı Steve. *"Ve eğer o süre içinde bir S.H.I.E.L.D. ekibi ya da başka biri seni almaya kalkarsa — bu artık bizim sorunumuz olur, senin değil."*
-
-Bu son cümle, düşündüğünden daha fazla ağırlık taşıyordu. Yirmi yıldır ilk kez, birisi senin yükünü paylaşmayı teklif ediyordu, karşılığında hemen bir şey istemeden.
+                val b3Full = b3Text ?: """# 📖 BÖLÜM 3: DENEME SÜRESİ"""
+                b3Full + """
 
 ---
 
@@ -2110,26 +2122,21 @@ Natasha gözlerinin içine bakarak sertçe ekledi: *"Şimdi kaçarsan suçlu old
                 val isShortEscape = c6Choice.contains("2") || c6Choice.contains("çatıya") || c6Choice.contains("Kısa")
                 val isBigEscape = c6Choice.contains("3") || c6Choice.contains("uzağa") || c6Choice.contains("Büyük")
 
-                val outcomeText = if (isBigEscape) {
-                    """Onları dinlemedin. Yirmi yıllık alışkanlık ve korku bedenini sardı. Mavi kuantum ışığı seni kapladı ve kendini yüzlerce mil ötede, ıslak ve karanlık bir liman şehrinin terk edilmiş deposunda buldun. Geriye baktın, Avengers Tower çoktan kıtalar ötesinde bir anıya dönüşmüştü.
-
----
-
-ÜÇ GÜN SONRA
-
-Üç gün geçti. Tanımadığın soğuk şehirlerde, yarı yıkık binalarda yalnız kaldın. Eski kaçış günlerine dönmüştün ama bu sefer içindeki boşluk her zamankinden daha büyüktü.
-
-Dördüncü gece terk edilmiş depoda otururken havada yoğun bir ozon ve şimşek kokusu yayıldı. Altın bir şimşek çaktı ve THOR belirdi!
-
-*"Seni bulmak zor olmadı gezgin,"* dedi Thor, bir tahta kasanın üzerine oturup matarasını uzatarak. *"Steve kırıldı ama seni anladı. Wanda ise senin geri döneceğine hep inandı. Kaçmak korkunun eseri olabilir Blackwood, ama yüzleşmek için geri dönmek kahramanların işidir. Kule'de seni bekliyorlar."*
-
-Thor ile birlikte Avengers Tower'a geri döndün. Steve seni kapıda karşılayıp omzuna dokundu: "Tekrar hoş geldin. Yolu bulmuş olman önemli." Akşam olduğunda çatıya çıktın."""
+                progress = if (isBigEscape) {
+                    progress.copy(currentBranch = "kacis_thor", flightInstinct = progress.flightInstinct + 2, trustAvengers = "leaning_negative")
                 } else if (isShortEscape) {
-                    """Natasha'nın sözleri kulağına ulaştı ama yirmi yıllık refleksin kelimelerden hızlı hareket etti! Bir mavi ışık patlamasıyla Kule'nin en üst heliped çatısına ışınlandın!
+                    progress.copy(currentBranch = "kisa_kacis", flightInstinct = progress.flightInstinct + 1, wandaBond = progress.wandaBond + 1)
+                } else {
+                    progress.copy(currentBranch = "main", trustAvengers = "leaning_positive")
+                }
+                storyProgressDao.insertOrUpdate(progress)
 
-Aşağıdaki S.H.I.E.L.D. zırhlı araçlarını izledin. İki dakika sonra Steve'in ekibi ikna edip ajanları geri gönderdiğini gördün. Yanlış yaptığını anlayıp kararlılıkla aşağı indin.
-
-Steve seni gördü, gülümsedi. Wanda ise tutkuyla baktı: *"Kaçmak senin refleksindi Aiden, ama geri dönmek senin seçimin. Doğru olanı yaptın."* Akşam olduğunda çatıya çıktın."""
+                val outcomeText = if (isBigEscape) {
+                    val part1 = b3Kacis ?: """Onları dinlemedin..."""
+                    val part2 = b3Thor ?: """ÜÇ GÜN SONRA..."""
+                    part1 + "\n\n---\n\n" + part2
+                } else if (isShortEscape) {
+                    b3KisaKacis ?: """Natasha'nın sözleri kulağına ulaştı ama yirmi yıllık refleksin kelimelerden hızlı hareket etti! Bir mavi ışık patlamasıyla Kule'nin en üst heliped çatısına ışınlandın!"""
                 } else {
                     """Işınlanmadın. Elindeki mavi kıvılcımları yavaşça söndürdün. Yirmi yıllık kaçış refleksini ilk kez bastırdın ve Kule'de kaldın.
 
@@ -2266,7 +2273,7 @@ Tebrikler! Bölüm 3'ü başarıyla tamamladın."""
                 var lastErr: Exception? = null
                 for (k in candidateKeys) {
                     try {
-                        return callGeminiApi(k, model, systemPrompt, messages)
+                        return callGeminiApi(k, model, systemPrompt, messages, enableNsfw = settings.enableNsfw)
                     } catch (err: Exception) {
                         lastErr = err
                     }

@@ -89,7 +89,7 @@ fun EmotionStatusSection(
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // Main Metrics (Affection, Trust, Tension)
+            // Main Metrics (Affection, Trust, Tension, Hurt)
             EmotionBarItem(
                 label = "Yakınlık / Sevgi (Affection)",
                 value = emotion.affection,
@@ -109,6 +109,15 @@ fun EmotionStatusSection(
             Spacer(modifier = Modifier.height(8.dp))
 
             EmotionBarItem(
+                label = "Kırgınlık / Mesafe (Hurt)",
+                value = emotion.hurt,
+                maxValue = 100,
+                color = Color(0xFF9333EA),
+                icon = "💔"
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+
+            EmotionBarItem(
                 label = "Gerginlik / Stres (Tension)",
                 value = emotion.tension,
                 maxValue = 100,
@@ -116,15 +125,52 @@ fun EmotionStatusSection(
                 icon = "⚡"
             )
 
-            // Mood Intensity
+            // Secondary & Suppressed Emotions
+            if (emotion.secondaryMood.isNotBlank() || emotion.suppressedEmotion.isNotBlank()) {
+                Spacer(modifier = Modifier.height(10.dp))
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color(0xFF1B1D30))
+                        .padding(8.dp)
+                ) {
+                    if (emotion.secondaryMood.isNotBlank()) {
+                        Text(
+                            text = "🎭 İkincil Duygu: ${emotion.secondaryMood}",
+                            color = EmochiTextSecondary,
+                            fontSize = 11.sp
+                        )
+                    }
+                    if (emotion.suppressedEmotion.isNotBlank()) {
+                        if (emotion.secondaryMood.isNotBlank()) Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "🔒 Bastırılmış İç Duygu: ${emotion.suppressedEmotion}",
+                            color = Color(0xFFFF8A8A),
+                            fontSize = 11.sp
+                        )
+                    }
+                }
+            }
+
+            // Mood Intensity & Resilience & Speech Pattern
             Spacer(modifier = Modifier.height(8.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Duygu Şiddeti (Intensity)", color = EmochiTextMuted, fontSize = 11.sp)
-                Text("${emotion.intensity} / 10", color = EmochiTextSecondary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                Text("Duygu Şiddeti: ${emotion.intensity}/10", color = EmochiTextMuted, fontSize = 11.sp)
+                Text("Duygusal Direnç: ${emotion.resilience}/10", color = EmochiTextMuted, fontSize = 11.sp)
+            }
+
+            if (emotion.speechPattern.isNotBlank()) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "🗣️ Konuşma Üslubu/Hızı: ${emotion.speechPattern}",
+                    color = EmochiTextSecondary,
+                    fontSize = 11.sp
+                )
             }
 
             // Universe Mode Specifics
@@ -139,7 +185,7 @@ fun EmotionStatusSection(
                 Spacer(modifier = Modifier.height(12.dp))
 
                 Text(
-                    text = "🌌 Dünya Atmosferi",
+                    text = "🌌 Evren & Atmosfer Simülasyonu",
                     color = Color(0xFF8B5CF6),
                     fontSize = 12.5.sp,
                     fontWeight = FontWeight.Bold
@@ -154,11 +200,29 @@ fun EmotionStatusSection(
                     Text("Şiddet: ${worldAtmosphere.intensity}/10", color = EmochiTextMuted, fontSize = 11.5.sp)
                 }
 
+                if (worldAtmosphere.macroAtmosphere.isNotBlank()) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "🌐 Makro Evren Düzeni: ${worldAtmosphere.macroAtmosphere}",
+                        color = EmochiTextSecondary,
+                        fontSize = 11.sp
+                    )
+                }
+
+                if (worldAtmosphere.microAtmosphere.isNotBlank()) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "🏢 Mikro Mekan & Ortam: ${worldAtmosphere.microAtmosphere}",
+                        color = EmochiTextSecondary,
+                        fontSize = 11.sp
+                    )
+                }
+
                 if (worldAtmosphere.currentEvent.isNotBlank()) {
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "Mevcut Olay: ${worldAtmosphere.currentEvent}",
-                        color = EmochiTextSecondary,
+                        text = "⚡ Mevcut Olay: ${worldAtmosphere.currentEvent}",
+                        color = EmochiPrimary,
                         fontSize = 11.sp
                     )
                 }

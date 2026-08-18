@@ -116,6 +116,7 @@ import coil.compose.AsyncImage
 import com.example.R
 import com.example.data.local.BotEntity
 import com.example.data.local.UserSettingsEntity
+import com.example.ui.components.AppBackground
 import com.example.ui.components.GlobalSettingsModal
 import com.example.ui.components.MoodColors
 import com.example.ui.components.OrbView
@@ -166,9 +167,11 @@ fun BotListScreen(
         }
     }
 
-    Scaffold(
-        containerColor = EmochiBackground,
-        contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
+    Box(modifier = Modifier.fillMaxSize()) {
+        AppBackground()
+        Scaffold(
+            containerColor = Color.Transparent,
+            contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
         bottomBar = {
             Column(
                 modifier = Modifier
@@ -446,6 +449,7 @@ fun BotListScreen(
                 }
             }
         }
+    }
     }
 
     if (showGlobalSettings && userSettings != null) {
@@ -2677,6 +2681,7 @@ fun AidenStoriesModal(
                         )
                     )
             ) {
+                AppBackground()
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
@@ -3981,17 +3986,19 @@ fun ChapterSelectionModal(
     androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
         androidx.compose.material3.Surface(
             shape = RoundedCornerShape(24.dp),
-            color = Color(0xFF0F0B21),
+            color = Color.Transparent,
             border = BorderStroke(1.5.dp, Brush.linearGradient(listOf(Color(0xFFC084FC), Color(0xFF6366F1)))),
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(vertical = 12.dp)
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(18.dp)
-            ) {
+            Box {
+                AppBackground()
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(18.dp)
+                ) {
                 // Header with title and close button
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -4193,5 +4200,6 @@ fun ChapterSelectionModal(
             }
         }
     }
+}
 }
 

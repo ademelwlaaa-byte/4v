@@ -424,14 +424,16 @@ fun GlobalSettingsModal(
                 .fillMaxWidth()
                 .padding(vertical = 12.dp),
             shape = RoundedCornerShape(20.dp),
-            color = EmochiSurface,
+            color = Color.Transparent,
             border = androidx.compose.foundation.BorderStroke(1.dp, EmochiBorder)
         ) {
-            Column(
-                modifier = Modifier
-                    .padding(20.dp)
-                    .verticalScroll(rememberScrollState())
-            ) {
+            Box {
+                AppBackground()
+                Column(
+                    modifier = Modifier
+                        .padding(20.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
                 // Modal Header
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -882,102 +884,155 @@ fun GlobalSettingsModal(
                     title = "💬 Yanıt Ayarları & Yedek Model",
                     subtitle = "Varsayılan yanıt uzunluğu, yedek model ve otomatik geçiş",
                     icon = Icons.Default.Tune,
-                    isExpanded = expandedSection == "length",
-                    onToggle = { expandedSection = if (expandedSection == "length") null else "length" }
+                    isExpanded = expandedSection == "length" || expandedSection == "response",
+                    onToggle = { expandedSection = if (expandedSection == "length" || expandedSection == "response") null else "response" },
+                    badgeText = if (enableAutoFallback) "AÇIK" else "KAPALI",
+                    badgeColor = if (enableAutoFallback) Color(0xFF10B981) else EmochiTextMuted
                 ) {
-                    Row(
+                    Column(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        val options = listOf(
-                            Triple("short", "Kısa (Min. Token)", Icons.Default.FlashOn to Color(0xFFFBBF24)),
-                            Triple("standard", "Standart RP", Icons.Default.Description to Color(0xFFFBBF24)),
-                            Triple("long", "Uzun Roman", Icons.Default.List to Color(0xFFA78BFA))
-                        )
-                        options.forEach { (key, label, iconInfo) ->
-                            val (icon, tintColor) = iconInfo
-                            val isSelected = responseLength == key
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clip(RoundedCornerShape(14.dp))
-                                    .background(if (isSelected) Color(0xFF8B5CF6).copy(alpha = 0.15f) else EmochiCard)
-                                    .border(
-                                        width = if (isSelected) 1.5.dp else 1.dp,
-                                        color = if (isSelected) Color(0xFF8B5CF6) else EmochiBorder,
-                                        shape = RoundedCornerShape(14.dp)
-                                    )
-                                    .clickable { responseLength = key }
-                                    .padding(horizontal = 6.dp, vertical = 10.dp),
-                                contentAlignment = Alignment.Center
+                        Column {
+                            Text("Varsayılan Yanıt Uzunluğu:", color = EmochiTextSecondary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(icon, contentDescription = null, tint = tintColor, modifier = Modifier.size(14.dp))
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text(
-                                        text = label,
-                                        color = if (isSelected) Color.White else EmochiTextSecondary,
-                                        fontSize = 11.sp,
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
-                                    )
+                                val options = listOf(
+                                    Triple("short", "Kısa (Min. Token)", Icons.Default.FlashOn to Color(0xFFFBBF24)),
+                                    Triple("standard", "Standart RP", Icons.Default.Description to Color(0xFFFBBF24)),
+                                    Triple("long", "Uzun Roman", Icons.Default.List to Color(0xFFA78BFA))
+                                )
+                                options.forEach { (key, label, iconInfo) ->
+                                    val (icon, tintColor) = iconInfo
+                                    val isSelected = responseLength == key
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clip(RoundedCornerShape(14.dp))
+                                            .background(if (isSelected) Color(0xFF8B5CF6).copy(alpha = 0.15f) else EmochiCard)
+                                            .border(
+                                                width = if (isSelected) 1.5.dp else 1.dp,
+                                                color = if (isSelected) Color(0xFF8B5CF6) else EmochiBorder,
+                                                shape = RoundedCornerShape(14.dp)
+                                            )
+                                            .clickable { responseLength = key }
+                                            .padding(horizontal = 6.dp, vertical = 10.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(icon, contentDescription = null, tint = tintColor, modifier = Modifier.size(14.dp))
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text(
+                                                text = label,
+                                                color = if (isSelected) Color.White else EmochiTextSecondary,
+                                                fontSize = 11.sp,
+                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }
-                    }
 
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Text("Yedek Model (Hata / Kota Aşımında Kullanılır):", color = EmochiTextSecondary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                    ExposedDropdownMenuBox(
-                        expanded = fallbackDropdownExpanded,
-                        onExpandedChange = { fallbackDropdownExpanded = !fallbackDropdownExpanded },
-                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
-                    ) {
-                        val currentFallbackSpec = modelsList.find { it.key == fallbackModel } ?: modelsList.first()
-                        OutlinedTextField(
-                            value = "${currentFallbackSpec.name} — ${currentFallbackSpec.tokenCostRate}",
-                            onValueChange = {},
-                            readOnly = true,
-                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = fallbackDropdownExpanded) },
-                            colors = customTextFieldColors(),
-                            modifier = Modifier.menuAnchor().fillMaxWidth()
-                        )
-                        ExposedDropdownMenu(
-                            expanded = fallbackDropdownExpanded,
-                            onDismissRequest = { fallbackDropdownExpanded = false },
-                            modifier = Modifier.background(EmochiCard)
+                        // Card for Automatic Fallback & Fallback Model
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = EmochiSurface),
+                            shape = RoundedCornerShape(14.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF2E2344)),
+                            modifier = Modifier.fillMaxWidth()
                         ) {
-                            modelsList.forEach { spec ->
-                                DropdownMenuItem(
-                                    text = {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Refresh,
+                                            contentDescription = null,
+                                            tint = EmochiPrimary,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
                                         Column {
-                                            Text(spec.name, color = EmochiTextPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                                            Text(spec.tokenCostRate, color = EmochiPrimary, fontSize = 10.5.sp)
+                                            Text(
+                                                "Otomatik Model/API Geçişi",
+                                                color = EmochiTextPrimary,
+                                                fontSize = 12.5.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                            Text(
+                                                "Modelde hata veya kota aşımı olursa otomatik yedek modele geç.",
+                                                color = EmochiTextSecondary,
+                                                fontSize = 11.sp
+                                            )
                                         }
-                                    },
-                                    onClick = {
-                                        fallbackModel = spec.key
-                                        fallbackDropdownExpanded = false
                                     }
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Switch(
+                                        checked = enableAutoFallback,
+                                        onCheckedChange = { enableAutoFallback = it },
+                                        colors = SwitchDefaults.colors(
+                                            checkedThumbColor = Color(0xFF1A1B2E),
+                                            checkedTrackColor = EmochiPrimary
+                                        )
+                                    )
+                                }
+
+                                Spacer(modifier = Modifier.height(10.dp))
+                                Divider(color = Color(0xFF2B2142))
+                                Spacer(modifier = Modifier.height(10.dp))
+
+                                Text(
+                                    "Yedek Model (Hata / Kota Aşımında Kullanılır):",
+                                    color = EmochiTextSecondary,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold
                                 )
+                                ExposedDropdownMenuBox(
+                                    expanded = fallbackDropdownExpanded,
+                                    onExpandedChange = { fallbackDropdownExpanded = !fallbackDropdownExpanded },
+                                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+                                ) {
+                                    val currentFallbackSpec = modelsList.find { it.key == fallbackModel } ?: modelsList.first()
+                                    OutlinedTextField(
+                                        value = "${currentFallbackSpec.name} — ${currentFallbackSpec.tokenCostRate}",
+                                        onValueChange = {},
+                                        readOnly = true,
+                                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = fallbackDropdownExpanded) },
+                                        colors = customTextFieldColors(),
+                                        modifier = Modifier.menuAnchor().fillMaxWidth()
+                                    )
+                                    ExposedDropdownMenu(
+                                        expanded = fallbackDropdownExpanded,
+                                        onDismissRequest = { fallbackDropdownExpanded = false },
+                                        modifier = Modifier.background(EmochiCard)
+                                    ) {
+                                        modelsList.forEach { spec ->
+                                            DropdownMenuItem(
+                                                text = {
+                                                    Column {
+                                                        Text(spec.name, color = EmochiTextPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                                        Text(spec.tokenCostRate, color = EmochiPrimary, fontSize = 10.5.sp)
+                                                    }
+                                                },
+                                                onClick = {
+                                                    fallbackModel = spec.key
+                                                    fallbackDropdownExpanded = false
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
                             }
                         }
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("Otomatik Model/API Geçişi", color = EmochiTextPrimary, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
-                            Text("Modelde hata veya kota aşımı olursa otomatik yedek modele geç.", color = EmochiTextSecondary, fontSize = 11.sp)
-                        }
-                        Switch(
-                            checked = enableAutoFallback,
-                            onCheckedChange = { enableAutoFallback = it },
-                            colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFF1A1B2E), checkedTrackColor = EmochiPrimary)
-                        )
                     }
                 }
 
@@ -1370,6 +1425,7 @@ fun GlobalSettingsModal(
                 }
             }
         }
+        }
     }
 
     if (showUpdateModal) {
@@ -1443,14 +1499,16 @@ fun BotSettingsModal(
                 .fillMaxWidth()
                 .padding(vertical = 16.dp),
             shape = RoundedCornerShape(20.dp),
-            color = EmochiSurface,
+            color = Color.Transparent,
             border = androidx.compose.foundation.BorderStroke(1.dp, EmochiBorder)
         ) {
-            Column(
-                modifier = Modifier
-                    .padding(20.dp)
-                    .verticalScroll(rememberScrollState())
-            ) {
+            Box {
+                AppBackground()
+                Column(
+                    modifier = Modifier
+                        .padding(20.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
                 // Header
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -2137,6 +2195,7 @@ fun BotSettingsModal(
             }
         }
     }
+    }
 }
 
 @Composable
@@ -2223,19 +2282,21 @@ fun NeuralVaultModal(
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF0F0F14)),
+            colors = CardDefaults.cardColors(containerColor = Color.Transparent),
             shape = RoundedCornerShape(20.dp),
             border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF2A2A38)),
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(vertical = 16.dp)
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(18.dp)
-                    .verticalScroll(rememberScrollState())
-            ) {
+            Box {
+                AppBackground()
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(18.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
                 // Header (Matching Screenshot 2)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -2629,6 +2690,7 @@ fun NeuralVaultModal(
             }
         }
     }
+    }
 }
 
 @Composable
@@ -2887,10 +2949,12 @@ fun AdminConsoleModal(
                 .fillMaxWidth(0.94f)
                 .padding(vertical = 16.dp),
             shape = RoundedCornerShape(22.dp),
-            color = EmochiSurface,
+            color = Color.Transparent,
             border = androidx.compose.foundation.BorderStroke(1.5.dp, Color(0xFFFFD700).copy(alpha = 0.8f))
         ) {
-            Column(
+            Box {
+                AppBackground()
+                Column(
                 modifier = Modifier
                     .padding(20.dp)
                     .verticalScroll(rememberScrollState())
@@ -3095,6 +3159,7 @@ fun AdminConsoleModal(
             }
         }
     }
+    }
 }
 
 @Composable
@@ -3114,14 +3179,16 @@ fun UpdateCheckerModal(
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF18192E)),
+            colors = CardDefaults.cardColors(containerColor = Color.Transparent),
             shape = RoundedCornerShape(20.dp),
             border = androidx.compose.foundation.BorderStroke(1.5.dp, EmochiPrimary.copy(alpha = 0.5f)),
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(8.dp)
         ) {
-            Column(
+            Box {
+                AppBackground()
+                Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(20.dp),
@@ -3256,5 +3323,6 @@ fun UpdateCheckerModal(
                 }
             }
         }
+    }
     }
 }

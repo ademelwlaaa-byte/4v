@@ -147,7 +147,8 @@ fun EmochiAppMain(viewModel: EmochiViewModel) {
                         isSpeaking = isSpeaking,
                         onStopSpeaking = { viewModel.stopSpeaking() },
                         onEnsureOpeningMessage = { viewModel.ensureOpeningMessageForActiveBot() },
-                        onClearError = { viewModel.clearError() }
+                        onClearError = { viewModel.clearError() },
+                        onRetryMessage = { msgId -> viewModel.retryMessage(msgId) }
                     )
                 }
             }

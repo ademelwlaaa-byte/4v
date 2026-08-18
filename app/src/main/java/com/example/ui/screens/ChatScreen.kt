@@ -90,8 +90,10 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.launch
@@ -122,6 +124,7 @@ import com.example.ui.components.OrbView
 import com.example.ui.components.TypingDots
 import com.example.ui.components.customTextFieldColors
 import com.example.ui.theme.EmochiError
+import com.example.ui.theme.EmochiSurface
 
 // Helper function to format spoken dialogue and narrative actions in AI messages
 fun formatNarrativeText(text: String): AnnotatedString {
@@ -241,7 +244,8 @@ fun ChatScreen(
     isSpeaking: Boolean = false,
     onStopSpeaking: () -> Unit = {},
     onEnsureOpeningMessage: () -> Unit = {},
-    onClearError: () -> Unit = {}
+    onClearError: () -> Unit = {},
+    onRetryMessage: ((String) -> Unit)? = null
 ) {
     var inputText by remember { mutableStateOf("") }
     var showBotSettings by remember { mutableStateOf(false) }
@@ -417,7 +421,7 @@ fun ChatScreen(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(Color(0xDC070512))
+                        .background(EmochiSurface.copy(alpha = 0.88f))
                         .statusBarsPadding()
                         .animateContentSize(animationSpec = tween(220, easing = FastOutSlowInEasing))
                 ) {
@@ -696,7 +700,7 @@ fun ChatScreen(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(Color(0xDC070512))
+                        .background(EmochiSurface.copy(alpha = 0.88f))
                         .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom))
                 ) {
                 // Quick RP prompt suggestion chips
@@ -881,11 +885,14 @@ fun ChatScreen(
             }
         }
     ) { innerPadding ->
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
+            Column(
+                modifier = Modifier.fillMaxSize()
+            ) {
                 errorMessage?.let { err ->
                     Row(
                         modifier = Modifier
@@ -1224,6 +1231,31 @@ fun ChatScreen(
                                                         fontWeight = FontWeight.Bold
                                                     )
                                                 }
+
+                                                if (msg.status == "failed") {
+                                                    Spacer(modifier = Modifier.height(10.dp))
+                                                    Surface(
+                                                        color = Color(0x30EF4444),
+                                                        shape = RoundedCornerShape(10.dp),
+                                                        border = BorderStroke(1.dp, Color(0x80EF4444))
+                                                    ) {
+                                                        Row(
+                                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                                            verticalAlignment = Alignment.CenterVertically,
+                                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                                        ) {
+                                                            Text("⚠️ Mesaj iletilemedi", color = Color(0xFFFCA5A5), fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold)
+                                                            Button(
+                                                                onClick = { onRetryMessage?.invoke(msg.id) },
+                                                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFDC2626)),
+                                                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                                                                modifier = Modifier.height(26.dp)
+                                                            ) {
+                                                                Text("🔄 Tekrar Dene", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                                            }
+                                                        }
+                                                    }
+                                                }
                                             }
                                         }
 
@@ -1424,71 +1456,76 @@ fun ChatScreen(
                         }
                     }
                 }
+            }
 
-                val showScrollToBottom = remember {
-                    derivedStateOf {
-                        val layoutInfo = listState.layoutInfo
-                        val totalItems = layoutInfo.totalItemsCount
-                        if (totalItems == 0) return@derivedStateOf false
+            val showScrollToBottom = remember {
+                derivedStateOf {
+                    val layoutInfo = listState.layoutInfo
+                    val totalItems = layoutInfo.totalItemsCount
+                    if (totalItems == 0) return@derivedStateOf false
 
-                        val lastVisibleItem = layoutInfo.visibleItemsInfo.lastOrNull() ?: return@derivedStateOf false
-                        val itemsFromEnd = totalItems - 1 - lastVisibleItem.index
+                    val lastVisibleItem = layoutInfo.visibleItemsInfo.lastOrNull() ?: return@derivedStateOf false
+                    val itemsFromEnd = totalItems - 1 - lastVisibleItem.index
 
-                        if (itemsFromEnd >= 2) {
-                            true
-                        } else if (itemsFromEnd == 1) {
-                            true
-                        } else {
-                            // On last visible item: check if scrolled up by at least ~180px
-                            val viewportEnd = layoutInfo.viewportEndOffset
-                            val itemBottom = lastVisibleItem.offset + lastVisibleItem.size
-                            (itemBottom - viewportEnd) > 180
-                        }
+                    if (itemsFromEnd >= 2) {
+                        true
+                    } else if (itemsFromEnd == 1) {
+                        true
+                    } else {
+                        // On last visible item: check if scrolled up by at least ~180px
+                        val viewportEnd = layoutInfo.viewportEndOffset
+                        val itemBottom = lastVisibleItem.offset + lastVisibleItem.size
+                        (itemBottom - viewportEnd) > 180
                     }
                 }
+            }
 
-                if (showScrollToBottom.value) {
-                    val totalCount = messages.size + if (isSending) 1 else 0
+            if (showScrollToBottom.value) {
+                val totalCount = messages.size + if (isSending) 1 else 0
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(bottom = 12.dp, end = 16.dp)
+                ) {
                     Box(
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = 8.dp, end = 12.dp),
-                        contentAlignment = Alignment.CenterEnd
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .clip(CircleShape)
-                                .background(Color(0xFF8B5CF6))
-                                .clickable {
-                                    coroutineScope.launch {
-                                        if (totalCount > 0) {
-                                            listState.animateScrollToItem(totalCount - 1)
-                                        }
+                            .clip(CircleShape)
+                            .background(
+                                Brush.linearGradient(
+                                    colors = listOf(Color(0xFF9333EA), Color(0xFF6B21A8))
+                                )
+                            )
+                            .border(1.dp, Color(0xFFD8B4FE), CircleShape)
+                            .clickable {
+                                coroutineScope.launch {
+                                    if (totalCount > 0) {
+                                        listState.animateScrollToItem(totalCount - 1)
                                     }
                                 }
-                                .padding(horizontal = 12.dp, vertical = 8.dp)
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = Icons.Default.KeyboardArrowDown,
-                                    contentDescription = "En aşağı in",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(
-                                    text = "En Aşağı İn",
-                                    color = Color.White,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
                             }
+                            .padding(horizontal = 14.dp, vertical = 8.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.KeyboardArrowDown,
+                                contentDescription = "En aşağı in",
+                                tint = Color.White,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "En Aşağı İn",
+                                color = Color.White,
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.Bold
+                            )
                         }
                     }
                 }
             }
         }
     }
+}
 
     if (showBackgroundPicker) {
         androidx.compose.ui.window.Dialog(onDismissRequest = { showBackgroundPicker = false }) {
@@ -3180,7 +3217,10 @@ fun BookReaderView(
     val context = androidx.compose.ui.platform.LocalContext.current
     var fontSizeSp by remember { mutableStateOf(16.sp) }
     var showSummaryModal by remember { mutableStateOf(false) }
-    val listState = rememberLazyListState()
+    val listState = rememberSaveable(saver = androidx.compose.foundation.lazy.LazyListState.Saver) {
+        androidx.compose.foundation.lazy.LazyListState()
+    }
+    var lastProcessedMsgCount by rememberSaveable { mutableIntStateOf(0) }
 
     var isAmbientMusicPlaying by remember { mutableStateOf(false) }
     var ambientMediaPlayer by remember { mutableStateOf<android.media.MediaPlayer?>(null) }
@@ -3193,32 +3233,38 @@ fun BookReaderView(
                     p.release()
                 }
             } catch (e: Exception) {
-                e.printStackTrace()
+                android.util.Log.e("BookReaderView", "Error stopping player on toggle off", e)
             }
             ambientMediaPlayer = null
             isAmbientMusicPlaying = false
         } else {
             try {
-                val afd = context.resources.openRawResourceFd(com.example.R.raw.bolumsonu)
-                if (afd != null) {
-                    val p = android.media.MediaPlayer()
-                    p.setDataSource(afd.fileDescriptor, afd.startOffset, afd.length)
-                    afd.close()
-                    p.setAudioAttributes(
-                        android.media.AudioAttributes.Builder()
-                            .setContentType(android.media.AudioAttributes.CONTENT_TYPE_MUSIC)
-                            .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
-                            .build()
-                    )
+                ambientMediaPlayer?.let { p ->
+                    if (p.isPlaying) p.stop()
+                    p.release()
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("BookReaderView", "Error releasing old player on toggle on", e)
+            }
+            ambientMediaPlayer = null
+
+            try {
+                val p = android.media.MediaPlayer.create(context, com.example.R.raw.bolumsonu)
+                if (p != null) {
+                    p.setOnErrorListener { _, what, extra ->
+                        android.util.Log.e("BookReaderView", "bolumsonu.mp3 toggle error: what=$what, extra=$extra")
+                        true
+                    }
                     p.isLooping = true
-                    p.prepare()
-                    p.setVolume(0.8f, 0.8f)
+                    p.setVolume(0.85f, 0.85f)
                     p.start()
                     ambientMediaPlayer = p
                     isAmbientMusicPlaying = true
+                } else {
+                    android.util.Log.e("BookReaderView", "MediaPlayer.create returned null during toggleAmbientMusic")
                 }
             } catch (e: Exception) {
-                e.printStackTrace()
+                android.util.Log.e("BookReaderView", "Exception in toggleAmbientMusic", e)
             }
         }
     }
@@ -3231,14 +3277,18 @@ fun BookReaderView(
                     p.release()
                 }
             } catch (e: Exception) {
-                e.printStackTrace()
+                android.util.Log.e("BookReaderView", "Error releasing ambient player on dispose", e)
             }
+            ambientMediaPlayer = null
         }
     }
 
     LaunchedEffect(messages.size, isSending) {
         if (messages.isNotEmpty()) {
-            listState.animateScrollToItem(messages.lastIndex)
+            if (messages.size > lastProcessedMsgCount && lastProcessedMsgCount > 0) {
+                listState.animateScrollToItem(messages.lastIndex)
+            }
+            lastProcessedMsgCount = messages.size
         }
     }
 
@@ -3252,7 +3302,43 @@ fun BookReaderView(
 
     val isChapterCompleted = remember(lastAssistantMsg?.text) {
         val txt = lastAssistantMsg?.text ?: ""
-        txt.contains("BÖLÜM 1 SONU") || txt.contains("BÖLÜM 2 SONU") || txt.contains("BÖLÜM 3 SONU") || txt.contains("BÖLÜM TAMAMLANDI") || txt.contains("Tebrikler! Bölüm")
+        txt.contains("BÖLÜM 1 SONU") || txt.contains("BÖLÜM 2 SONU") || txt.contains("BÖLÜM 3 SONU") ||
+        txt.contains("BÖLÜM TAMAMLANDI") || txt.contains("Tebrikler! Bölüm") ||
+        txt.contains("SEÇİM ÖZETİNİ GÖR") || (txt.contains("BÖLÜM") && txt.contains("SONU"))
+    }
+
+    LaunchedEffect(isChapterCompleted) {
+        if (isChapterCompleted) {
+            try {
+                ambientMediaPlayer?.let { p ->
+                    if (p.isPlaying) p.stop()
+                    p.release()
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("BookReaderView", "Error releasing previous MediaPlayer on chapter end", e)
+            }
+            ambientMediaPlayer = null
+
+            try {
+                val player = android.media.MediaPlayer.create(context, com.example.R.raw.bolumsonu)
+                if (player != null) {
+                    player.setOnErrorListener { _, what, extra ->
+                        android.util.Log.e("BookReaderView", "bolumsonu.mp3 chapter-end error: what=$what, extra=$extra")
+                        true
+                    }
+                    player.isLooping = true
+                    player.setVolume(0.85f, 0.85f)
+                    player.start()
+                    ambientMediaPlayer = player
+                    isAmbientMusicPlaying = true
+                    android.util.Log.d("BookReaderView", "bolumsonu.mp3 playing successfully on chapter completed!")
+                } else {
+                    android.util.Log.e("BookReaderView", "MediaPlayer.create returned null for bolumsonu.mp3 on chapter completed")
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("BookReaderView", "Exception starting chapter end music", e)
+            }
+        }
     }
 
     val completedChapterTitle = remember(lastAssistantMsg?.text) {

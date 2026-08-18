@@ -36,6 +36,12 @@ val MIGRATION_12_13 = object : Migration(12, 13) {
     }
 }
 
+val MIGRATION_13_14 = object : Migration(13, 14) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE messages ADD COLUMN status TEXT NOT NULL DEFAULT 'success'")
+    }
+}
+
 @Database(
     entities = [
         BotEntity::class,
@@ -45,7 +51,7 @@ val MIGRATION_12_13 = object : Migration(12, 13) {
         MemoryFragmentFtsEntity::class,
         CharacterEmotionEntity::class
     ],
-    version = 13,
+    version = 14,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -66,8 +72,8 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "emochi_database"
                 )
-                    .addMigrations(MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13)
-                    .fallbackToDestructiveMigration()
+                    .addMigrations(MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14)
+                    .fallbackToDestructiveMigration(dropAllTables = true)
                     .build()
                 INSTANCE = instance
                 instance
