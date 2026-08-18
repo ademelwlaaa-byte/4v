@@ -1728,6 +1728,16 @@ fun ChapterSummaryModal(
 
     var mediaPlayer by remember { mutableStateOf<android.media.MediaPlayer?>(null) }
 
+    val completedChapterNumber = remember(messages) {
+        val lastAssistant = messages.lastOrNull { it.role == "assistant" || it.role == "model" }
+        val txt = lastAssistant?.text ?: ""
+        when {
+            txt.contains("BÖLÜM 3 SONU") -> 3
+            txt.contains("BÖLÜM 2 SONU") -> 2
+            else -> 1
+        }
+    }
+
     // Audio Fade-out helper (100% -> 0% in ~1.5s)
     val safeExitWithFade = remember {
         { action: () -> Unit ->
@@ -2363,7 +2373,7 @@ fun ChapterSummaryModal(
                                 Text("🎬", fontSize = 13.sp)
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(
-                                    text = if (viewMode == SummaryViewMode.PROMPT) "BÖLÜM 1 SEÇİM ÖZETİ" else "HAFIZA ŞERİDİ",
+                                    text = if (viewMode == SummaryViewMode.PROMPT) "BÖLÜM $completedChapterNumber SEÇİM ÖZETİ" else "HAFIZA ŞERİDİ",
                                     color = Color(0xFFD8B4FE),
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.ExtraBold,
@@ -3304,7 +3314,7 @@ fun BookReaderView(
         val txt = lastAssistantMsg?.text ?: ""
         txt.contains("BÖLÜM 1 SONU") || txt.contains("BÖLÜM 2 SONU") || txt.contains("BÖLÜM 3 SONU") ||
         txt.contains("BÖLÜM TAMAMLANDI") || txt.contains("Tebrikler! Bölüm") ||
-        txt.contains("SEÇİM ÖZETİNİ GÖR") || (txt.contains("BÖLÜM") && txt.contains("SONU"))
+        (txt.contains("BÖLÜM") && txt.contains("SONU"))
     }
 
     LaunchedEffect(isChapterCompleted) {
