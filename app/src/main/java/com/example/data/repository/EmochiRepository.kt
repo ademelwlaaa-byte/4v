@@ -13,6 +13,7 @@ import com.example.data.local.CharacterEmotionEntity
 import com.example.data.local.EmotionState
 import com.example.data.local.MemoryFragmentEntity
 import com.example.data.local.MessageEntity
+import com.example.data.local.StoryProgressDao
 import com.example.data.local.StoryProgressEntity
 import com.example.data.local.UserSettingsEntity
 import com.example.data.local.WorldAtmosphere
