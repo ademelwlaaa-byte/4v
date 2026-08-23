@@ -120,6 +120,15 @@ fun EmotionStatusSection(
             Spacer(modifier = Modifier.height(8.dp))
 
             EmotionBarItem(
+                label = "Fiziksel Yakınlık: ${emotion.getPhysicalComfortTierLabel()}",
+                value = emotion.physicalComfortScore,
+                maxValue = 100,
+                color = Color(0xFFF59E0B),
+                icon = "🤝"
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+
+            EmotionBarItem(
                 label = "Kırgınlık / Mesafe (Hurt)",
                 value = emotion.hurt,
                 maxValue = 100,

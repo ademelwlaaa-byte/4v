@@ -287,8 +287,8 @@ class EmochiViewModel(application: Application) : AndroidViewModel(application) 
 
     fun sendMessage(text: String) {
         val botId = _activeBotId.value ?: return
-        val trimmedText = text.trim()
-        if (trimmedText.isBlank() || _isSending.value) return
+        val sanitizedText = repository.sanitizeUserInput(text)
+        if (sanitizedText.isBlank() || _isSending.value) return
         _isSending.value = true
 
         viewModelScope.launch {
@@ -303,13 +303,14 @@ class EmochiViewModel(application: Application) : AndroidViewModel(application) 
             }
             try {
                 _errorMessage.value = null
+                repository.resetRegenerateCount(botId)
 
                 val now = System.currentTimeMillis()
                 val userMsg = MessageEntity(
                     id = UUID.randomUUID().toString(),
                     botId = botId,
                     role = "user",
-                    text = trimmedText,
+                    text = sanitizedText,
                     timestamp = now
                 )
                 repository.saveMessage(userMsg)
@@ -455,6 +456,7 @@ class EmochiViewModel(application: Application) : AndroidViewModel(application) 
                 } else currentBot
 
                 // Generate first before deleting targetMsg to prevent wiping message on network error
+                repository.incrementRegenerateCount(botId)
                 val replyText = repository.generateAiReply(botToUse, remainingMsgs)
 
                 if (targetMsg != null) {

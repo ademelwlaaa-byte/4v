@@ -15,7 +15,15 @@ data class EmotionState(
     val resilience: Int = 5,                         // Duygusal Direnç / Eşik (0-10)
     val speechPattern: String = "",                  // Konuşma Üslubu ve Hızı (Mikro Atmosfer Yansıması)
     val obsession: Int = 0,                          // Takıntı / Bağımlılık (0-100)
-    val highAffectionStreak: Int = 0                 // Kesintisiz >90 yakınlık mesaj sayısı
+    val highAffectionStreak: Int = 0,                // Kesintisiz >90 yakınlık mesaj sayısı
+    val consecutivePositiveCount: Int = 0,           // Art arda pozitif artış sayısı
+    val dailyAffectionGain: Int = 0,                 // Günlük toplam yakınlık kazancı (max +15)
+    val lastGainResetDate: String = "",              // Günlük kazancın son sıfırlanma tarihi (YYYY-MM-DD)
+    val peakAffectionScore: Int = 0,                 // Karakterin ulaştığı en yüksek yakınlık skoru
+    val recoveryLockUntilMessageCount: Int = 0,      // Madde 16: İyileşme kilidi için hedef mesaj sayısı
+    val userToneHistoryJson: String = "[]",          // Madde 17: Son 5 kullanıcı tonu JSON listesi
+    val userInconsistencyFlag: Boolean = false,      // Madde 17: Kullanıcı tutarsızlık bayrağı
+    val physicalComfortScore: Int = 30               // Madde 18: Fiziksel yakınlık skoru (0-100)
 ) {
     fun toJson(): String {
         val json = JSONObject()
@@ -31,6 +39,14 @@ data class EmotionState(
         json.put("speechPattern", speechPattern)
         json.put("obsession", obsession.coerceIn(0, 100))
         json.put("highAffectionStreak", highAffectionStreak.coerceAtLeast(0))
+        json.put("consecutivePositiveCount", consecutivePositiveCount.coerceAtLeast(0))
+        json.put("dailyAffectionGain", dailyAffectionGain.coerceAtLeast(0))
+        json.put("lastGainResetDate", lastGainResetDate)
+        json.put("peakAffectionScore", peakAffectionScore.coerceIn(0, 100))
+        json.put("recoveryLockUntilMessageCount", recoveryLockUntilMessageCount.coerceAtLeast(0))
+        json.put("userToneHistoryJson", userToneHistoryJson)
+        json.put("userInconsistencyFlag", userInconsistencyFlag)
+        json.put("physicalComfortScore", physicalComfortScore.coerceIn(0, 100))
         return json.toString()
     }
 
@@ -53,9 +69,24 @@ data class EmotionState(
     }
 
     /**
+     * Fiziksel Yakınlık Kademeleri (Physical Comfort Tiers):
+     * 0-30 = Mesafeli (Tokalaşma/omuz ötesi rahatsız edici)
+     * 31-60 = Ilımlı (Yan yana oturma, kısa temas rahat)
+     * 61-100 = Yakın (Sarılma, el ele, yakın temas doğal)
+     */
+    fun getPhysicalComfortTierLabel(): String {
+        return when (physicalComfortScore) {
+            in 0..30 -> "Mesafeli"
+            in 31..60 -> "Ilımlı"
+            else -> "Yakın / Rahat"
+        }
+    }
+
+    /**
      * Kademeli ve Gerçekçi Duygu Değişimi Mantığı (Asimetrik Kazanma/Kaybetme):
      * - Olumlu duygular (Affection/Trust) zor kazanılır (max +5), hızlı kaybedilir.
      * - Olumsuz duygular (Hurt/Tension) hızlı kazanılır, yavaş kaybedilir/onarılır.
+     * - Fiziksel Yakınlık (Physical Comfort), duygusal yakınlıktan bağımsız ilerler ancak affection'ı geçemez.
      */
     fun applyDeltas(
         newMood: String?,
@@ -67,6 +98,7 @@ data class EmotionState(
         tensionDelta: Int,
         hurtDelta: Int = 0,
         obsessionDelta: Int = 0,
+        physicalDelta: Int = 0,
         newSpeechPattern: String? = null,
         isObsessionAllowed: Boolean = false
     ): EmotionState {
@@ -99,10 +131,18 @@ data class EmotionState(
         val nextStreak = if (nextAffection > 90) highAffectionStreak + 1 else 0
 
         val nextObsession = if (isObsessionAllowed) {
-            (obsession + obsessionDelta.coerceIn(0, 3)).coerceIn(0, 100)
+            (obsession + obsessionDelta.coerceIn(0, 2)).coerceIn(0, 100)
         } else {
             (obsession - 1).coerceAtLeast(0)
         }
+
+        // Asimetri 4: Fiziksel yakınlık kazanımı sönümlü, kaybı hızlı, üst sınırı nextAffection
+        val finalPhysicalDelta = if (physicalDelta > 0) {
+            (physicalDelta.coerceAtMost(5) * dampeningFactor).roundToInt()
+        } else {
+            (physicalDelta * 1.2).roundToInt()
+        }
+        val nextPhysical = (physicalComfortScore + finalPhysicalDelta).coerceIn(0, nextAffection)
 
         return EmotionState(
             mood = if (!newMood.isNullOrBlank()) newMood.trim() else mood,
@@ -116,7 +156,11 @@ data class EmotionState(
             resilience = resilience,
             speechPattern = if (!newSpeechPattern.isNullOrBlank()) newSpeechPattern.trim() else speechPattern,
             obsession = nextObsession,
-            highAffectionStreak = nextStreak
+            highAffectionStreak = nextStreak,
+            recoveryLockUntilMessageCount = recoveryLockUntilMessageCount,
+            userToneHistoryJson = userToneHistoryJson,
+            userInconsistencyFlag = userInconsistencyFlag,
+            physicalComfortScore = nextPhysical
         )
     }
 
@@ -160,7 +204,15 @@ data class EmotionState(
                     resilience = json.optInt("resilience", 5).coerceIn(1, 10),
                     speechPattern = json.optString("speechPattern", ""),
                     obsession = json.optInt("obsession", 0).coerceIn(0, 100),
-                    highAffectionStreak = json.optInt("highAffectionStreak", 0).coerceAtLeast(0)
+                    highAffectionStreak = json.optInt("highAffectionStreak", 0).coerceAtLeast(0),
+                    consecutivePositiveCount = json.optInt("consecutivePositiveCount", 0).coerceAtLeast(0),
+                    dailyAffectionGain = json.optInt("dailyAffectionGain", 0).coerceAtLeast(0),
+                    lastGainResetDate = json.optString("lastGainResetDate", ""),
+                    peakAffectionScore = json.optInt("peakAffectionScore", 0).coerceIn(0, 100),
+                    recoveryLockUntilMessageCount = json.optInt("recoveryLockUntilMessageCount", 0).coerceAtLeast(0),
+                    userToneHistoryJson = json.optString("userToneHistoryJson", "[]"),
+                    userInconsistencyFlag = json.optBoolean("userInconsistencyFlag", false),
+                    physicalComfortScore = json.optInt("physicalComfortScore", 30).coerceIn(0, 100)
                 )
             } catch (e: Exception) {
                 DEFAULT

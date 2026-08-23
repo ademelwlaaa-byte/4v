@@ -33,6 +33,7 @@ data class BotEntity(
     val emotionState: String = """{"mood":"nötr","intensity":5,"affection":50,"trust":50,"tension":10}""",
     val previousEmotionState: String = """{"mood":"nötr","intensity":5,"affection":50,"trust":50,"tension":10}""",
     val worldAtmosphere: String = """{"mood":"sakin","intensity":5,"currentEvent":""}""",
+    val baseAffectionDifficulty: Double = 1.0,
     val updatedAt: Long = System.currentTimeMillis()
 )
 

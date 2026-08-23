@@ -86,6 +86,43 @@ val MIGRATION_15_16 = object : Migration(15, 16) {
     }
 }
 
+val MIGRATION_16_17 = object : Migration(16, 17) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `prompt_violation_logs` (" +
+                "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                "`botId` TEXT NOT NULL, " +
+                "`messageText` TEXT NOT NULL, " +
+                "`violationType` TEXT NOT NULL, " +
+                "`timestamp` INTEGER NOT NULL" +
+                ")"
+        )
+    }
+}
+
+val MIGRATION_17_18 = object : Migration(17, 18) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `bots` ADD COLUMN `baseAffectionDifficulty` REAL NOT NULL DEFAULT 1.0")
+    }
+}
+
+val MIGRATION_18_19 = object : Migration(18, 19) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `scene_templates` (" +
+                "`id` TEXT NOT NULL, " +
+                "`name` TEXT NOT NULL, " +
+                "`setting` TEXT NOT NULL, " +
+                "`mode` TEXT NOT NULL, " +
+                "`tension` TEXT NOT NULL, " +
+                "`bonusMultiplier` REAL NOT NULL DEFAULT 1.0, " +
+                "`description` TEXT NOT NULL, " +
+                "PRIMARY KEY(`id`)" +
+                ")"
+        )
+    }
+}
+
 @Database(
     entities = [
         BotEntity::class,
@@ -95,9 +132,11 @@ val MIGRATION_15_16 = object : Migration(15, 16) {
         MemoryFragmentFtsEntity::class,
         CharacterEmotionEntity::class,
         StoryProgressEntity::class,
-        AffectionEventEntity::class
+        AffectionEventEntity::class,
+        PromptViolationLogEntity::class,
+        SceneTemplateEntity::class
     ],
-    version = 16,
+    version = 19,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -108,6 +147,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun characterEmotionDao(): CharacterEmotionDao
     abstract fun storyProgressDao(): StoryProgressDao
     abstract fun affectionEventDao(): AffectionEventDao
+    abstract fun promptViolationLogDao(): PromptViolationLogDao
+    abstract fun sceneTemplateDao(): SceneTemplateDao
 
     companion object {
         @Volatile
@@ -127,7 +168,10 @@ abstract class AppDatabase : RoomDatabase() {
                         MIGRATION_12_13,
                         MIGRATION_13_14,
                         MIGRATION_14_15,
-                        MIGRATION_15_16
+                        MIGRATION_15_16,
+                        MIGRATION_16_17,
+                        MIGRATION_17_18,
+                        MIGRATION_18_19
                     )
                     .fallbackToDestructiveMigration(dropAllTables = true)
                     .build()
