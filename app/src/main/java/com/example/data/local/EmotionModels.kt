@@ -13,7 +13,9 @@ data class EmotionState(
     val tension: Int = 10,                           // Gerginlik / Stres (0-100)
     val hurt: Int = 0,                               // Kırgınlık / Mesafe (0-100)
     val resilience: Int = 5,                         // Duygusal Direnç / Eşik (0-10)
-    val speechPattern: String = ""                   // Konuşma Üslubu ve Hızı (Mikro Atmosfer Yansıması)
+    val speechPattern: String = "",                  // Konuşma Üslubu ve Hızı (Mikro Atmosfer Yansıması)
+    val obsession: Int = 0,                          // Takıntı / Bağımlılık (0-100)
+    val highAffectionStreak: Int = 0                 // Kesintisiz >90 yakınlık mesaj sayısı
 ) {
     fun toJson(): String {
         val json = JSONObject()
@@ -27,13 +29,33 @@ data class EmotionState(
         json.put("hurt", hurt.coerceIn(0, 100))
         json.put("resilience", resilience.coerceIn(1, 10))
         json.put("speechPattern", speechPattern)
+        json.put("obsession", obsession.coerceIn(0, 100))
+        json.put("highAffectionStreak", highAffectionStreak.coerceAtLeast(0))
         return json.toString()
     }
 
     /**
-     * Kademeli ve Gerçekçi Duygu Değişimi Mantığı:
-     * Karakterin kişiliğindeki Duygusal Direnç (resilience) seviyesine göre
-     * ani sıçramalar engellenir ve değişimler sönümlenerek uygulanır.
+     * Yakınlık Kademeleri (Affection Tiers):
+     * 0-20 = Yabancı/Mesafeli
+     * 21-40 = Tanıdık
+     * 41-60 = Yakın Tanıdık/Arkadaşlık
+     * 61-80 = Duygusal Bağ
+     * 81-100 = Derin Bağ/Aşk
+     */
+    fun getAffectionTierLabel(): String {
+        return when (affection) {
+            in 0..20 -> "Yabancı / Mesafeli"
+            in 21..40 -> "Tanıdık"
+            in 41..60 -> "Yakın Tanıdık / Arkadaşlık"
+            in 61..80 -> "Duygusal Bağ"
+            else -> "Derin Bağ / Aşk"
+        }
+    }
+
+    /**
+     * Kademeli ve Gerçekçi Duygu Değişimi Mantığı (Asimetrik Kazanma/Kaybetme):
+     * - Olumlu duygular (Affection/Trust) zor kazanılır (max +5), hızlı kaybedilir.
+     * - Olumsuz duygular (Hurt/Tension) hızlı kazanılır, yavaş kaybedilir/onarılır.
      */
     fun applyDeltas(
         newMood: String?,
@@ -44,28 +66,57 @@ data class EmotionState(
         trustDelta: Int,
         tensionDelta: Int,
         hurtDelta: Int = 0,
-        newSpeechPattern: String? = null
+        obsessionDelta: Int = 0,
+        newSpeechPattern: String? = null,
+        isObsessionAllowed: Boolean = false
     ): EmotionState {
-        // Direnç Faktörü: Yüksek direnç (örn: 8-10) değişimi yavaşlatır (sönümler)
-        // Direnç 10 -> faktör 0.2, Direnç 1 -> faktör 0.95
         val dampeningFactor = ((11.0 - resilience.coerceIn(1, 10)) / 10.0).coerceIn(0.15, 1.0)
 
-        val scaledAffDelta = (affectionDelta * dampeningFactor).roundToInt()
-        val scaledTrustDelta = (trustDelta * dampeningFactor).roundToInt()
+        // Asimetri 1: Yakınlık kazanımı yavaş ve sönümlü (max +5), kaybı hızlı
+        val finalAffDelta = if (affectionDelta > 0) {
+            (affectionDelta.coerceAtMost(5) * dampeningFactor).roundToInt()
+        } else {
+            (affectionDelta * 1.2).roundToInt()
+        }
+
+        // Asimetri 2: Güven kazanımı yavaş (max +5), kaybı hızlı
+        val finalTrustDelta = if (trustDelta > 0) {
+            (trustDelta.coerceAtMost(5) * dampeningFactor).roundToInt()
+        } else {
+            (trustDelta * 1.2).roundToInt()
+        }
+
+        // Asimetri 3: Kırgınlık hızlı kazanılır, yavaş silinir/iyileşir
+        val finalHurtDelta = if (hurtDelta > 0) {
+            (hurtDelta * 1.2).roundToInt()
+        } else {
+            (hurtDelta * 0.5 * dampeningFactor).roundToInt()
+        }
+
         val scaledTensionDelta = (tensionDelta * dampeningFactor).roundToInt()
-        val scaledHurtDelta = (hurtDelta * dampeningFactor).roundToInt()
+
+        val nextAffection = (affection + finalAffDelta).coerceIn(0, 100)
+        val nextStreak = if (nextAffection > 90) highAffectionStreak + 1 else 0
+
+        val nextObsession = if (isObsessionAllowed) {
+            (obsession + obsessionDelta.coerceIn(0, 3)).coerceIn(0, 100)
+        } else {
+            (obsession - 1).coerceAtLeast(0)
+        }
 
         return EmotionState(
             mood = if (!newMood.isNullOrBlank()) newMood.trim() else mood,
             secondaryMood = if (!newSecondaryMood.isNullOrBlank()) newSecondaryMood.trim() else secondaryMood,
             suppressedEmotion = if (!newSuppressedEmotion.isNullOrBlank()) newSuppressedEmotion.trim() else suppressedEmotion,
             intensity = (newIntensity ?: intensity).coerceIn(0, 10),
-            affection = (affection + scaledAffDelta).coerceIn(0, 100),
-            trust = (trust + scaledTrustDelta).coerceIn(0, 100),
+            affection = nextAffection,
+            trust = (trust + finalTrustDelta).coerceIn(0, 100),
             tension = (tension + scaledTensionDelta).coerceIn(0, 100),
-            hurt = (hurt + scaledHurtDelta).coerceIn(0, 100),
+            hurt = (hurt + finalHurtDelta).coerceIn(0, 100),
             resilience = resilience,
-            speechPattern = if (!newSpeechPattern.isNullOrBlank()) newSpeechPattern.trim() else speechPattern
+            speechPattern = if (!newSpeechPattern.isNullOrBlank()) newSpeechPattern.trim() else speechPattern,
+            obsession = nextObsession,
+            highAffectionStreak = nextStreak
         )
     }
 
@@ -107,7 +158,9 @@ data class EmotionState(
                     tension = json.optInt("tension", 10).coerceIn(0, 100),
                     hurt = json.optInt("hurt", 0).coerceIn(0, 100),
                     resilience = json.optInt("resilience", 5).coerceIn(1, 10),
-                    speechPattern = json.optString("speechPattern", "")
+                    speechPattern = json.optString("speechPattern", ""),
+                    obsession = json.optInt("obsession", 0).coerceIn(0, 100),
+                    highAffectionStreak = json.optInt("highAffectionStreak", 0).coerceAtLeast(0)
                 )
             } catch (e: Exception) {
                 DEFAULT

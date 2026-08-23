@@ -71,6 +71,21 @@ val MIGRATION_14_15 = object : Migration(14, 15) {
     }
 }
 
+val MIGRATION_15_16 = object : Migration(15, 16) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `affection_events` (" +
+                "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                "`botId` TEXT NOT NULL, " +
+                "`timestamp` INTEGER NOT NULL, " +
+                "`scoreDelta` INTEGER NOT NULL, " +
+                "`shortDescription` TEXT NOT NULL" +
+                ")"
+        )
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_affection_events_botId` ON `affection_events` (`botId`)")
+    }
+}
+
 @Database(
     entities = [
         BotEntity::class,
@@ -79,9 +94,10 @@ val MIGRATION_14_15 = object : Migration(14, 15) {
         MemoryFragmentEntity::class,
         MemoryFragmentFtsEntity::class,
         CharacterEmotionEntity::class,
-        StoryProgressEntity::class
+        StoryProgressEntity::class,
+        AffectionEventEntity::class
     ],
-    version = 15,
+    version = 16,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -91,6 +107,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun memoryFragmentDao(): MemoryFragmentDao
     abstract fun characterEmotionDao(): CharacterEmotionDao
     abstract fun storyProgressDao(): StoryProgressDao
+    abstract fun affectionEventDao(): AffectionEventDao
 
     companion object {
         @Volatile
@@ -103,7 +120,15 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "emochi_database"
                 )
-                    .addMigrations(MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15)
+                    .addMigrations(
+                        MIGRATION_9_10,
+                        MIGRATION_10_11,
+                        MIGRATION_11_12,
+                        MIGRATION_12_13,
+                        MIGRATION_13_14,
+                        MIGRATION_14_15,
+                        MIGRATION_15_16
+                    )
                     .fallbackToDestructiveMigration(dropAllTables = true)
                     .build()
                 INSTANCE = instance

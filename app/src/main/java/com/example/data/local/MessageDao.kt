@@ -13,6 +13,9 @@ interface MessageDao {
     @Query("SELECT * FROM messages WHERE botId = :botId ORDER BY timestamp ASC")
     suspend fun getMessagesForBotList(botId: String): List<MessageEntity>
 
+    @Query("SELECT COUNT(*) FROM messages WHERE botId = :botId")
+    suspend fun getMessageCountForBot(botId: String): Int
+
     @Query("SELECT * FROM messages")
     suspend fun getAllMessagesList(): List<MessageEntity>
 

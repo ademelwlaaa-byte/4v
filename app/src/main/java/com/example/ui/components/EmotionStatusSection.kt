@@ -25,6 +25,15 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.clickable
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material3.Icon
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import com.example.data.local.AffectionEventEntity
 import com.example.data.local.BotEntity
 import com.example.data.local.CharacterEmotionEntity
 import com.example.data.local.EmotionState
@@ -40,11 +49,13 @@ import com.example.ui.theme.EmochiTextSecondary
 fun EmotionStatusSection(
     bot: BotEntity,
     characterEmotions: List<CharacterEmotionEntity> = emptyList(),
+    affectionEvents: List<AffectionEventEntity> = emptyList(),
     modifier: Modifier = Modifier
 ) {
     val emotion = remember(bot.emotionState) { EmotionState.fromJson(bot.emotionState) }
     val isUniverse = bot.mode == "universe"
     val worldAtmosphere = remember(bot.worldAtmosphere) { WorldAtmosphere.fromJson(bot.worldAtmosphere) }
+    var showTimeline by remember { mutableStateOf(false) }
 
     Card(
         colors = CardDefaults.cardColors(containerColor = EmochiCard),
@@ -89,9 +100,9 @@ fun EmotionStatusSection(
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // Main Metrics (Affection, Trust, Tension, Hurt)
+            // Main Metrics (Affection with Tier, Trust, Tension, Hurt)
             EmotionBarItem(
-                label = "Yakınlık / Sevgi (Affection)",
+                label = "Yakınlık Kademesi: ${emotion.getAffectionTierLabel()}",
                 value = emotion.affection,
                 maxValue = 100,
                 color = Color(0xFFFF6B81),
@@ -124,6 +135,18 @@ fun EmotionStatusSection(
                 color = Color(0xFFFFB302),
                 icon = "⚡"
             )
+
+            // Obsession score - ONLY visible if >= 50
+            if (emotion.obsession >= 50) {
+                Spacer(modifier = Modifier.height(8.dp))
+                EmotionBarItem(
+                    label = "Takıntı / Bağımlılık (Obsession)",
+                    value = emotion.obsession,
+                    maxValue = 100,
+                    color = Color(0xFFE11D48),
+                    icon = "🖤"
+                )
+            }
 
             // Secondary & Suppressed Emotions
             if (emotion.secondaryMood.isNotBlank() || emotion.suppressedEmotion.isNotBlank()) {
@@ -272,6 +295,130 @@ fun EmotionStatusSection(
                                 Text("❤️ Sevgi: ${charEmotion.affection}%", color = Color(0xFFFF6B81), fontSize = 10.sp)
                                 Text("🛡️ Güven: ${charEmotion.trust}%", color = Color(0xFF4D96FF), fontSize = 10.sp)
                                 Text("⚡ Gerginlik: ${charEmotion.tension}%", color = Color(0xFFFFB302), fontSize = 10.sp)
+                            }
+                        }
+                    }
+                }
+            }
+
+            val formattedDate = remember(bot.updatedAt) {
+                try {
+                    val sdf = java.text.SimpleDateFormat("dd MMM yyyy, HH:mm", java.util.Locale("tr"))
+                    sdf.format(java.util.Date(if (bot.updatedAt > 0) bot.updatedAt else System.currentTimeMillis()))
+                } catch (e: Exception) {
+                    ""
+                }
+            }
+            if (formattedDate.isNotBlank()) {
+                Spacer(modifier = Modifier.height(10.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    Text(
+                        text = "⏱️ Son Güncelleme: $formattedDate",
+                        color = EmochiTextMuted,
+                        fontSize = 10.sp
+                    )
+                }
+            }
+
+            // Relationship History Timeline Section
+            Spacer(modifier = Modifier.height(12.dp))
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(1.dp)
+                    .background(EmochiBorder)
+            )
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color(0xFF1B1D30))
+                    .clickable { showTimeline = !showTimeline }
+                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("📜", fontSize = 14.sp)
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "İlişki Geçmişi / Zaman Çizelgesi (${affectionEvents.size})",
+                        color = EmochiTextPrimary,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                Icon(
+                    imageVector = if (showTimeline) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                    contentDescription = "Aç/Kapat",
+                    tint = EmochiTextSecondary
+                )
+            }
+
+            if (showTimeline) {
+                Spacer(modifier = Modifier.height(8.dp))
+                if (affectionEvents.isEmpty()) {
+                    Text(
+                        text = "Henüz belirgin bir ilişki kırılması veya büyük yakınlık değişimi kaydedilmedi.",
+                        color = EmochiTextMuted,
+                        fontSize = 11.sp,
+                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp)
+                    )
+                } else {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        affectionEvents.forEach { ev ->
+                            val isPos = ev.scoreDelta > 0
+                            val badgeColor = if (isPos) Color(0xFF10B981) else Color(0xFFEF4444)
+                            val badgeText = if (isPos) "+${ev.scoreDelta}" else "${ev.scoreDelta}"
+                            val dateStr = try {
+                                val sdf = java.text.SimpleDateFormat("dd MMM, HH:mm", java.util.Locale("tr"))
+                                sdf.format(java.util.Date(ev.timestamp))
+                            } catch (e: Exception) { "" }
+
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(Color(0xFF161826))
+                                    .padding(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(4.dp))
+                                        .background(badgeColor.copy(alpha = 0.2f))
+                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                ) {
+                                    Text(
+                                        text = badgeText,
+                                        color = badgeColor,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = ev.shortDescription,
+                                        color = EmochiTextPrimary,
+                                        fontSize = 11.sp
+                                    )
+                                    if (dateStr.isNotBlank()) {
+                                        Text(
+                                            text = dateStr,
+                                            color = EmochiTextMuted,
+                                            fontSize = 9.5.sp
+                                        )
+                                    }
+                                }
                             }
                         }
                     }

@@ -901,13 +901,14 @@ fun GlobalSettingsModal(
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 val options = listOf(
-                                    Triple("short", "Kısa (Min. Token)", Icons.Default.FlashOn to Color(0xFFFBBF24)),
-                                    Triple("standard", "Standart RP", Icons.Default.Description to Color(0xFFFBBF24)),
-                                    Triple("long", "Uzun Roman", Icons.Default.List to Color(0xFFA78BFA))
+                                    Triple("short", "Kısa", Icons.Default.FlashOn),
+                                    Triple("orta", "Orta", Icons.Default.AutoAwesome),
+                                    Triple("standard", "Standart", Icons.Default.Description),
+                                    Triple("long", "Uzun", Icons.Default.List)
                                 )
-                                options.forEach { (key, label, iconInfo) ->
-                                    val (icon, tintColor) = iconInfo
+                                options.forEach { (key, label, icon) ->
                                     val isSelected = responseLength == key
+                                    val tintColor = if (key == "orta") Color(0xFF34D399) else if (key == "long") Color(0xFFA78BFA) else Color(0xFFFBBF24)
                                     Box(
                                         modifier = Modifier
                                             .weight(1f)
@@ -1438,6 +1439,7 @@ fun BotSettingsModal(
     bot: BotEntity,
     keyCharacters: List<KeyCharacter>,
     characterEmotions: List<com.example.data.local.CharacterEmotionEntity> = emptyList(),
+    affectionEvents: List<com.example.data.local.AffectionEventEntity> = emptyList(),
     onDismiss: () -> Unit,
     onSave: (BotEntity, List<KeyCharacter>) -> Unit,
     onResetChat: (Boolean) -> Unit,
@@ -1524,7 +1526,7 @@ fun BotSettingsModal(
                 Spacer(modifier = Modifier.height(10.dp))
 
                 // Emotion Bar
-                EmotionStatusSection(bot = bot, characterEmotions = characterEmotions)
+                EmotionStatusSection(bot = bot, characterEmotions = characterEmotions, affectionEvents = affectionEvents)
 
                 Spacer(modifier = Modifier.height(14.dp))
 
@@ -1685,8 +1687,9 @@ fun BotSettingsModal(
                             listOf(
                                 "default" to "Varsayılan",
                                 "short" to "Kısa",
+                                "orta" to "Orta",
                                 "standard" to "Standart",
-                                "long" to "Uzun Roman"
+                                "long" to "Uzun"
                             ).forEach { (key, label) ->
                                 val isSelected = customLength == key
                                 Box(
@@ -1696,14 +1699,16 @@ fun BotSettingsModal(
                                         .background(if (isSelected) EmochiPrimary.copy(alpha = 0.2f) else EmochiSurface)
                                         .border(1.dp, if (isSelected) EmochiPrimary else EmochiBorder, RoundedCornerShape(8.dp))
                                         .clickable { customLength = key }
-                                        .padding(vertical = 8.dp),
+                                        .padding(horizontal = 2.dp, vertical = 8.dp),
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Text(
                                         text = label,
                                         color = if (isSelected) EmochiPrimary else EmochiTextSecondary,
-                                        fontSize = 10.5.sp,
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                        fontSize = 10.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                        maxLines = 1,
+                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                                     )
                                 }
                             }
@@ -2698,6 +2703,7 @@ fun BotQuickProfileSheet(
     bot: BotEntity,
     keyCharacters: List<KeyCharacter>,
     characterEmotions: List<com.example.data.local.CharacterEmotionEntity> = emptyList(),
+    affectionEvents: List<com.example.data.local.AffectionEventEntity> = emptyList(),
     onDismiss: () -> Unit,
     onSaveBot: (BotEntity) -> Unit,
     onOpenFullSettings: () -> Unit,
@@ -2798,7 +2804,7 @@ fun BotQuickProfileSheet(
                 }
 
                 Spacer(modifier = Modifier.height(10.dp))
-                EmotionStatusSection(bot = bot, characterEmotions = characterEmotions)
+                EmotionStatusSection(bot = bot, characterEmotions = characterEmotions, affectionEvents = affectionEvents)
 
                 Spacer(modifier = Modifier.height(14.dp))
 

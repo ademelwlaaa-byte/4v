@@ -1,6 +1,6 @@
 {
-  "name": "Remix Remix Remix Aiden Emochi Ai",
-  "description": "AI karakterler ve kurgusal evrenler ile gelismis roleplay sohbet botu",
+  "name": "Velora Ado AI",
+  "description": "AI karakterler ve kurgusal evrenler ile gelişmiş roleplay sohbet botu",
   "requestFramePermissions": [],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"

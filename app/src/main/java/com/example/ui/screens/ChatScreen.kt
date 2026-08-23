@@ -232,6 +232,7 @@ fun ChatScreen(
     errorMessage: String?,
     keyCharacters: List<KeyCharacter>,
     characterEmotions: List<com.example.data.local.CharacterEmotionEntity> = emptyList(),
+    affectionEvents: List<com.example.data.local.AffectionEventEntity> = emptyList(),
     onBack: () -> Unit,
     onSendMessage: (String) -> Unit,
     onRegenerate: () -> Unit,
@@ -1626,6 +1627,7 @@ fun ChatScreen(
             bot = bot,
             keyCharacters = keyCharacters,
             characterEmotions = characterEmotions,
+            affectionEvents = affectionEvents,
             onDismiss = { showBotSettings = false },
             onSave = onSaveBotProfile,
             onResetChat = onResetChat,
@@ -1639,6 +1641,7 @@ fun ChatScreen(
             bot = bot,
             keyCharacters = keyCharacters,
             characterEmotions = characterEmotions,
+            affectionEvents = affectionEvents,
             onDismiss = { showQuickProfile = false },
             onSaveBot = { updatedBot ->
                 onSaveBotProfile(updatedBot, keyCharacters)

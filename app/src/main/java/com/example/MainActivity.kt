@@ -59,6 +59,7 @@ fun EmochiAppMain(viewModel: EmochiViewModel) {
     val activeBot by viewModel.activeBot.collectAsStateWithLifecycle()
     val activeMessages by viewModel.activeMessages.collectAsStateWithLifecycle()
     val activeCharacterEmotions by viewModel.activeCharacterEmotions.collectAsStateWithLifecycle()
+    val activeAffectionEvents by viewModel.activeAffectionEvents.collectAsStateWithLifecycle()
     val isSending by viewModel.isSending.collectAsStateWithLifecycle()
     val isSpeaking by viewModel.isSpeaking.collectAsStateWithLifecycle()
     val errorMessage by viewModel.errorMessage.collectAsStateWithLifecycle()
@@ -132,6 +133,7 @@ fun EmochiAppMain(viewModel: EmochiViewModel) {
                         errorMessage = errorMessage,
                         keyCharacters = keyChars,
                         characterEmotions = activeCharacterEmotions,
+                        affectionEvents = activeAffectionEvents,
                         onBack = { viewModel.openMenu() },
                         onSendMessage = { text -> viewModel.sendMessage(text) },
                         onRegenerate = { viewModel.regenerateLastResponse() },

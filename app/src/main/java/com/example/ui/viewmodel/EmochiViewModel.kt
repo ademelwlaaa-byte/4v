@@ -87,6 +87,17 @@ class EmochiViewModel(application: Application) : AndroidViewModel(application) 
             initialValue = emptyList()
         )
 
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val activeAffectionEvents: StateFlow<List<com.example.data.local.AffectionEventEntity>> = _activeBotId
+        .flatMapLatest { id ->
+            if (id == null) flowOf(emptyList()) else repository.getAffectionEventsFlow(id)
+        }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.Eagerly,
+            initialValue = emptyList()
+        )
+
     private val _isSending = MutableStateFlow(false)
     val isSending: StateFlow<Boolean> = _isSending.asStateFlow()
 
@@ -324,16 +335,17 @@ class EmochiViewModel(application: Application) : AndroidViewModel(application) 
                 }
             } catch (e: Exception) {
                 val now = System.currentTimeMillis()
+                val friendlyMsg = extractUserFriendlyErrorMessage(e)
                 val failedAiMsg = MessageEntity(
                     id = UUID.randomUUID().toString(),
                     botId = botId,
                     role = "assistant",
-                    text = "Yanıt alınamadı: ${e.message ?: "Ağ/API Hatası"}",
+                    text = "⚠️ $friendlyMsg",
                     timestamp = (now + 10L).coerceAtLeast(System.currentTimeMillis()),
                     status = "failed"
                 )
                 repository.saveMessage(failedAiMsg)
-                _errorMessage.value = e.message ?: "Yanıt oluşturulamadı."
+                _errorMessage.value = friendlyMsg
             } finally {
                 if (sendMutex.isLocked) {
                     sendMutex.unlock()
@@ -384,16 +396,17 @@ class EmochiViewModel(application: Application) : AndroidViewModel(application) 
                 }
             } catch (e: Exception) {
                 val now = System.currentTimeMillis()
+                val friendlyMsg = extractUserFriendlyErrorMessage(e)
                 val failedAiMsg = MessageEntity(
                     id = UUID.randomUUID().toString(),
                     botId = botId,
                     role = "assistant",
-                    text = "Yanıt alınamadı: ${e.message ?: "Ağ/API Hatası"}",
+                    text = "⚠️ $friendlyMsg",
                     timestamp = now,
                     status = "failed"
                 )
                 repository.saveMessage(failedAiMsg)
-                _errorMessage.value = e.message ?: "Yanıt oluşturulamadı."
+                _errorMessage.value = friendlyMsg
             } finally {
                 if (sendMutex.isLocked) {
                     sendMutex.unlock()
@@ -626,5 +639,23 @@ class EmochiViewModel(application: Application) : AndroidViewModel(application) 
 
     suspend fun generateOpeningForWizard(botDraft: BotEntity): String {
         return repository.generateOpeningMessage(botDraft)
+    }
+
+    private fun extractUserFriendlyErrorMessage(e: Exception): String {
+        val rawMsg = e.message ?: ""
+        return when {
+            rawMsg.contains("içerik kısıtlaması", ignoreCase = true) ||
+            rawMsg.contains("içerik filtresi", ignoreCase = true) ||
+            rawMsg.contains("güvenlik filtresine", ignoreCase = true) ||
+            rawMsg.contains("politikası", ignoreCase = true) ||
+            rawMsg.contains("refusal", ignoreCase = true) ||
+            rawMsg.contains("content_filter", ignoreCase = true) -> {
+                rawMsg.ifBlank { "Seçili AI sağlayıcısı içerik kısıtlaması politikası gereği bu yanıtı süzdü. Lütfen Ayarlar -> AI Model Ayarları menüsünden farklı bir model (ör. Groq veya Gemini) seçin." }
+            }
+            rawMsg.contains("429", ignoreCase = true) || rawMsg.contains("kotası", ignoreCase = true) || rawMsg.contains("rate limit", ignoreCase = true) -> {
+                "API kullanım kotası doldu (429 Rate Limit). Lütfen Ayarlar -> AI Model Ayarları menüsünden API Key'inizi ekleyin veya modelinizi değiştirin."
+            }
+            else -> if (rawMsg.isNotBlank()) rawMsg else "Yanıt alınamadı. Lütfen ağ bağlantınızı veya API ayarlarınızı kontrol edin."
+        }
     }
 }

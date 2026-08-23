@@ -7,6 +7,7 @@ import com.example.data.api.GeminiGenerationConfig
 import com.example.data.api.GeminiPart
 import com.example.data.api.GeminiRequest
 import com.example.data.api.RetrofitClient
+import com.example.data.local.AffectionEventEntity
 import com.example.data.local.AppDatabase
 import com.example.data.local.BotEntity
 import com.example.data.local.CharacterEmotionEntity
@@ -64,6 +65,9 @@ class EmochiRepository(
     private val fragmentDao = db.memoryFragmentDao()
     private val emotionDao = db.characterEmotionDao()
     private val storyProgressDao = db.storyProgressDao()
+    private val affectionEventDao = db.affectionEventDao()
+
+    fun getAffectionEventsFlow(botId: String) = affectionEventDao.getEventsForBot(botId)
 
     private fun loadAssetText(fileName: String): String? {
         return try {
@@ -559,6 +563,7 @@ class EmochiRepository(
             l.contains("mood:") || l.contains("secondary_mood:") || l.contains("suppressed_emotion:") ||
                     l.contains("intensity:") || l.contains("affection_delta:") || l.contains("trust_delta:") ||
                     l.contains("tension_delta:") || l.contains("hurt_delta:") || l.contains("speech_pattern:") ||
+                    l.contains("obsession_delta:") ||
                     l.contains("current_event:") || l.contains("macro_atmosphere:") || l.contains("micro_atmosphere:") ||
                     l.startsWith("[emotion_update") || l.startsWith("emotion_update") ||
                     l.startsWith("[character_emotion") || l.startsWith("character_emotion") ||
@@ -603,7 +608,9 @@ class EmochiRepository(
         bot: BotEntity,
         settings: UserSettingsEntity,
         includeStyleGuide: Boolean = true,
-        relevantFragments: List<MemoryFragmentEntity> = emptyList()
+        relevantFragments: List<MemoryFragmentEntity> = emptyList(),
+        lastMessageTimestamp: Long = 0L,
+        totalMessageCount: Int = 0
     ): String {
         val pinnedBlock = if (bot.pinnedMemory.isNotBlank()) {
             "\n\n## Kalıcı hafıza (kullanıcının elle yazdığı, ASLA silinmeyen/özetlenmeyen notlar — bunlara mutlaka uy)\n${bot.pinnedMemory}"
@@ -644,8 +651,9 @@ class EmochiRepository(
 
         // Response Length Guidance & Content Length Rule
         val effLength = if (bot.customLength != "default") bot.customLength else settings.responseLength
-        val lengthInstruction = when (effLength) {
+        val lengthInstruction = when (effLength.lowercase()) {
             "short" -> "\n## YANIT UZUNLUĞU KURALLARI (ZORUNLU: SON DERECE KISA YANIT)\n- KESİNLİKLE VE ZORUNLU OLARAK ÇOK KISA YANIT VER!\n- MAKSİMUM 1 - 3 KISA CÜMLE (VEYA EN FAZLA 1 KISA PARAGRAF) YAZ.\n- ASLA UZUN PARAGRAFLAR VEYA DETAYLI TASVİRLER YAZMA! Hızlı, vurucu, öz ve doğrudan olaya odaklan."
+            "medium", "orta" -> "\n## YANIT UZUNLUĞU KURALLARI (ORTA UZUNLUKTA YANIT)\n- Yanıtını 1-2 orta uzunlukta paragrafla sınırla, gereksiz betimleme ve tekrar yapma. Diyalog ve kısa bir atmosfer detayını dengeli ver ama sahneyi uzatma. Referans metinden daha uzun yazma zorunluluğu yok, öz ve doğal bir sohbet temposu hedefle."
             "long" -> "\n## YANIT UZUNLUĞU KURALLARI (ZORUNLU: ÇOK UZUN VE DESTANSI YANIT)\n- KESİNLİKLE VE ZORUNLU OLARAK EN AZ 5 - 8 UZUN PARAGRAF METİN ÜRET!\n- Detaylı çevre ve ortam tasvirleri, karakterin iç dünyası ve düşünceleri, mimikler, duyusal ayrıntılar ve zengin diyaloglar ekleyerek metni olabildiğince uzat ve edebi kıl.\n- ZORUNLU KURAL: Yanıtın, referans/kaynak metinden KESİNLİKLE DAHA KISA OLMAMALI. En az kaynak metnin yaklaşık kelime sayısı uzunluğunda, gerekirse daha uzun yaz. Kısaltma, özetleme, atlama yapma."
             else -> "\n## YANIT UZUNLUĞU KURALLARI (DENGELİ DETAY)\n- Yanıtını 3-4 zengin paragraf tut. Diyalog, atmosfer ve eylemleri dengeli harmanla.\n- ZORUNLU KURAL: Yanıtın, referans/kaynak metinden KESİNLİKLE DAHA KISA OLMAMALI. En az kaynak metnin yaklaşık kelime sayısı uzunluğunda, gerekirse daha uzun yaz. Kısaltma, özetleme, atlama yapma."
         }
@@ -704,41 +712,138 @@ Durdu, ifadesi ciddileşti.
         val emotionStateObj = EmotionState.fromJson(bot.emotionState)
         val worldAtmObj = WorldAtmosphere.fromJson(bot.worldAtmosphere)
 
+        // Time Perception Logic
+        val lastTime = if (lastMessageTimestamp > 0) lastMessageTimestamp else bot.updatedAt
+        val now = System.currentTimeMillis()
+        val diffMinutes = ((now - lastTime) / (1000 * 60)).coerceAtLeast(0)
+        val diffHours = diffMinutes / 60
+        val diffDays = diffHours / 24
+
+        val timeElapsedText = when {
+            diffMinutes < 5 -> "Henüz çok az süre (birkaç dakika) geçti."
+            diffMinutes < 60 -> "Yaklaşık $diffMinutes dakika geçti."
+            diffHours < 24 -> "Yaklaşık $diffHours saat geçti."
+            diffDays < 30 -> "Yaklaşık $diffDays gün geçti."
+            else -> "Uzun bir zaman (aylar/yıllar) geçti."
+        }
+
+        val sdfTime = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
+        val currentTimeStr = try { sdfTime.format(java.util.Date(now)) } catch (e: Exception) { "14:00" }
+        val cal = java.util.Calendar.getInstance()
+        val hour = cal.get(java.util.Calendar.HOUR_OF_DAY)
+        val timeOfDayLabel = when (hour) {
+            in 6..11 -> "Sabah (Erken/Taze)"
+            in 12..17 -> "Öğlen / Öğleden Sonra"
+            in 18..22 -> "Akşam"
+            else -> "Gece Geç Saatler"
+        }
+
+        val isObsessionUnlocked = totalMessageCount >= 150 && emotionStateObj.highAffectionStreak >= 25
+
+        val extraSohbetRulesDirective = """
+
+## 1) GERÇEK ZAMAN VE SÜRE PERSEPSİYONU
+- Son Konuşmadan Bu Yana Geçen Süre: $timeElapsedText
+- YÖNERGE: Geçen süre karakterin o anki yakınlık/sevgi seviyesine (${emotionStateObj.affection}/100) göre 'uzun' sayılabilecek bir aralıksa, karakter bunu diyalogda doğal şekilde dile getirebilir. Düşük yakınlıkta sadece günler/haftalar fark edilir; yüksek yakınlıkta birkaç saatlik sessizlik bile fark edilebilir.
+- KURAL: Bunu her mesajda basma kalıp bir açılış şablonu gibi tekrarlama, sadece anlamlıysa kullan.
+
+## 2) GÜNLÜK RUH HALİ DÖNGÜSÜ
+- Şu Anki Cihaz/Sahne Zamanı: $currentTimeStr ($timeOfDayLabel)
+- YÖNERGE: Karakterin enerjisi ve konuşma tonu günün saatinden hafifçe etkilensin:
+  * Sabah erken saatlerde: Daha mahmur, yavaş açılan veya az konuşkan bir ton.
+  * Öğlen/Akşamüstü: Daha canlı, odaklı ve hareketli bir ton.
+  * Gece geç saatlerde: Daha samimi, içe dönük, uykulu veya derin bir ton.
+- KONTROL KURALI: Bu SERT bir kural değildir; karakterin kişiliği, sahnedeki olaylar ve duygu durumu HER ZAMAN önceliklidir.
+
+## 3) KISKANÇLIK VE REKABET MEKANİĞİ
+- Kullanıcı mesajında başka bir kişiden (özellikle romantik/olumlu bir tonda) bahsederse, karakter mevcut yakınlık skoruna (${emotionStateObj.affection}/100) ve kendi kişiliğine göre tepki versin:
+  * Düşük yakınlıkta (0-40): İlgisiz, nötr veya umursamaz tepki.
+  * Orta yakınlıkta (41-70): Hafif meraklı, sorgulayıcı veya çelişkili rahatsızlık.
+  * Yüksek yakınlıkta (71-100): Belirgin kıskançlık, sahiplenme veya güvensizlik.
+- Esnek Yapı: Karakterin tepkisi kişiliğine göre şekillenir (gururla gizler, alaycı sitem eder veya açıkça söyler).
+
+## 5) AYRILIK VE KOPMA EŞİĞİ (GERÇEKÇİ SINIRLAR)
+- Yakınlık skoru çok düşük bir seviyedeyse (${emotionStateObj.affection} <= 10) ve kullanıcı olumsuz/kötüye kullanan bir tavır sergilemeye devam ediyorsa:
+- Karakter kişiliğine uygun şekilde net bir sınır koyabilir: Konuşmayı kısa kesebilir, mesafe koyabilir, hatta açıkça "şu an konuşmak istemiyorum" diyebilir.
+
+## 6) TUTARSIZLIK VE ÇELİŞKİ ENGELLEME KURALI
+- Kalıcı hafıza, hikaye notları ve bellek parçalarında geçen hiçbir bilgiyle (isimler, geçmiş olaylar, ilişkiler, fiziksel özellikler vb.) ÇELİŞECEK yeni bir bilgi uydurma.
+- Yeni bir detay eklemen gerekiyorsa, mevcut kayıtlı notlarla tutarlı olacak şekilde ekle.
+
+## 7) FİZİKSEL VE MEKANSAL SÜREKLİLİK
+- Karakterin şu anki konumu ve fiziksel durumu bir önceki mesajlarda belirtilmişse bunu SABİT kabul et.
+- Karakter aniden başka bir yere ışınlanamaz! Yeni bir mekana geçiyorsa bu geçiş sahne içinde AÇIKÇA anlatılmalıdır.
+
+## 8) KARAKTERİN KENDİ RUTİNİ VE HAYATI (VARSAYILAN DURUM)
+- Karakterin kullanıcı dışında kendi rutini, işi, ilişkileri ve meşguliyetleri olduğunu varsay.
+- Karakter zaman zaman bunlara doğal şekilde değinebilir ("bugün işte yoğundum", "arkadaşımla buluşacağım").
+- Bu, karakterin VARSAYILAN durumudur. Takıntı eşiğine ulaşılmadığı sürece (obsessionScore < 70) karakter kullanıcıya aşırı bağımlı veya yapışkan bir ton kullanmamalıdır.
+
+${if (isObsessionUnlocked) """
+## 9) BAĞIMLILIK / TAKINTI SİSTEMİ (AŞIRI NADİR - AÇILMIŞ UÇ DURUM)
+- Mevcut Takıntı Skoru: ${emotionStateObj.obsession}/100 | Yüksek Yakınlık Serisi: ${emotionStateObj.highAffectionStreak} mesaj.
+- KESİN UYARI: obsessionScore'u ASLA keyfi şekilde artırma. Bu sayaç varsayılan olarak sıfır kalmalıdır ve tüm katı koşullar sağlanmadan KESİNLİKLE artırılamaz.
+- Eşikler:
+  * obsessionScore < 70: Karakter bağımlı/takıntılı bir davranış DEĞİŞİKLİĞİ gösteremez. 8. maddedeki kendi hayatı olan varsayılan durum geçerlidir.
+  * obsessionScore >= 70: Karakter derin bağımlılık/sahiplenme emareleri gösterebilir, ancak yine kişiliği önceliklidir.
+""" else """
+## 9) BAĞIMLILIK / TAKINTI SİSTEMİ (TAMAMEN KİLİTLİ VE DEVRE DIŞI)
+- Bu sohbet henüz yeterli etkileşim geçmişine (en az 150 mesaj ve 25 mesaj kesintisiz >90 yakınlık) ulaşmadığı için Takıntı Mekanizması TAMAMEN KİLİTLİDİR (obsessionScore = 0).
+- Karakter 8. maddedeki sağlıklı, kendi hayatı ve rutini olan varsayılan tonunu korumak zorundadır.
+"""}
+""".trimIndent()
+
         val atmosphereAndEmotionSystemDirective = """
 
-## EVREN, MEKAN VE ATMOSFER SİMÜLASYONU (MUTLAK KURAL)
-1. MAKRO ATMOSFER (EVREN DÜZENİ): Hikayenin geçtiği dönemin/dünyanın genel kuralları, hiyerarşisi, toplumsal dinamikleri ve tehlikeleri karakterin arka plan bilincini oluşturur. Karakter asla nedensellik ilkelerine ve dünya gerçeklerine aykırı davranamaz.
+## EVREN, MEKAN VE ATMOSFER SİMÜLASYONU (MUTLAK PERSISTENCE KURALI)
+1. MAKRO ATMOSFER (EVREN DÜZENİ): Hikayenin geçtiği dönemin/dünyanın genel kuralları ve toplumsal dinamikleri geçerlidir.
 ${if (worldAtmObj.macroAtmosphere.isNotBlank()) "- Aktif Evren Düzeni: ${worldAtmObj.macroAtmosphere}" else ""}
-2. MİKRO ATMOSFER (ANLIK MEKAN VE FİZİKSEL ORTAM): Karakterin bulunduğu fiziki ortam (ışık, ses, kalabalık, daralma, soğukluk, tehlike seviyesi), karakterin kuracağı cümlelerin UZUNLUĞUNU, SES TONUNU, TEREDDÜT DURAKLAMALARINI VE TEPKİ VERME HIZINI doğrudan yönlendirir.
+2. MİKRO ATMOSFER (ANLIK MEKAN VE FİZİKSEL ORTAM): Bulunulan fiziki ortam karakterin cümle uzunluğunu, ses tonunu ve tepki hızını belirler.
 ${if (worldAtmObj.microAtmosphere.isNotBlank()) "- Aktif Mikro Mekan: ${worldAtmAtmosphereDescription(worldAtmObj)}" else ""}
+3. DURUM KORUMA VE TETİKLEYİCİ MANTIĞI:
+   - Mevcut evren/atmosfer durumunu SABİT KABUL ET ve yeni yanıtını bunun ÜZERİNE inşa et, çelişme, sıfırdan yeniden kurma.
+   - Atmosfer/ruh hali sadece sahnede gerçekten bir tetikleyici olay (saldırı, haber, hava değişimi, yeni karakterin girişi, zaman ilerlemesi vb.) olduğunda değişsin; tetikleyici yoksa bir önceki mesajdaki atmosferi aynen koru.
+   - worldAtmosphere güncellemesi yaparken önceki worldAtmosphere metnini referans al, sadece değişen mikro/makro unsuru güncelle, değişmeyenleri kelimesi kelimesine koru.
+   - KONTROL KURALI: worldAtmosphere ile pinnedMemory/storyNotes çelişirse pinnedMemory/storyNotes HER ZAMAN esas alınır ve üstün gelir.
 
 ## KATMANLI VE DİNAMİK DUYGU SİSTEMİ (EMOTION ENGINE - MUTLAK KURAL)
-1. Katmanlı Duygu Yapısı: Yüzeydeki birincil duygunun (${emotionStateObj.mood}) yanında, ikincil karmaşık duyguların (${emotionStateObj.secondaryMood.ifBlank { "yok" }}) ve bastırılmış içsel duyguların (${emotionStateObj.suppressedEmotion.ifBlank { "yok" }}) mevcuttur.
-2. Duygusal Direnç ve Kalıcılık (Thresholds & Resistance):
-   - Karakterin Duygusal Direnci: ${emotionStateObj.resilience}/10.
-   - Karakter, kullanıcının tek bir cümlesiyle 0'dan 100'e aniden sıçramaz!
-   - Güven (${emotionStateObj.trust}/100), Sevgi/Yakınlık (${emotionStateObj.affection}/100) ve Kırgınlık/Mesafe (${emotionStateObj.hurt}/100) zamanla adım adım inşa edilir veya sarsılır.
-   - Geçmişteki çatışmaların veya kırgınlıkların izleri derhal unutulamaz; kullanıcı olumlu davranılsa bile karakter bir süre çekinceli, tereddütlü veya mesafeli durmaya devam eder.
+1. DUYGU KAZANMA/KAYBETME ASİMETRİSİ KURALI:
+   - A. ANLIK DUYGUGAR (hızlı kazanılır, hızlı kaybedilir): keyif, eğlence, anlık mutluluk, şaşkınlık, merak, anlık sinir. Tek bir mesajda oluşup değişebilir.
+   - B. ORTA VADELİ DUYGULAR (yavaş kazanılır, hızlı kaybedilir): güven, rahatlık, saygı. Birkaç tutarlı olumlu etkileşim ister, ancak TEK bir ihanet veya saygısızlık anında kırılabilir. Kaybetmek kazanmaktan HER ZAMAN daha kolaydır.
+   - C. UZUN VADELİ / DERİN DUYGULAR (çok yavaş kazanılır, hızlı kaybedilebilir): romantik aşk, derin bağlanma, sadakat. Asla birkaç mesajda veya tek bir diyalogla oluşamaz. Yalnızca uzun süreli tutarlı etkileşimin sonucunda kademe kademe oluşur.
+   - D. NEGATİF DUYGULAR (kızgınlık, kırgınlık, güvensizlik, korku): Hızlı kazanılır, YAVAŞ kaybedilir/onarılır. Karakter kırgınken tek bir özürle anında normale dönmez, kademeli yumuşama süreci olmalı.
+
+2. YAKINLIK/AŞK İÇİN AŞAMALI YAPI (ESNEK OLASILIK MANTIĞI – SERT EŞİK YOK - Affection Score: 0-100):
+   - 0-100 arası yakınlık skoru (affection) kullanılır. Kademeler: 0-20 Yabancı/Mesafeli, 21-40 Tanıdık, 41-60 Arkadaşlık, 61-80 Duygusal Bağ, 81-100 Derin Bağ/Aşk.
+   - MUTLAK YASAK VEYA SERT EŞİK YOKTUR: Hiçbir skor değerinde "karakter kesinlikle buna karşılık veremez/şunu yapamaz" şeklinde sert if/else kapısı konulmaz.
+   - Skor bir OLASILIK ve EĞİLİM belirleyicisidir; karakterin TEPKİ OLASILIĞINI ve TARZINI yönlendirir:
+     * Düşük skorda (0-40): Karakter romantik/samimi bir yaklaşıma büyük ihtimalle mesafeli, şaşkın, temkinli tepki verir — ama bu KATI bir kural değildir, karakterin kişiliği (ör. flörtöz/dışa dönük) bunu esnetebilir.
+     * Orta skorda (41-70): Karakter kararsız, çelişkili tepkiler verebilir; bazen açılır bazen çekinir, tutarlı tek bir kalıba mahkûm etme.
+     * Yüksek skorda (71-100): Karakter artık duygularını daha rahat gösterebilir — ama yine kişiliğine göre (ör. gururlu/çekingen karakter hâlâ kabullenmekte zorlanabilir).
+   - ÖZET: Skor, karakterin kişiliğiyle birlikte değerlendirilen doğal bir eğilim rehberidir. Model buna göre sahnenin ve karakterin mizacına uygun doğal kararı verir.
+
+$extraSohbetRulesDirective
 
 ## ŞU ANKİ DUYGUSAL DURUMUN:
 - Birincil Duygu (Mood): ${emotionStateObj.mood} (Şiddet: ${emotionStateObj.intensity}/10)
 - İkincil / Karmaşık Duygu: ${emotionStateObj.secondaryMood.ifBlank { "nötr" }}
 - Bastırılmış İçsel Duygu: ${emotionStateObj.suppressedEmotion.ifBlank { "yok" }}
-- Yakınlık/Sevgi: ${emotionStateObj.affection}/100 | Güven: ${emotionStateObj.trust}/100 | Gerginlik: ${emotionStateObj.tension}/100 | Kırgınlık: ${emotionStateObj.hurt}/100
+- Yakınlık/Sevgi: ${emotionStateObj.affection}/100 [Kademe: ${emotionStateObj.getAffectionTierLabel()}] | Güven: ${emotionStateObj.trust}/100 | Gerginlik: ${emotionStateObj.tension}/100 | Kırgınlık: ${emotionStateObj.hurt}/100
 - Konuşma Üslubu/Hızı: ${emotionStateObj.speechPattern.ifBlank { "doğal" }}
 
-## DUYGU VE ATMOSFER GÜNCELLEME TALİMATI (KRİTİK - KULLANICIYA GÖZÜKMEYECEK)
-Her yanıtının EN SONUNA, kullanıcıya görünmeyecek şekilde şu formatta bir duygu güncellemesi eklemek ZORUNDASIN. Duygusal ifadeler için derinlikli kelimeler kullan (örnek: kırgın, hüzünlü korumacılık, mahcup gurur, bastırılmış sevgi, şüpheci, tutkulu, çekingen, sitemli):
+## DUYGU VE ATMOSFER GÜNCELLEME TALİMATI (GİZLİ SİSTEM FORMATI - METİNDE HİÇBİR GÖRÜNÜR LOG BASTIRMA)
+Her yanıtının EN SONUNA, gizli sistem formatında duygu güncellemesini ekle (görünür metinde duygu durumları, parantez içi anlatımlar veya debug logları KESİNLİKLE görünmeyecek):
 [EMOTION_UPDATE]
 mood: <birincil duygu>
 secondary_mood: <ikincil / karmaşık duygu>
 suppressed_emotion: <bastırılmış / içsel çatışma duygusu>
 intensity: <0-10>
-affection_delta: <-10 ile +10 arası değişim>
-trust_delta: <-10 ile +10 arası değişim>
+affection_delta: <-10 ile +5 arası değişim>
+trust_delta: <-10 ile +5 arası değişim>
 tension_delta: <-10 ile +10 arası değişim>
 hurt_delta: <-10 ile +10 arası kırgınlık/mesafe değişimi>
 speech_pattern: <anlık mekanın etkisiyle cümle uzunluğu, tereddüt, tonlama>
+${if (isObsessionUnlocked) "obsession_delta: <-3 ile +3 arası takıntı değişimi>\n" else ""}
 [/EMOTION_UPDATE]
 """.trimIndent()
 
@@ -789,6 +894,17 @@ micro_atmosphere: <mikro mekan/fiziksel ortam/ışık/ses/gerilim>
         val bot = botDao.getBotById(botId) ?: return cleanEmotionTags(rawResponse)
         val castList = parseKeyCharacters(bot.keyCharactersJson)
 
+        val totalMsgCount = messageDao.getMessageCountForBot(botId)
+        val recentMsgs = messageDao.getMessagesForBotList(botId).takeLast(20)
+        var triggerEventsCount = 0
+        val triggerKeywords = listOf("terk", "ayrıl", "başkası", "bırak", "vazgeç", "hoşça kal", "kıskan", "güvenmiyorum", "git", "soğuk")
+        for (msg in recentMsgs) {
+            val lowerText = msg.text.lowercase()
+            if (triggerKeywords.any { lowerText.contains(it) }) {
+                triggerEventsCount++
+            }
+        }
+
         // 1. Process main bot [EMOTION_UPDATE]
         val emotionRegex = Regex("(?is)\\[?EMOTION[\\\\s_]*UPDATE\\]?(.*?)(?:\\[/EMOTION[\\\\s_]*UPDATE\\]|$)")
         val emotionMatch = emotionRegex.find(rawResponse)
@@ -802,9 +918,12 @@ micro_atmosphere: <mikro mekan/fiziksel ortam/ışık/ses/gerilim>
             val trustDelta = Regex("(?i)trust_delta:\\s*([+-]?\\d+)").find(block)?.groupValues?.get(1)?.toIntOrNull() ?: 0
             val tensionDelta = Regex("(?i)tension_delta:\\s*([+-]?\\d+)").find(block)?.groupValues?.get(1)?.toIntOrNull() ?: 0
             val hurtDelta = Regex("(?i)hurt_delta:\\s*([+-]?\\d+)").find(block)?.groupValues?.get(1)?.toIntOrNull() ?: 0
+            val obsessionDelta = Regex("(?i)obsession_delta:\\s*([+-]?\\d+)").find(block)?.groupValues?.get(1)?.toIntOrNull() ?: 0
             val speechPattern = Regex("(?i)speech_pattern:\\s*(.+)").find(block)?.groupValues?.get(1)?.trim()
 
             val current = EmotionState.fromJson(bot.emotionState)
+            val isObsessionAllowed = totalMsgCount >= 150 && current.highAffectionStreak >= 25 && triggerEventsCount >= 3
+
             val updated = current.applyDeltas(
                 newMood = mood,
                 newSecondaryMood = secondaryMood,
@@ -814,8 +933,34 @@ micro_atmosphere: <mikro mekan/fiziksel ortam/ışık/ses/gerilim>
                 trustDelta = trustDelta,
                 tensionDelta = tensionDelta,
                 hurtDelta = hurtDelta,
-                newSpeechPattern = speechPattern
+                obsessionDelta = obsessionDelta,
+                newSpeechPattern = speechPattern,
+                isObsessionAllowed = isObsessionAllowed
             )
+
+            val scoreDelta = updated.affection - current.affection
+            val tierChanged = updated.getAffectionTierLabel() != current.getAffectionTierLabel()
+            if (kotlin.math.abs(scoreDelta) >= 2 || tierChanged) {
+                val desc = when {
+                    tierChanged && scoreDelta > 0 ->
+                        "Aşama Atlandı: ${updated.getAffectionTierLabel()} (+$scoreDelta) — ${updated.mood}"
+                    tierChanged && scoreDelta < 0 ->
+                        "İlişki Kademesi Düştü: ${updated.getAffectionTierLabel()} ($scoreDelta) — ${updated.mood}"
+                    scoreDelta > 0 ->
+                        "Belirgin yakınlaşma ve güven artışı (+$scoreDelta) — ${updated.mood}"
+                    else ->
+                        "Görüş ayrılığı veya mesafe ($scoreDelta) — ${updated.mood}"
+                }
+                affectionEventDao.insertEvent(
+                    AffectionEventEntity(
+                        botId = botId,
+                        timestamp = System.currentTimeMillis(),
+                        scoreDelta = scoreDelta,
+                        shortDescription = desc
+                    )
+                )
+            }
+
             val updatedBot = bot.copy(
                 previousEmotionState = bot.emotionState,
                 emotionState = updated.toJson(),
@@ -1315,14 +1460,35 @@ micro_atmosphere: <mikro mekan/fiziksel ortam/ışık/ses/gerilim>
                 val parsedMsg = try {
                     JSONObject(errBody).optJSONObject("error")?.optString("message")
                 } catch (_: Exception) { null }
-                throw IllegalStateException("API Hata [$model] (${response.code}): ${parsedMsg ?: errBody.take(200)}")
+
+                val rawMsg = (parsedMsg ?: errBody).lowercase()
+                if (rawMsg.contains("content_filter") || rawMsg.contains("policy") || rawMsg.contains("refusal") || rawMsg.contains("safety") || rawMsg.contains("inappropriate") || rawMsg.contains("harm")) {
+                    throw IllegalStateException("Seçili sağlayıcı ($model) içerik kısıtlaması politikası gereği yanıtı reddetti. Lütfen Ayarlar -> AI Model Ayarları menüsünden farklı bir model (ör. Groq/Gemini) seçin.")
+                }
+                val code = response.code
+                if (code == 429 || rawMsg.contains("rate limit") || rawMsg.contains("quota")) {
+                    throw IllegalStateException("API kullanım kotası doldu (429 Rate Limit). Lütfen Ayarlar'dan API Key'inizi veya modelinizi değiştirin.")
+                }
+                throw IllegalStateException("API Hatası [$model] ($code): ${parsedMsg ?: errBody.take(200)}")
             }
             val responseStr = response.body?.string() ?: ""
             val jsonResp = JSONObject(responseStr)
-            val choices = jsonResp.getJSONArray("choices")
-            if (choices.length() == 0) throw IllegalStateException("Yanıt boş döndü.")
+            val choices = jsonResp.optJSONArray("choices")
+            if (choices == null || choices.length() == 0) throw IllegalStateException("Model yanıtı boş döndü.")
 
-            val text = choices.getJSONObject(0).getJSONObject("message").getString("content")
+            val firstChoice = choices.getJSONObject(0)
+            val finishReason = firstChoice.optString("finish_reason", "")
+            val messageObj = firstChoice.optJSONObject("message")
+            val refusal = messageObj?.optString("refusal", "")
+
+            if (finishReason == "content_filter" || !refusal.isNullOrBlank()) {
+                val detail = if (!refusal.isNullOrBlank()) " Detay: $refusal" else ""
+                throw IllegalStateException("Seçili model ($model) içerik filtresi politikası gereği bu yanıtı süzdü.$detail Lütfen Ayarlar menüsünden modeli değiştirin veya mesajınızı güncelleyin.")
+            }
+
+            val text = messageObj?.optString("content", "") ?: ""
+            if (text.isBlank()) throw IllegalStateException("Model yanıtı boş metin döndürdü.")
+
             val usage = jsonResp.optJSONObject("usage")
             val promptTokens = usage?.optLong("prompt_tokens") ?: 0L
             val candidateTokens = usage?.optLong("completion_tokens") ?: 0L
@@ -1368,14 +1534,30 @@ micro_atmosphere: <mikro mekan/fiziksel ortam/ışık/ses/gerilim>
                 val parsedMsg = try {
                     JSONObject(errBody).optJSONObject("error")?.optString("message")
                 } catch (_: Exception) { null }
-                throw IllegalStateException("Claude API Hata (${response.code}): ${parsedMsg ?: errBody.take(200)}")
+
+                val rawMsg = (parsedMsg ?: errBody).lowercase()
+                if (rawMsg.contains("policy") || rawMsg.contains("refusal") || rawMsg.contains("safety") || rawMsg.contains("content") || rawMsg.contains("prohibited")) {
+                    throw IllegalStateException("Claude API ($model) içerik politikası kısıtlaması nedeniyle yanıt veremedi. Lütfen Ayarlar -> AI Model Ayarları menüsünden başka bir model (ör. Groq veya Gemini) seçin.")
+                }
+                val code = response.code
+                if (code == 429 || rawMsg.contains("rate limit") || rawMsg.contains("quota")) {
+                    throw IllegalStateException("Claude API kotası aşıldı (429). Lütfen Ayarlar'dan API Key veya model değiştirin.")
+                }
+                throw IllegalStateException("Claude API Hatası ($code): ${parsedMsg ?: errBody.take(200)}")
             }
             val responseStr = response.body?.string() ?: ""
             val jsonResp = JSONObject(responseStr)
-            val contentArray = jsonResp.getJSONArray("content")
-            if (contentArray.length() == 0) throw IllegalStateException("Claude yanıtı boş.")
+            val stopReason = jsonResp.optString("stop_reason", "")
+            if (stopReason == "max_tokens_exceeded_or_refusal" || jsonResp.optString("type") == "refusal") {
+                throw IllegalStateException("Claude API ($model) içerik politikası gereği bu yanıtı reddetti. Lütfen Ayarlar menüsünden modelinizi değiştirin.")
+            }
+            val contentArray = jsonResp.optJSONArray("content")
+            if (contentArray == null || contentArray.length() == 0) throw IllegalStateException("Claude yanıtı boş döndü.")
 
-            val text = contentArray.getJSONObject(0).getString("text")
+            val firstContent = contentArray.getJSONObject(0)
+            val text = firstContent.optString("text", "")
+            if (text.isBlank()) throw IllegalStateException("Claude yanıtı boş metin döndürdü.")
+
             val usage = jsonResp.optJSONObject("usage")
             val promptTokens = usage?.optLong("input_tokens") ?: 0L
             val candidateTokens = usage?.optLong("output_tokens") ?: 0L
@@ -1409,7 +1591,15 @@ micro_atmosphere: <mikro mekan/fiziksel ortam/ışık/ses/gerilim>
         // RAG: Retrieve relevant memory fragments based on latest user input
         val userQuery = effectiveMessages.lastOrNull { it.role == "user" }?.text ?: ""
         val relevantFragments = getRelevantMemoryFragments(effectiveBot, userQuery)
-        val systemPrompt = buildSystemPrompt(effectiveBot, settings, relevantFragments = relevantFragments)
+        val prevTimestamp = if (effectiveMessages.size >= 2) effectiveMessages[effectiveMessages.size - 2].timestamp else effectiveBot.updatedAt
+        val totalCount = messageDao.getMessageCountForBot(effectiveBot.id)
+        val systemPrompt = buildSystemPrompt(
+            effectiveBot,
+            settings,
+            relevantFragments = relevantFragments,
+            lastMessageTimestamp = prevTimestamp,
+            totalMessageCount = totalCount
+        )
 
         var primaryException: Exception? = null
         // Primary Execution (3 retries with exponential backoff: 2s, 4s, 8s)
