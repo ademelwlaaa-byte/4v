@@ -2260,21 +2260,44 @@ fun NeuralVaultModal(
     var categoryFilter by remember { mutableStateOf("Tümü") }
     
     var pinnedMemoryText by remember { mutableStateOf(bot.pinnedMemory) }
+    var memoryNotesText by remember { mutableStateOf(bot.memoryNotes) }
+    var storyNotesText by remember { mutableStateOf(bot.storyNotes) }
     
-    val memoriesList = remember(pinnedMemoryText) {
-        if (pinnedMemoryText.isBlank()) emptyList()
-        else {
-            pinnedMemoryText.lines().filter { it.isNotBlank() }.map { line ->
+    val memoriesList = remember(pinnedMemoryText, memoryNotesText, storyNotesText) {
+        val list = mutableListOf<Triple<String, String, String>>()
+
+        if (pinnedMemoryText.isNotBlank()) {
+            pinnedMemoryText.lines().filter { it.isNotBlank() }.forEach { line ->
                 val parts = line.split(":::", limit = 3)
                 if (parts.size >= 3) {
-                    Triple(parts[0].trim(), parts[1].trim(), parts[2].trim())
+                    list.add(Triple(parts[0].trim(), parts[1].trim(), parts[2].trim()))
                 } else if (parts.size == 2) {
-                    Triple("BELLEK", "BİLGİ", parts[1].trim())
+                    list.add(Triple("BELLEK", "KALICI", parts[1].trim()))
                 } else {
-                    Triple("GENEL", "BİLGİ", line.trim())
+                    list.add(Triple("KALICI", "BİLGİ", line.trim()))
                 }
             }
         }
+
+        if (memoryNotesText.isNotBlank()) {
+            memoryNotesText.lines().filter { it.isNotBlank() }.forEach { line ->
+                val clean = line.removePrefix("-").removePrefix("*").trim()
+                if (clean.isNotBlank()) {
+                    list.add(Triple("ÖZET", "HAFIZA", clean))
+                }
+            }
+        }
+
+        if (storyNotesText.isNotBlank()) {
+            storyNotesText.lines().filter { it.isNotBlank() }.forEach { line ->
+                val clean = line.removePrefix("-").removePrefix("*").trim()
+                if (clean.isNotBlank()) {
+                    list.add(Triple("HİKAYE", "DURUM", clean))
+                }
+            }
+        }
+
+        list
     }
     
     val filteredMemories = memoriesList.filter { (key, cat, body) ->

@@ -1,0 +1,41 @@
+package com.example.data.local
+
+import androidx.room.Dao
+import androidx.room.Entity
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
+import androidx.room.PrimaryKey
+import androidx.room.Query
+import androidx.room.Update
+
+@Entity(tableName = "memory_events")
+data class MemoryEventEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val botId: String,
+    val timestamp: Long = System.currentTimeMillis(),
+    val description: String,
+    val importanceScore: Int = 50,     // 0 - 100
+    val embedding: String = "",         // JSON serialized List<Float>
+    val supersededBy: Long? = null
+)
+
+@Dao
+interface MemoryEventDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertEvent(event: MemoryEventEntity): Long
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertEvents(events: List<MemoryEventEntity>)
+
+    @Update
+    suspend fun updateEvent(event: MemoryEventEntity)
+
+    @Query("SELECT * FROM memory_events WHERE botId = :botId AND supersededBy IS NULL ORDER BY timestamp DESC")
+    suspend fun getActiveEvents(botId: String): List<MemoryEventEntity>
+
+    @Query("SELECT COUNT(*) FROM memory_events WHERE botId = :botId AND supersededBy IS NULL")
+    suspend fun getEventCount(botId: String): Int
+
+    @Query("DELETE FROM memory_events WHERE id IN (SELECT id FROM memory_events WHERE botId = :botId AND supersededBy IS NULL AND importanceScore < 80 ORDER BY timestamp ASC LIMIT :limit)")
+    suspend fun deleteOldestLowImportanceEvents(botId: String, limit: Int)
+}

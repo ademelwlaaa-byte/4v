@@ -19,6 +19,12 @@ interface GeminiApiService {
         @Query("key") apiKey: String,
         @Body request: GeminiRequest
     ): GeminiResponse
+
+    @POST("v1beta/models/text-embedding-004:embedContent")
+    suspend fun embedContent(
+        @Query("key") apiKey: String,
+        @Body request: GeminiEmbedContentRequest
+    ): GeminiEmbedContentResponse
 }
 
 object RetrofitClient {

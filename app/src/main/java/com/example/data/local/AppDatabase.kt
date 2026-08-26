@@ -123,6 +123,16 @@ val MIGRATION_18_19 = object : Migration(18, 19) {
     }
 }
 
+val MIGRATION_19_20 = object : Migration(19, 20) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS `memory_facts` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `botId` TEXT NOT NULL, `subject` TEXT NOT NULL, `key` TEXT NOT NULL, `value` TEXT NOT NULL, `confidence` TEXT NOT NULL DEFAULT 'certain', `lastConfirmedAt` INTEGER NOT NULL, `userCorrected` INTEGER NOT NULL DEFAULT 0, `supersededBy` INTEGER)")
+        db.execSQL("CREATE TABLE IF NOT EXISTS `memory_events` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `botId` TEXT NOT NULL, `timestamp` INTEGER NOT NULL, `description` TEXT NOT NULL, `importanceScore` INTEGER NOT NULL DEFAULT 50, `embedding` TEXT NOT NULL DEFAULT '', `supersededBy` INTEGER)")
+        db.execSQL("CREATE TABLE IF NOT EXISTS `entity_registry` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `botId` TEXT NOT NULL, `entityName` TEXT NOT NULL, `entityType` TEXT NOT NULL DEFAULT 'person', `description` TEXT NOT NULL, `firstMentionedAt` INTEGER NOT NULL, `lastMentionedAt` INTEGER NOT NULL)")
+        db.execSQL("CREATE TABLE IF NOT EXISTS `memory_checkpoints` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `botId` TEXT NOT NULL, `checkpointNumber` INTEGER NOT NULL, `messageRangeStart` INTEGER NOT NULL, `messageRangeEnd` INTEGER NOT NULL, `summaryText` TEXT NOT NULL, `embedding` TEXT NOT NULL DEFAULT '', `timestamp` INTEGER NOT NULL)")
+        db.execSQL("CREATE TABLE IF NOT EXISTS `cast_members` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `botId` TEXT NOT NULL, `name` TEXT NOT NULL, `description` TEXT NOT NULL, `role` TEXT NOT NULL DEFAULT 'Yan Karakter', `affectionScore` INTEGER NOT NULL DEFAULT 50, `relationshipState` TEXT NOT NULL DEFAULT 'Tanıdık', `firstAppearedAt` INTEGER NOT NULL, `importanceScore` INTEGER NOT NULL DEFAULT 50, `isAutoAdded` INTEGER NOT NULL DEFAULT 1, `isBlacklisted` INTEGER NOT NULL DEFAULT 0)")
+    }
+}
+
 @Database(
     entities = [
         BotEntity::class,
@@ -134,9 +144,14 @@ val MIGRATION_18_19 = object : Migration(18, 19) {
         StoryProgressEntity::class,
         AffectionEventEntity::class,
         PromptViolationLogEntity::class,
-        SceneTemplateEntity::class
+        SceneTemplateEntity::class,
+        MemoryFactEntity::class,
+        MemoryEventEntity::class,
+        EntityRegistryEntity::class,
+        MemoryCheckpointEntity::class,
+        CastMemberEntity::class
     ],
-    version = 19,
+    version = 20,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -149,6 +164,11 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun affectionEventDao(): AffectionEventDao
     abstract fun promptViolationLogDao(): PromptViolationLogDao
     abstract fun sceneTemplateDao(): SceneTemplateDao
+    abstract fun memoryFactDao(): MemoryFactDao
+    abstract fun memoryEventDao(): MemoryEventDao
+    abstract fun entityRegistryDao(): EntityRegistryDao
+    abstract fun memoryCheckpointDao(): MemoryCheckpointDao
+    abstract fun castMemberDao(): CastMemberDao
 
     companion object {
         @Volatile
@@ -171,7 +191,8 @@ abstract class AppDatabase : RoomDatabase() {
                         MIGRATION_15_16,
                         MIGRATION_16_17,
                         MIGRATION_17_18,
-                        MIGRATION_18_19
+                        MIGRATION_18_19,
+                        MIGRATION_19_20
                     )
                     .fallbackToDestructiveMigration(dropAllTables = true)
                     .build()

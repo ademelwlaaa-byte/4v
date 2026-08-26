@@ -53,3 +53,19 @@ data class GeminiResponse(
     val candidates: List<GeminiCandidate>? = null,
     val usageMetadata: GeminiUsageMetadata? = null
 )
+
+@JsonClass(generateAdapter = true)
+data class GeminiEmbedContentRequest(
+    val model: String = "models/text-embedding-004",
+    val content: GeminiContent
+)
+
+@JsonClass(generateAdapter = true)
+data class GeminiEmbeddingValues(
+    val values: List<Float>
+)
+
+@JsonClass(generateAdapter = true)
+data class GeminiEmbedContentResponse(
+    val embedding: GeminiEmbeddingValues? = null
+)
