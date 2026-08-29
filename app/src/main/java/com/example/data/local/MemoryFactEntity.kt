@@ -18,7 +18,8 @@ data class MemoryFactEntity(
     val confidence: String = "certain", // "certain" or "inferred"
     val lastConfirmedAt: Long = System.currentTimeMillis(),
     val userCorrected: Boolean = false,
-    val supersededBy: Long? = null
+    val supersededBy: Long? = null,
+    val isBotSaved: Boolean = true
 )
 
 @Dao

@@ -34,6 +34,13 @@ data class BotEntity(
     val previousEmotionState: String = """{"mood":"nötr","intensity":5,"affection":50,"trust":50,"tension":10}""",
     val worldAtmosphere: String = """{"mood":"sakin","intensity":5,"currentEvent":""}""",
     val baseAffectionDifficulty: Double = 1.0,
+    val emotionalRegulationCapacity: Int = 50,
+    val storyCalendarDate: String = "2026-08-29",
+    val storyDayCounter: Long = 1L,
+    val birthDate: String = "",
+    val currentAge: Int = 20,
+    val initialAge: Int = 20,
+    val lastMessageTimestamp: Long = 0L,
     val updatedAt: Long = System.currentTimeMillis()
 )
 

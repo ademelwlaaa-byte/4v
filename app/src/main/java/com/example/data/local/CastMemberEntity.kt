@@ -20,7 +20,10 @@ data class CastMemberEntity(
     val firstAppearedAt: Long = System.currentTimeMillis(),
     val importanceScore: Int = 50,
     val isAutoAdded: Boolean = true,
-    val isBlacklisted: Boolean = false
+    val isBlacklisted: Boolean = false,
+    val birthDate: String = "",
+    val currentAge: Int = 20,
+    val initialAge: Int = 20
 )
 
 @Dao

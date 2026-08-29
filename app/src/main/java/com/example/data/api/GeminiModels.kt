@@ -4,8 +4,41 @@ import com.squareup.moshi.Json
 import com.squareup.moshi.JsonClass
 
 @JsonClass(generateAdapter = true)
+data class GeminiFunctionProperty(
+    val type: String,
+    val description: String? = null,
+    val enum: List<String>? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class GeminiFunctionParameters(
+    val type: String = "OBJECT",
+    val properties: Map<String, GeminiFunctionProperty>? = null,
+    val required: List<String>? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class GeminiFunctionDeclaration(
+    val name: String,
+    val description: String,
+    val parameters: GeminiFunctionParameters? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class GeminiTool(
+    val functionDeclarations: List<GeminiFunctionDeclaration>? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class GeminiFunctionCall(
+    val name: String,
+    val args: Map<String, String>? = null
+)
+
+@JsonClass(generateAdapter = true)
 data class GeminiPart(
-    val text: String? = null
+    val text: String? = null,
+    val functionCall: GeminiFunctionCall? = null
 )
 
 @JsonClass(generateAdapter = true)
@@ -32,7 +65,8 @@ data class GeminiRequest(
     val contents: List<GeminiContent>,
     val systemInstruction: GeminiContent? = null,
     val generationConfig: GeminiGenerationConfig? = null,
-    val safetySettings: List<GeminiSafetySetting>? = null
+    val safetySettings: List<GeminiSafetySetting>? = null,
+    val tools: List<GeminiTool>? = null
 )
 
 @JsonClass(generateAdapter = true)

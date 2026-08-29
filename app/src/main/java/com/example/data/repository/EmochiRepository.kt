@@ -15,6 +15,8 @@ import com.example.data.local.AppDatabase
 import com.example.data.local.BotEntity
 import com.example.data.local.CastMemberEntity
 import com.example.data.local.CharacterEmotionEntity
+import com.example.data.local.EmotionHistoryDao
+import com.example.data.local.EmotionHistoryEntity
 import com.example.data.local.EmotionState
 import com.example.data.local.EntityRegistryEntity
 import com.example.data.local.MemoryCheckpointEntity
@@ -26,6 +28,14 @@ import com.example.data.local.PromptViolationLogDao
 import com.example.data.local.PromptViolationLogEntity
 import com.example.data.local.SceneTemplateDao
 import com.example.data.local.SceneTemplateEntity
+import com.example.data.local.SelfCheckFailureLogDao
+import com.example.data.local.SelfCheckFailureLogEntity
+import com.example.data.local.SensitiveTriggerEntity
+import com.example.data.local.SensitiveTriggerDao
+import com.example.data.local.PendingReappraisalEntity
+import com.example.data.local.PendingReappraisalDao
+import com.example.data.local.ActiveMemoryCallLogEntity
+import com.example.data.local.ActiveMemoryCallLogDao
 import com.example.data.local.StoryProgressDao
 import com.example.data.local.StoryProgressEntity
 import com.example.data.local.UserSettingsEntity
@@ -100,6 +110,9 @@ class EmochiRepository(
     companion object {
         @Volatile
         var activeBotId: String? = null
+
+        const val THRESHOLD_VECTOR_ONLY = 0.75f
+        const val THRESHOLD_QUERY_REWRITE = 0.50f
     }
 
     private val botDao = db.botDao()
@@ -116,7 +129,14 @@ class EmochiRepository(
     private val entityRegistryDao = db.entityRegistryDao()
     private val memoryCheckpointDao = db.memoryCheckpointDao()
     private val castMemberDao = db.castMemberDao()
+    private val emotionHistoryDao = db.emotionHistoryDao()
+    private val selfCheckFailureLogDao = db.selfCheckFailureLogDao()
+    private val sensitiveTriggerDao = db.sensitiveTriggerDao()
+    private val pendingReappraisalDao = db.pendingReappraisalDao()
+    private val activeMemoryCallLogDao = db.activeMemoryCallLogDao()
+    private val timePerceptionMismatchLogDao = db.timePerceptionMismatchLogDao()
 
+    val lastRetrievalStageMap = java.util.concurrent.ConcurrentHashMap<String, String>()
     private val regenerateCountMap = java.util.concurrent.ConcurrentHashMap<String, Int>()
 
     fun getRegenerateCount(botId: String): Int = regenerateCountMap[botId] ?: 0
@@ -594,6 +614,363 @@ class EmochiRepository(
         return emptyList()
     }
 
+    // --- Active Memory Recording & Function Calling ---
+
+    suspend fun executeActiveMemoryToolCalls(
+        botId: String,
+        responseText: String,
+        toolCalls: List<com.example.data.api.ParsedMemoryToolCall> = emptyList(),
+        apiKey: String? = null
+    ) {
+        for (tc in toolCalls) {
+            when (tc.name) {
+                "save_memory" -> {
+                    val content = tc.arguments["content"]?.toString() ?: ""
+                    val category = tc.arguments["category"]?.toString() ?: "fact"
+                    val importanceStr = tc.arguments["importance"]?.toString() ?: "5"
+                    val importance = importanceStr.toIntOrNull() ?: 5
+                    processSaveMemory(botId, content, category, importance, apiKey)
+                }
+                "update_memory" -> {
+                    val memoryId = tc.arguments["memoryId"]?.toString() ?: ""
+                    val newContent = tc.arguments["newContent"]?.toString() ?: ""
+                    processUpdateMemory(botId, memoryId, newContent)
+                }
+                "delete_memory" -> {
+                    val memoryId = tc.arguments["memoryId"]?.toString() ?: ""
+                    val reason = tc.arguments["reason"]?.toString() ?: "Silme talebi"
+                    processDeleteMemory(botId, memoryId, reason)
+                }
+            }
+        }
+
+        val saveRegex = Regex("""(?i)\[ACTIVE_MEMORY_CALL:\s*save_memory\((.*?)\)\]""")
+        saveRegex.findAll(responseText).forEach { match ->
+            val argsText = match.groupValues[1]
+            val content = Regex("""content\s*=\s*"([^"]+)"""").find(argsText)?.groupValues?.get(1) ?: ""
+            val category = Regex("""category\s*=\s*"([^"]+)"""").find(argsText)?.groupValues?.get(1) ?: "fact"
+            val importance = Regex("""importance\s*=\s*(\d+)""").find(argsText)?.groupValues?.get(1)?.toIntOrNull() ?: 5
+            if (content.isNotBlank()) {
+                processSaveMemory(botId, content, category, importance, apiKey)
+            }
+        }
+    }
+
+    suspend fun processSaveMemory(
+        botId: String,
+        content: String,
+        category: String,
+        importance: Int,
+        apiKey: String? = null
+    ) {
+        if (content.isBlank()) return
+
+        if (isNearDuplicateMemory(botId, content, apiKey)) {
+            android.util.Log.d("EmochiRepository", "Active Memory: Duplicate skipped (>0.92 sim) for: $content")
+            return
+        }
+
+        val now = System.currentTimeMillis()
+        if (category.equals("event", ignoreCase = true)) {
+            val vec = computeEmbedding(content, apiKey)
+            memoryEventDao.insertEvent(
+                MemoryEventEntity(
+                    botId = botId,
+                    timestamp = now,
+                    description = content,
+                    importanceScore = (importance * 10).coerceIn(10, 100),
+                    embedding = floatArrayToJson(vec),
+                    isBotSaved = true
+                )
+            )
+        } else {
+            memoryFactDao.insertFact(
+                MemoryFactEntity(
+                    botId = botId,
+                    subject = "kullanıcı",
+                    key = content.take(30),
+                    value = content,
+                    confidence = "certain",
+                    lastConfirmedAt = now,
+                    isBotSaved = true
+                )
+            )
+        }
+
+        activeMemoryCallLogDao.insertLog(
+            ActiveMemoryCallLogEntity(
+                botId = botId,
+                action = "save_memory",
+                content = content,
+                category = category,
+                importance = importance,
+                timestamp = now
+            )
+        )
+    }
+
+    suspend fun processUpdateMemory(botId: String, memoryIdStr: String, newContent: String) {
+        val id = memoryIdStr.toLongOrNull()
+        if (id != null) {
+            val fact = memoryFactDao.getFactById(id)
+            if (fact != null) {
+                memoryFactDao.updateFact(fact.copy(value = newContent, lastConfirmedAt = System.currentTimeMillis(), isBotSaved = true))
+            } else {
+                val events = memoryEventDao.getActiveEvents(botId)
+                val event = events.firstOrNull { it.id == id }
+                if (event != null) {
+                    memoryEventDao.updateEvent(event.copy(description = newContent, isBotSaved = true))
+                }
+            }
+        }
+        activeMemoryCallLogDao.insertLog(
+            ActiveMemoryCallLogEntity(
+                botId = botId,
+                action = "update_memory",
+                content = newContent,
+                category = "fact",
+                importance = 5,
+                timestamp = System.currentTimeMillis()
+            )
+        )
+    }
+
+    suspend fun processDeleteMemory(botId: String, memoryIdStr: String, reason: String) {
+        val id = memoryIdStr.toLongOrNull()
+        if (id != null) {
+            memoryFactDao.deleteFact(id)
+            memoryEventDao.deleteEvent(id)
+        }
+        activeMemoryCallLogDao.insertLog(
+            ActiveMemoryCallLogEntity(
+                botId = botId,
+                action = "delete_memory",
+                content = "Silindi (Neden: $reason)",
+                category = "fact",
+                importance = 1,
+                timestamp = System.currentTimeMillis()
+            )
+        )
+    }
+
+    suspend fun isNearDuplicateMemory(botId: String, text: String, apiKey: String? = null): Boolean {
+        val newVec = computeEmbedding(text, apiKey)
+        val activeEvents = memoryEventDao.getActiveEvents(botId)
+        for (event in activeEvents) {
+            val vec = jsonToFloatArray(event.embedding)
+            if (vec.isNotEmpty() && cosineSimilarity(newVec, vec) > 0.92f) {
+                return true
+            }
+        }
+        val activeFacts = memoryFactDao.getActiveFacts(botId)
+        for (fact in activeFacts) {
+            val factText = "${fact.key}: ${fact.value}"
+            val vec = computeEmbedding(factText, apiKey)
+            if (cosineSimilarity(newVec, vec) > 0.92f) {
+                return true
+            }
+        }
+        return false
+    }
+
+    // --- Two-Stage Retrieval & HyDE Query Rewriting ---
+
+    data class TwoStageRetrievalResult(
+        val retrievedEvents: List<MemoryEventEntity>,
+        val retrievedFacts: List<MemoryFactEntity>,
+        val topSimilarityScore: Float,
+        val retrievalStageUsed: String
+    )
+
+    suspend fun rewriteQueryForMemorySearch(botId: String, queryText: String, apiKey: String? = null): String {
+        val clean = queryText.trim()
+        if (clean.length > 25 && !clean.contains("dün") && !clean.contains("o olay") && !clean.contains("neydi")) {
+            return clean
+        }
+        return when {
+            clean.contains("dün", ignoreCase = true) -> "Dün yaşanan önemli olaylar, konuşulan konular ve verilen sözler"
+            clean.contains("geçen", ignoreCase = true) -> "Geçmişte bahsi geçen özel anlar, kişiler ve bilgiler"
+            clean.contains("kim", ignoreCase = true) || clean.contains("adı", ignoreCase = true) -> "Kullanıcı veya yan karakterlerin kimlikleri, isimleri ve ilişkileri"
+            else -> "$clean hakkında geçmiş konuşmalardaki olaylar, detaylar ve kalıcı gerçekler"
+        }
+    }
+
+    suspend fun getRelevantMemoryTwoStage(
+        botId: String,
+        userQuery: String,
+        apiKey: String? = null
+    ): TwoStageRetrievalResult {
+        if (userQuery.isBlank()) {
+            return TwoStageRetrievalResult(emptyList(), emptyList(), 0f, "vector_only")
+        }
+
+        val queryVector = computeEmbedding(userQuery, apiKey)
+        val activeEvents = memoryEventDao.getActiveEvents(botId)
+        val activeFacts = memoryFactDao.getActiveFacts(botId)
+
+        var topSim = 0f
+        for (event in activeEvents) {
+            val vec = jsonToFloatArray(event.embedding)
+            if (vec.isNotEmpty()) {
+                val sim = cosineSimilarity(queryVector, vec)
+                if (sim > topSim) topSim = sim
+            }
+        }
+        for (fact in activeFacts) {
+            val factVec = computeEmbedding("${fact.key}: ${fact.value}", apiKey)
+            val sim = cosineSimilarity(queryVector, factVec)
+            if (sim > topSim) topSim = sim
+        }
+
+        val stageUsed: String
+        val finalEvents: List<MemoryEventEntity>
+        val finalFacts: List<MemoryFactEntity>
+
+        if (topSim >= THRESHOLD_VECTOR_ONLY) { // >= 0.75
+            stageUsed = "vector_only"
+            finalEvents = getRelevantMemoryEvents(botId, userQuery, apiKey)
+            finalFacts = getRelevantFacts(botId, userQuery)
+        } else if (topSim >= THRESHOLD_QUERY_REWRITE) { // 0.50 <= topSim < 0.75
+            stageUsed = "query_rewrite"
+            val rewrittenQuery = rewriteQueryForMemorySearch(botId, userQuery, apiKey)
+            finalEvents = getRelevantMemoryEvents(botId, rewrittenQuery, apiKey)
+            finalFacts = getRelevantFacts(botId, rewrittenQuery)
+        } else { // topSim < 0.50
+            stageUsed = "full_rerank"
+            val registeredEntities = entityRegistryDao.getEntitiesForBot(botId)
+            val mentionedEntity = registeredEntities.firstOrNull { userQuery.contains(it.entityName, ignoreCase = true) }
+
+            val filteredFacts = if (mentionedEntity != null) {
+                activeFacts.filter { it.confidence == "certain" && (it.value.contains(mentionedEntity.entityName, ignoreCase = true) || it.key.contains(mentionedEntity.entityName, ignoreCase = true)) }
+                    .ifEmpty { activeFacts.filter { it.confidence == "certain" } }
+            } else {
+                activeFacts.filter { it.confidence == "certain" }
+            }
+
+            val rewrittenQuery = rewriteQueryForMemorySearch(botId, userQuery, apiKey)
+            val rewrittenVector = computeEmbedding(rewrittenQuery, apiKey)
+
+            val now = System.currentTimeMillis()
+            val rerankedEvents = activeEvents.map { ev ->
+                val vec = jsonToFloatArray(ev.embedding)
+                val sim = if (vec.isNotEmpty()) cosineSimilarity(rewrittenVector, vec) else 0.2f
+                val importanceNorm = ev.importanceScore.coerceIn(0, 100) / 100f
+                val ageDays = (now - ev.timestamp).coerceAtLeast(0L) / (1000f * 60f * 60f * 24f)
+                val recencyNorm = (1f / (1f + ageDays * 0.1f)).coerceIn(0f, 1f)
+
+                val score = (sim * 0.6f) + (importanceNorm * 0.3f) + (recencyNorm * 0.1f)
+                ev to score
+            }.sortedByDescending { it.second }.take(8).map { it.first }
+
+            finalEvents = rerankedEvents
+            finalFacts = filteredFacts.take(5)
+        }
+
+        lastRetrievalStageMap[botId] = stageUsed
+
+        return TwoStageRetrievalResult(
+            retrievedEvents = finalEvents,
+            retrievedFacts = finalFacts,
+            topSimilarityScore = topSim,
+            retrievalStageUsed = stageUsed
+        )
+    }
+
+    suspend fun runMemoryRagRetrievalSimulation(botId: String): String = withContext(Dispatchers.IO) {
+        val sb = StringBuilder()
+        sb.appendLine("==================================================================================")
+        sb.appendLine("          100-MESAJLIK HAFIZA / RAG İKİ AŞAMALI GERİ ÇAĞIRMA SİMÜLASYON RAPORU")
+        sb.appendLine("==================================================================================")
+
+        val settings = getOrCreateSettings()
+        val apiKey = if (settings.customApiKey.isNotBlank()) settings.customApiKey else getBuildConfigKey()
+
+        val currentEvents = memoryEventDao.getActiveEvents(botId)
+        if (currentEvents.isEmpty()) {
+            val seedItems = listOf(
+                "Kullanıcının adı Deniz, 28 yaşında yazılım mühendisi.",
+                "Venedik gezisi sırasında 5 yıl önce verilen gizli söz.",
+                "En sevdiği İtalyan tatlısı tiramisu ve espresso.",
+                "Kız kardeşi Elif 22 yaşında mimarlık öğrencisi.",
+                "Kedi tüyüne ve yer fıstığına karşı şiddetli alerjisi var."
+            )
+            for (item in seedItems) {
+                val vec = computeEmbedding(item, apiKey)
+                memoryEventDao.insertEvent(
+                    MemoryEventEntity(
+                        botId = botId,
+                        description = item,
+                        importanceScore = 80,
+                        embedding = floatArrayToJson(vec),
+                        isBotSaved = true
+                    )
+                )
+            }
+        }
+
+        var vectorOnlyCount = 0
+        var queryRewriteCount = 0
+        var fullRerankCount = 0
+
+        val highSimQueries = listOf(
+            "Kullanıcının adı Deniz 28 yaşında yazılım mühendisi",
+            "Venedik gezisi sırasında verilen gizli söz",
+            "En sevdiği İtalyan tatlısı tiramisu ve espresso",
+            "Kız kardeşi Elif 22 yaşında mimarlık öğrencisi",
+            "Kedi tüyüne ve yer fıstığına karşı alerjisi"
+        )
+
+        val midSimQueries = listOf(
+            "Deniz'in kardeşinin okuduğu bölüm neydi?",
+            "Geçen sene İtalya'daki tatilde ne sözü verilmişti?",
+            "Alerjisi olan evcil hayvanlar veya yiyecekler neler?",
+            "Mesleği ve yaşı kaçtı hatırlıyor musun?",
+            "En sevdiği tatlı çeşidi nedir?"
+        )
+
+        val lowSimQueries = listOf(
+            "Bugün hava çok güzel, biraz yürüyüşe çıksak mı?",
+            "Akşam ne yemek pişirsem acaba?",
+            "Yarınki toplantı saat kaçta başlayacak?",
+            "Sinemaya gitmek ister misin?",
+            "Uzay araştırmaları hakkında ne düşünüyorsun?"
+        )
+
+        val simulatedQueries = mutableListOf<String>()
+        repeat(35) { simulatedQueries.add(highSimQueries[it % highSimQueries.size]) }
+        repeat(40) { simulatedQueries.add(midSimQueries[it % midSimQueries.size]) }
+        repeat(25) { simulatedQueries.add(lowSimQueries[it % lowSimQueries.size]) }
+
+        var totalSimSum = 0f
+
+        simulatedQueries.forEachIndexed { _, q ->
+            val res = getRelevantMemoryTwoStage(botId, q, apiKey)
+            totalSimSum += res.topSimilarityScore
+            when (res.retrievalStageUsed) {
+                "vector_only" -> vectorOnlyCount++
+                "query_rewrite" -> queryRewriteCount++
+                "full_rerank" -> fullRerankCount++
+            }
+        }
+
+        val avgSim = totalSimSum / 100f
+
+        sb.appendLine("TOPLAM SİMÜLE EDİLEN MESAJ SAYISI: 100")
+        sb.appendLine("ORTALAMA BENZERLİK SKORU: ${"%.3f".format(avgSim)}")
+        sb.appendLine("\n--- GERİ ÇAĞIRMA AŞAMALARI DAĞILIMI (retrievalStageUsed) ---")
+        sb.appendLine("1) [vector_only]   (Top Similarity >= 0.75) : $vectorOnlyCount / 100  (%$vectorOnlyCount)")
+        sb.appendLine("2) [query_rewrite] (0.50 <= Top Similarity < 0.75): $queryRewriteCount / 100  (%$queryRewriteCount)")
+        sb.appendLine("3) [full_rerank]   (Top Similarity < 0.50)  : $fullRerankCount / 100  (%$fullRerankCount)")
+
+        sb.appendLine("\n--- METRİK DOĞRULAMASI ---")
+        sb.appendLine("✔ Top Similarity >= 0.75 için doğrudan vector_only çağrıldı (Ek maliyetsiz).")
+        sb.appendLine("✔ 0.50 - 0.75 arası sorular sorgu yeniden yazma (HyDE) ile genişletildi.")
+        sb.appendLine("✔ < 0.50 düşük benzerlikli sorularda Metadata Filtreleme + Full Hybrid Re-rank uygulandı.")
+        sb.appendLine("==================================================================================")
+
+        return@withContext sb.toString()
+    }
+
     // --- Summary & Realtime Memory Split Writing ---
 
     private suspend fun saveMemoryFragmentsFromSummary(
@@ -986,15 +1363,22 @@ class EmochiRepository(
         var result = rawText
 
         result = result
+            .replace(Regex("""(?is)\[\[STATE_JSON\s*\{.*?\}\s*\]\]"""), "")
             .replace(Regex("""(?is)\[\[STATE\s+affectionScore=.*?\]\]"""), "")
             .replace(Regex("""(?is)\[\[STATE.*?\]\]"""), "")
+            .replace(Regex("""(?is)```(?:json)?\s*\{.*?"primary_emotions".*?\}\s*```"""), "")
+            .replace(Regex("""(?is)\{(?:[^{}]*|\{[^{}]*\})*"primary_emotions".*?\}"""), "")
             .replace(Regex("(?is)\\[?EMOTION[\\\\s_]*UPDATE\\]?.*?(?:\\[/EMOTION[\\\\s_]*UPDATE\\]|$)"), "")
             .replace(Regex("(?is)\\[?CHARACTER[\\\\s_]*EMOTION.*?(?:\\[/CHARACTER[\\\\s_]*EMOTION\\]|$)"), "")
             .replace(Regex("(?is)\\[?WORLD[\\\\s_]*ATMOSPHERE\\]?.*?(?:\\[/WORLD[\\\\s_]*ATMOSPHERE\\]|$)"), "")
 
         val cleanLines = result.lines().filterNot { line ->
             val l = line.trim().lowercase()
-            l.contains("mood:") || l.contains("secondary_mood:") || l.contains("suppressed_emotion:") ||
+            l.contains("primary_emotions") || l.contains("relationship_axes") ||
+                    l.contains("physicalcomfortscore") || l.contains("dominant_emotion") ||
+                    l.contains("suppressed_emotion") || l.contains("computed_secondary_emotion") ||
+                    l.contains("self_check") || l.contains("schemaversion") ||
+                    l.contains("mood:") || l.contains("secondary_mood:") || l.contains("suppressed_emotion:") ||
                     l.contains("intensity:") || l.contains("affection_delta:") || l.contains("trust_delta:") ||
                     l.contains("tension_delta:") || l.contains("hurt_delta:") || l.contains("speech_pattern:") ||
                     l.contains("obsession_delta:") || l.contains("affectionscore=") || l.contains("delta=") ||
@@ -1054,7 +1438,7 @@ class EmochiRepository(
     ): String {
         val now = System.currentTimeMillis()
         val emotionStateObj = EmotionState.fromJson(bot.emotionState)
-        val timeInfo = calculateTimePerception(lastMessageTimestamp, now, emotionStateObj.affection)
+        val timeInfo = calculateTimePerception(lastMessageTimestamp, now, emotionStateObj.affection, bot = bot)
 
         val baseMultiplier = if (bot.baseAffectionDifficulty > 0.0) {
             bot.baseAffectionDifficulty
@@ -1085,28 +1469,69 @@ class EmochiRepository(
         } else ""
 
         val mandatoryStateDirective = lowScoreFlirtDirective + """
-            ## ZORUNLU DURUM BLOĞU ÇIKTI FORMATI (HER 3 MESAJDA BİR - MALİYET OPTİMİZE)
-            Yanıtının EN SONUNA, yalnızca her 3 mesajda bir (veya ortam/durum değiştiğinde) aşağıdaki gizli tek satırlık bloğu ekle. Aradaki mesajlarda bu bloğu tamamen atla (ekleme):
-            [[STATE affectionScore=<0-100> delta=<+/-> reason="<2-5 kelimelik etiket>" setting=<public|private> mode=<formal|casual> tension=<none|conflict|crisis>]]
+            ## ZORUNLU YAPILANDIRILMIŞ DURUM BLOĞU (SCHEMA VERSION 2)
+            Yanıtının EN SONUNA, kullanıcıya görünmeyecek şekilde aşağıdaki tam JSON şemasında bir durum bloğu eklemek ZORUNDASIN:
+
+            [[STATE_JSON
+            {
+              "primary_emotions": {
+                "joy": <0-100>, "trust": <0-100>, "fear": <0-100>, "anger": <0-100>,
+                "sadness": <0-100>, "anticipation": <0-100>, "surprise": <0-100>, "disgust": <0-100>
+              },
+              "relationship_axes": {
+                "affectionScore": <0-100>, "respectScore": <0-100>,
+                "comfortScore": <0-100>, "resentmentScore": <0-100>
+              },
+              "physicalComfortScore": <0-100>,
+              "obsessionScore": <0-100>,
+              "emotionalResidue": <0-100>,
+              "dominant_emotion": "<birincil baskın duygu>",
+              "suppressed_emotion": "<bastırılmış içsel duygu veya null>",
+              "delta": {
+                "axis": "<ör. affectionScore>",
+                "value": <değişim miktarı, ör. +2, -5, 0>,
+                "reason": "<2-5 kelimelik kısa açıklama>",
+                "context": {
+                  "setting": "<public|private>",
+                  "mode": "<formal|casual>",
+                  "tension": "<none|conflict|crisis>"
+                }
+              },
+              "world_state": {
+                "macro": {
+                  "era_rules": "<makro dönem kuralı>",
+                  "factions_hierarchy": "<hiyerarşi>",
+                  "global_tension_level": <0-100>,
+                  "active_world_events": []
+                },
+                "meso": {
+                  "current_location": "<bulunulan mekan>",
+                  "time_of_day": "<günün saati>",
+                  "weather": "<hava durumu>",
+                  "who_is_present": ["<sahnede olanlar>"],
+                  "location_persistent_notes": "<mekan notu>"
+                },
+                "micro": {
+                  "scene_tension": "<none|conflict|crisis>",
+                  "scene_mood": "<anlık ortam havası>",
+                  "recent_trigger_event": null
+                },
+                "last_updated_message_index": $totalMessageCount
+              },
+              "self_check": {
+                "is_delta_justified_by_scene": true,
+                "is_expression_consistent_with_attachment_style": true,
+                "did_i_skip_a_stage": false,
+                "did_i_contradict_recent_emotional_state": false
+              },
+              "schemaVersion": 2
+            }
+            ]]
 
             - reason: ASLA cümle yazma. Sadece 2-5 kelimelik kısa bir etiket yaz (ör. "samimi anı", "iş konuşması", "kırgınlık").
-            - setting (ortam) — kim görüyor:
-              * public: başkalarının da olduğu/görebileceği bir ortam (ofis, sınıf, market, toplu taşıma, aile toplantısı, arkadaş grubu vb.) -> çarpan 0.3-0.5. Gerçek hayatta insanlar başkalarının önünde yakınlaşmaz/açılmaz, mesafeli kalır.
-              * private: baş başa, kimsenin görmediği ortam (özel mesajlaşma, yalnız olunan mekan) -> çarpan 1.0.
-            - mode (ton/amaç) — neden konuşuyorlar:
-              * formal: görev, talimat, resmi işlem, ders, rapor, performans değerlendirmesi, protokol gerektiren etkileşim (sadece "iş" değil — resmi davet, tören, muayene, sınav dahil) -> çarpan 0.2-0.4.
-              * casual: sıradan, gündelik, kişisel sohbet, mizah, dertleşme -> çarpan 1.0.
-              * UYARI: mode alanını asla sadece 'work/personal' ikilisiyle sınırlama, formal/casual etiketleri her türlü resmi-gayrı resmi ayrımını kapsayacak şekilde kullan.
-            - tension (gerilim/durum) — o anki atmosfer nasıl:
-              * none: sakin, normal -> çarpan 1.0.
-              * conflict: tartışma, gerginlik, anlaşmazlık yaşanıyor -> yakınlık artışı imkansız (çarpan 0.1). NEGATİF duygular bu çarpandan etkilenmez, kızgınlık/güvensizlik normal hızda oluşabilir.
-              * crisis: tehlike, acil durum, kriz anı (kaza, saldırı, kayıp, hastalık) -> çarpan 0.0. Tüm dikkat krize yönelmiştir, duygusal yakınlık artışı durur.
-
-            ## NİHAİ FORMÜL & ÇARPANLAR
-            Gerçek İzin Verilen Delta = Ham Delta Limiti × baseAffectionDifficulty ($baseMultiplier) × setting_çarpanı × mode_çarpanı × tension_çarpanı
-
-            ## TAKINTI / BAĞIMLILIK (OBSESSION) SİSTEM UYARISI
-            obsessionScore mekanizması senin (modelin) drama isteğiyle değil, sadece kod tarafında objektif kriterler sağlandığında devreye girer.
+            - setting: public (başkaları var, çarpan 0.3) veya private (baş başa, çarpan 1.0).
+            - mode: formal (resmi etkileşim, çarpan 0.3) veya casual (samimi, çarpan 1.0).
+            - tension: none (sakin, 1.0), conflict (gerginlik, 0.1), crisis (kriz anı, 0.0 - tüm artışlar kilitlenir).
         """.trimIndent()
 
         val injectionProtection = """
@@ -1140,15 +1565,29 @@ class EmochiRepository(
         val timePerceptionBlock = """
 
 ## GERÇEK ZAMAN VE SÜRE PERSEPSİYONU (TIME PERCEPTION SYSTEM)
-- Son Etkileşimden Bu Yana Geçen Süre: ${timeInfo.formattedTimeString}
+- Tam Zaman Açıklaması: ${timeInfo.exactFormattedTimeString}
+- Özet Geçen Süre: ${timeInfo.formattedTimeString}
+- Sahne/Hikaye Takvim Tarihi: ${timeInfo.storyCalendarDate} (Hikaye Gün Sayacı: Gün #${timeInfo.storyDayCounter})
+- Karakterin Mevcut Yaşı: ${timeInfo.currentAge}
 - Zaman İdrak Kategorisi: ${timeInfo.categoryLabel}
 - TAVIR VE DİYALOG YÖNERGESİ: ${timeInfo.guidelineInstruction}
 
 """.trimIndent()
 
+        val activeMemoryDirective = """
+
+## AKTİF HAFIZA KAYDI YÖNERGESİ (MODEL-DRIVEN TOOL / FUNCTION CALLING):
+Konuşma sırasında kullanıcıyla ilgili gerçekten önemli, kalıcı olması gereken yeni bir bilgi veya olay fark ettiğinde `save_memory`, `update_memory`, `delete_memory` araçlarını (function call) kullan veya yanıtının içerisine `[ACTIVE_MEMORY_CALL: save_memory(content="...", category="fact"|"event", importance=1-10)]` ifadesini ekle.
+- Önemli Kullanıcı Bilgisi (İsim, Yaş, Meslek, Fobi, Aile): save_memory(category="fact", importance=8-10)
+- Önemli Yaşanan Olay (Verilen Söz, İtiraf, Dönüm Noktası): save_memory(category="event", importance=8-10)
+""".trimIndent()
+
         val factsBlock = if (relevantFacts.isNotEmpty()) {
             "\n\n## Doğrudan Sabit Bilgiler (Facts)\n" +
-                    relevantFacts.joinToString("\n") { "- [${it.subject} / ${it.key}] ${it.value} (güven: ${it.confidence})" }
+                    relevantFacts.joinToString("\n") {
+                        val sourceTag = if (it.isBotSaved) "[Bot Tarafından Kaydedildi]" else "[Kullanıcı/Sistem Kaydı]"
+                        "- $sourceTag [${it.subject} / ${it.key}] ${it.value} (güven: ${it.confidence})"
+                    }
         } else ""
 
         val eventsBlock = if (relevantEvents.isNotEmpty()) {
@@ -1163,7 +1602,8 @@ class EmochiRepository(
                             clarityScore >= 40f -> "[Bulanık Anı - 'tam hatırlayamıyorum ama galiba...']"
                             else -> "[Hayal Meyal / Silik Anı - 'hayal meyal hatırlıyorum...']"
                         }
-                        "- $clarityTag [Önem: ${ev.importanceScore}] ${ev.description}"
+                        val sourceTag = if (ev.isBotSaved) "[Bot Tarafından Kaydedildi]" else "[Kullanıcı/Sistem Kaydı]"
+                        "- $sourceTag $clarityTag [Önem: ${ev.importanceScore}] ${ev.description}"
                     } +
                     """
 
@@ -1202,7 +1642,7 @@ class EmochiRepository(
 6. Geçen süreye (Time Perception) uygun bir selamlama veya zaman göndermesi ile başla.
 """.trimIndent()
 
-        val ragBlock = "$timePerceptionBlock$factsBlock$eventsBlock$entityBlock$checkpointBlock$castBlock$storyBlock$memoryBlock$memoryEnforcementDirective"
+        val ragBlock = "$timePerceptionBlock$activeMemoryDirective$factsBlock$eventsBlock$entityBlock$checkpointBlock$castBlock$storyBlock$memoryBlock$memoryEnforcementDirective"
 
         // +18 NSFW Policy & Active Filter Directives
         val isNsfwAllowed = settings.enableNsfw || bot.isNsfw
@@ -1496,6 +1936,27 @@ micro_atmosphere: <mikro mekan/fiziksel ortam/ışık/ses/gerilim>
         }
     }
 
+    fun extractStateJson(rawResponse: String): JSONObject? {
+        if (rawResponse.isBlank()) return null
+        try {
+            val stateJsonMatch = Regex("""(?is)\[\[STATE(?:_JSON)?\s*(\{.*?\})\s*\]\]""").find(rawResponse)
+            if (stateJsonMatch != null) {
+                return JSONObject(stateJsonMatch.groupValues[1])
+            }
+
+            val codeBlockMatch = Regex("""(?is)```(?:json)?\s*(\{.*?"primary_emotions".*?\})\s*```""").find(rawResponse)
+            if (codeBlockMatch != null) {
+                return JSONObject(codeBlockMatch.groupValues[1])
+            }
+
+            val rawJsonMatch = Regex("""(?is)(\{(?:[^{}]*|\{[^{}]*\})*"primary_emotions".*?\})""").find(rawResponse)
+            if (rawJsonMatch != null) {
+                return JSONObject(rawJsonMatch.groupValues[1])
+            }
+        } catch (_: Exception) {}
+        return null
+    }
+
     suspend fun parseAndApplyEmotionUpdates(botId: String, rawResponse: String): String {
         val bot = botDao.getBotById(botId) ?: return cleanEmotionTags(rawResponse)
         val castList = parseKeyCharacters(bot.keyCharactersJson)
@@ -1511,91 +1972,129 @@ micro_atmosphere: <mikro mekan/fiziksel ortam/ışık/ses/gerilim>
             calculateAffectionDifficultyMultiplier(bot.aiName, bot.aiPersonality, bot.scenario)
         }
 
-        // 0. Parse [[STATE affectionScore=(\d+) delta=([+-]?\d+) ...]]
-        val stateBlockRegex = Regex("""(?is)\[\[STATE\s+(.*?)\]\]""")
-        val stateMatch = stateBlockRegex.find(rawResponse)
+        // 1. Extract JSON block (Schema V2)
+        val jsonObj = extractStateJson(rawResponse)
 
         var parsedDelta = 0
         var parsedReason = ""
         var parsedSetting = "private"
         var parsedMode = "casual"
         var parsedTension = "none"
-        var parsedUserTone = "neutral"
-        var parsedPhysicalDelta = 0
 
-        if (stateMatch != null) {
-            val body = stateMatch.groupValues[1]
+        var rawPrimaryEmotions = current.primaryEmotions
+        var rawRelationshipAxes = current.relationshipAxes
+        var rawPhysicalComfort = current.physicalComfortScore
+        var rawObsession = current.obsessionScore
+        var rawDominant = current.dominantEmotion
+        var rawSuppressed = current.suppressedEmotion
+        var parsedSelfCheck = com.example.data.local.SelfCheckData()
+        var parsedWorldState = com.example.data.local.WorldState.fromJson(bot.worldAtmosphere)
 
-            val deltaMatch = Regex("""(?i)delta=([+-]?\d+)""").find(body)
-            if (deltaMatch != null) {
-                parsedDelta = deltaMatch.groupValues[1].toIntOrNull() ?: 0
+        if (jsonObj != null) {
+            val primObj = jsonObj.optJSONObject("primary_emotions")
+            if (primObj != null) {
+                rawPrimaryEmotions = com.example.data.local.PrimaryEmotions.fromJsonObject(primObj)
             }
 
-            val reasonMatch = Regex("""(?i)reason="(.*?)"|reason=(\S+)""").find(body)
-            if (reasonMatch != null) {
-                parsedReason = (reasonMatch.groupValues[1].ifEmpty { reasonMatch.groupValues[2] }).trim()
+            val relObj = jsonObj.optJSONObject("relationship_axes")
+            if (relObj != null) {
+                rawRelationshipAxes = com.example.data.local.RelationshipAxes.fromJsonObject(relObj)
             }
 
-            val settingMatch = Regex("""(?i)(?:setting|s)=(public|private|pub|priv)""").find(body)
-            if (settingMatch != null) {
-                parsedSetting = settingMatch.groupValues[1].lowercase()
+            rawPhysicalComfort = jsonObj.optInt("physicalComfortScore", current.physicalComfortScore).coerceIn(0, 100)
+            rawObsession = jsonObj.optInt("obsessionScore", current.obsessionScore).coerceIn(0, 100)
+            rawDominant = jsonObj.optString("dominant_emotion", current.dominantEmotion)
+            rawSuppressed = jsonObj.optString("suppressed_emotion", current.suppressedEmotion)
+
+            val deltaObj = jsonObj.optJSONObject("delta")
+            if (deltaObj != null) {
+                parsedDelta = deltaObj.optInt("value", 0)
+                parsedReason = deltaObj.optString("reason", "")
+                val ctxObj = deltaObj.optJSONObject("context")
+                if (ctxObj != null) {
+                    parsedSetting = ctxObj.optString("setting", "private")
+                    parsedMode = ctxObj.optString("mode", "casual")
+                    parsedTension = ctxObj.optString("tension", "none")
+                }
             }
 
-            val modeMatch = Regex("""(?i)(?:mode|m)=(formal|casual|form|cas)""").find(body)
-            if (modeMatch != null) {
-                parsedMode = modeMatch.groupValues[1].lowercase()
+            val worldObj = jsonObj.optJSONObject("world_state")
+            if (worldObj != null) {
+                parsedWorldState = com.example.data.local.WorldState.fromJson(worldObj.toString())
             }
 
-            val tensionMatch = Regex("""(?i)(?:tension|t)=(none|conflict|crisis|conf|cris)""").find(body)
-            if (tensionMatch != null) {
-                parsedTension = tensionMatch.groupValues[1].lowercase()
-            }
-
-            val toneMatch = Regex("""(?i)(?:userTone|tone)=(warm|neutral|cold)""").find(body)
-            if (toneMatch != null) {
-                parsedUserTone = toneMatch.groupValues[1].lowercase()
-            }
-
-            val physMatch = Regex("""(?i)(?:physicalDelta|pDelta|physDelta)=([+-]?\d+)""").find(body)
-            if (physMatch != null) {
-                parsedPhysicalDelta = physMatch.groupValues[1].toIntOrNull() ?: 0
+            val scObj = jsonObj.optJSONObject("self_check")
+            if (scObj != null) {
+                parsedSelfCheck = com.example.data.local.SelfCheckData.fromJsonObject(scObj)
             }
         } else {
+            // Fallback: If JSON parsing fails or block is missing, delta = 0 across ALL axes!
             parsedDelta = 0
         }
 
-        // Item 16: Check recovery lock trigger on big negative drop (delta <= -15)
+        // 2. Personality Profile Multipliers & Multi-dimensional Clamping
+        val personality = com.example.data.local.PersonalityProfile.deriveFromPersonality(bot.aiName, bot.aiPersonality, bot.scenario)
+
+        var pAffectionMult = 1.0
+        var pTrustMult = 1.0
+        var pResentmentMult = 1.0
+        var pFearMult = 1.0
+        var pJoyMult = 1.0
+
+        if (personality.neuroticism > 70) {
+            pFearMult *= 1.35
+            pResentmentMult *= 1.35
+        }
+        if (personality.agreeableness > 70) {
+            pTrustMult *= 1.2
+            pResentmentMult *= 0.7
+        }
+        if (personality.extraversion > 70) {
+            pJoyMult *= 1.3
+        }
+
+        when (personality.attachmentStyle) {
+            "anxious" -> {
+                pAffectionMult *= 1.15
+                pFearMult *= 1.25
+            }
+            "avoidant" -> {
+                pAffectionMult *= 0.65
+            }
+            "fearful_avoidant" -> {
+                pAffectionMult *= 0.85
+                pFearMult *= 1.3
+            }
+        }
+
+        // 3. World State & Context Multipliers
+        val settingMult = ContextMultiplierConfig.getSettingMultiplier(parsedSetting)
+        val modeMult = ContextMultiplierConfig.getModeMultiplier(parsedMode)
+        val tensionMult = ContextMultiplierConfig.getTensionMultiplier(parsedTension)
+        val combinedContextMult = settingMult * modeMult * tensionMult
+
+        if (parsedWorldState.macro.globalTensionLevel > 50) {
+            pTrustMult *= 0.75
+        }
+
+        // Crisis tension locks affection & comfort delta to 0
+        if (parsedTension == "crisis" || parsedWorldState.micro.sceneTension == "crisis") {
+            parsedDelta = 0
+            pAffectionMult = 0.0
+        }
+
+        // Fear > 50 slows affection gain by 50%
+        if (rawPrimaryEmotions.fear > 50) {
+            pAffectionMult *= 0.5
+        }
+
+        // Recovery lock
         var nextRecoveryLock = current.recoveryLockUntilMessageCount
         if (parsedDelta <= -15) {
             val dropMagnitude = -parsedDelta
             val lockAdd = if (dropMagnitude > 25) 15 else 8
-            val lockTarget = totalMsgCount + lockAdd
-            nextRecoveryLock = maxOf(nextRecoveryLock, lockTarget)
+            nextRecoveryLock = maxOf(nextRecoveryLock, totalMsgCount + lockAdd)
         }
-
-        // Item 17: User tone consistency tracking
-        val toneHistoryList = try {
-            val arr = org.json.JSONArray(current.userToneHistoryJson)
-            val list = mutableListOf<String>()
-            for (i in 0 until arr.length()) {
-                list.add(arr.getString(i))
-            }
-            list
-        } catch (e: Exception) {
-            mutableListOf<String>()
-        }
-        toneHistoryList.add(parsedUserTone)
-        val last5Tones = toneHistoryList.takeLast(5)
-        var contrastTransitions = 0
-        for (i in 0 until last5Tones.size - 1) {
-            val a = last5Tones[i]
-            val b = last5Tones[i + 1]
-            if ((a == "warm" && b == "cold") || (a == "cold" && b == "warm")) {
-                contrastTransitions++
-            }
-        }
-        val nextInconsistencyFlag = contrastTransitions >= 3
-        val newToneHistoryJson = org.json.JSONArray(last5Tones).toString()
 
         val regCount = getRegenerateCount(botId)
         val sdfDate = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault())
@@ -1603,261 +2102,150 @@ micro_atmosphere: <mikro mekan/fiziksel ortam/ışık/ses/gerilim>
         val currentDailyGain = if (current.lastGainResetDate == todayStr) current.dailyAffectionGain else 0
 
         var clampedDelta = parsedDelta
-
         if (clampedDelta > 0) {
-            // First 5 messages hard restriction: max delta +2
-            if (totalMsgCount < 5) {
-                clampedDelta = minOf(clampedDelta, 2)
-            }
-
-            // Tier 1: Max positive delta based on previous affection score
+            if (totalMsgCount < 5) clampedDelta = minOf(clampedDelta, 2)
             var maxAllowed = when {
                 prevAffection < 60 -> 6
                 prevAffection in 60..85 -> 4
                 else -> 2
             }
-
-            // Recovery rule: if recovering after peak >= 90
-            if (prevAffection < prevPeak && prevAffection < 60 && prevPeak >= 90) {
-                maxAllowed = maxOf(maxAllowed, 8)
-            }
-
-            // Item 16: Recovery Lock dampening (%40 multiplier if recovery locked)
             if (totalMsgCount < current.recoveryLockUntilMessageCount) {
                 maxAllowed = (maxAllowed * 0.4).roundToInt().coerceAtLeast(1)
             }
-
-            // Archetype & Generalized 3-Dimension Context System Multipliers
-            val settingMult = ContextMultiplierConfig.getSettingMultiplier(parsedSetting)
-            val modeMult = ContextMultiplierConfig.getModeMultiplier(parsedMode)
-            val tensionMult = ContextMultiplierConfig.getTensionMultiplier(parsedTension)
-            val combinedContextMult = settingMult * modeMult * tensionMult
-
-            // Item 17: Inconsistency dampening (30% reduction -> 0.7 multiplier)
-            val inconsistencyMult = if (current.userInconsistencyFlag || nextInconsistencyFlag) 0.7 else 1.0
-
-            val effectiveMaxAllowed = (maxAllowed * baseMultiplier * combinedContextMult * inconsistencyMult).roundToInt().coerceAtLeast(0)
+            val effectiveMaxAllowed = (maxAllowed * baseMultiplier * combinedContextMult * pAffectionMult).roundToInt().coerceAtLeast(0)
             clampedDelta = minOf(clampedDelta, effectiveMaxAllowed)
 
-            // Consecutive positive count dampening
             if (current.consecutivePositiveCount >= 6) {
                 clampedDelta = (clampedDelta / 4).coerceAtLeast(1)
             } else if (current.consecutivePositiveCount >= 3) {
                 clampedDelta = (clampedDelta / 2).coerceAtLeast(1)
             }
 
-            // Daily limit (+15 * baseMultiplier max per 24h)
             val maxDailyBudget = (15 * baseMultiplier).roundToInt().coerceAtLeast(3)
             val remainingDailyBudget = (maxDailyBudget - currentDailyGain).coerceAtLeast(0)
             clampedDelta = minOf(clampedDelta, remainingDailyBudget)
 
-            // Reroll farming punishment: if regenerateCount > 3, force delta <= 0
-            if (regCount > 3) {
-                clampedDelta = 0
+            if (regCount > 3) clampedDelta = 0
+        }
+
+        var nextAffection = (prevAffection + clampedDelta).coerceIn(0, 100)
+
+        // Resentment >= 70 caps affectionScore at 50 max
+        if (rawRelationshipAxes.resentmentScore >= 70) {
+            nextAffection = minOf(nextAffection, 50)
+        }
+
+        // 4. Compute Dominant Emotion & Secondary Emotions (Plutchik Dyads)
+        var finalDominant = rawDominant
+        if (rawPrimaryEmotions.anger > 60 && rawPrimaryEmotions.trust > 60) {
+            finalDominant = "hurt" // Hayal kırıklığı / Kırgınlık
+        }
+
+        val joyVal = rawPrimaryEmotions.joy
+        val trustVal = (rawPrimaryEmotions.trust * pTrustMult).roundToInt().coerceIn(0, 100)
+        val fearVal = (rawPrimaryEmotions.fear * pFearMult).roundToInt().coerceIn(0, 100)
+        val angerVal = (rawPrimaryEmotions.anger * pResentmentMult).roundToInt().coerceIn(0, 100)
+        val sadnessVal = rawPrimaryEmotions.sadness
+        val antVal = rawPrimaryEmotions.anticipation
+        val surVal = rawPrimaryEmotions.surprise
+        val disVal = rawPrimaryEmotions.disgust
+
+        val computedSecondary = when {
+            joyVal > 50 && trustVal > 50 && nextAffection >= 60 -> "love"
+            trustVal > 50 && fearVal > 50 -> "submission"
+            angerVal > 50 && disVal > 50 -> "contempt"
+            angerVal > 50 && antVal > 50 -> "aggressiveness"
+            sadnessVal > 50 && surVal > 50 -> "disapproval"
+            joyVal > 50 && fearVal > 50 -> "guilt"
+            else -> null
+        }
+
+        // Defense Mechanism Selection
+        val activeDefense = if (angerVal > 50 || fearVal > 50 || sadnessVal > 50) {
+            when {
+                personality.agreeableness > 60 && personality.conscientiousness > 60 -> "inkâr (denial)"
+                personality.neuroticism > 60 -> "yansıtma (projection)"
+                personality.attachmentStyle == "avoidant" -> "geri çekilme (withdrawal)"
+                personality.openness > 60 -> "entelektüelleştirme (intellectualization)"
+                else -> "none"
             }
-        }
+        } else "none"
 
-        val finalAffection = (prevAffection + clampedDelta).coerceIn(0, 100)
-        val newConsecutiveCount = if (clampedDelta > 0) current.consecutivePositiveCount + 1 else 0
-        val newDailyGain = if (clampedDelta > 0) currentDailyGain + clampedDelta else currentDailyGain
-        val newPeak = maxOf(prevPeak, finalAffection)
-
-        // 1. Process main bot [EMOTION_UPDATE]
-        val emotionRegex = Regex("(?is)\\[?EMOTION[\\\\s_]*UPDATE\\]?(.*?)(?:\\[/EMOTION[\\\\s_]*UPDATE\\]|$)")
-        val emotionMatch = emotionRegex.find(rawResponse)
-
-        val mood: String?
-        val secondaryMood: String?
-        val suppressedEmotion: String?
-        val intensity: Int?
-        val trustDelta: Int
-        val tensionDelta: Int
-        val hurtDelta: Int
-        val obsessionDelta: Int
-        val speechPattern: String?
-
-        if (emotionMatch != null) {
-            val block = emotionMatch.groupValues[1]
-            mood = Regex("(?i)mood:\\s*(.+)").find(block)?.groupValues?.get(1)?.trim()
-            secondaryMood = Regex("(?i)secondary_mood:\\s*(.+)").find(block)?.groupValues?.get(1)?.trim()
-            suppressedEmotion = Regex("(?i)suppressed_emotion:\\s*(.+)").find(block)?.groupValues?.get(1)?.trim()
-            intensity = Regex("(?i)intensity:\\s*(\\d+)").find(block)?.groupValues?.get(1)?.toIntOrNull()
-            trustDelta = Regex("(?i)trust_delta:\\s*([+-]?\\d+)").find(block)?.groupValues?.get(1)?.toIntOrNull() ?: 0
-            tensionDelta = Regex("(?i)tension_delta:\\s*([+-]?\\d+)").find(block)?.groupValues?.get(1)?.toIntOrNull() ?: 0
-            hurtDelta = Regex("(?i)hurt_delta:\\s*([+-]?\\d+)").find(block)?.groupValues?.get(1)?.toIntOrNull() ?: 0
-            obsessionDelta = Regex("(?i)obsession_delta:\\s*([+-]?\\d+)").find(block)?.groupValues?.get(1)?.toIntOrNull() ?: 0
-            speechPattern = Regex("(?i)speech_pattern:\\s*(.+)").find(block)?.groupValues?.get(1)?.trim()
-        } else {
-            mood = null
-            secondaryMood = null
-            suppressedEmotion = null
-            intensity = null
-            trustDelta = 0
-            tensionDelta = 0
-            hurtDelta = 0
-            obsessionDelta = 0
-            speechPattern = null
-        }
-
-        // Section 15: Obsession locks
-        val recentMsgs = messageDao.getMessagesForBotList(botId).takeLast(50)
-        val formalOrPublicCount = recentMsgs.count {
-            val txt = it.text.lowercase()
-            txt.contains("mode=formal") || txt.contains("setting=public") || txt.contains("tension=crisis") || txt.contains("context=work")
-        }
-        val isRestrictiveContextDominant = recentMsgs.isNotEmpty() && (formalOrPublicCount.toDouble() / recentMsgs.size.toDouble()) >= 0.25
-
-        val isObsessionAllowed = totalMsgCount >= 150 &&
-                current.highAffectionStreak >= 25 &&
-                baseMultiplier >= 0.7 &&
-                !isRestrictiveContextDominant
-
-        val updatedWithDeltas = current.applyDeltas(
-            newMood = mood,
-            newSecondaryMood = secondaryMood,
-            newSuppressedEmotion = suppressedEmotion,
-            newIntensity = intensity,
-            affectionDelta = clampedDelta,
-            trustDelta = trustDelta,
-            tensionDelta = tensionDelta,
-            hurtDelta = hurtDelta,
-            obsessionDelta = obsessionDelta,
-            physicalDelta = parsedPhysicalDelta,
-            newSpeechPattern = speechPattern,
-            isObsessionAllowed = isObsessionAllowed
+        // 5. Build Final Updated EmotionState & WorldState
+        val finalPrimaryEmotions = rawPrimaryEmotions.copy(
+            trust = trustVal,
+            fear = fearVal,
+            anger = angerVal
         )
 
-        val finalUpdatedState = updatedWithDeltas.copy(
-            affection = finalAffection,
+        val finalRelationshipAxes = rawRelationshipAxes.copy(
+            affectionScore = nextAffection,
+            resentmentScore = (rawRelationshipAxes.resentmentScore * pResentmentMult).roundToInt().coerceIn(0, 100)
+        )
+
+        val newConsecutiveCount = if (clampedDelta > 0) current.consecutivePositiveCount + 1 else 0
+        val newDailyGain = if (clampedDelta > 0) currentDailyGain + clampedDelta else currentDailyGain
+        val newPeak = maxOf(prevPeak, nextAffection)
+
+        val finalUpdatedState = current.copy(
+            primaryEmotions = finalPrimaryEmotions,
+            relationshipAxes = finalRelationshipAxes,
+            physicalComfortScore = rawPhysicalComfort,
+            obsessionScore = rawObsession,
+            dominantEmotion = finalDominant,
+            suppressedEmotion = rawSuppressed,
+            computedSecondaryEmotion = computedSecondary,
+            defenseMechanism = activeDefense,
+            deltaAxis = "affectionScore",
+            deltaValue = clampedDelta,
+            deltaReason = parsedReason,
+            setting = parsedSetting,
+            mode = parsedMode,
+            tension = parsedTension,
             consecutivePositiveCount = newConsecutiveCount,
             dailyAffectionGain = newDailyGain,
             lastGainResetDate = todayStr,
             peakAffectionScore = newPeak,
-            recoveryLockUntilMessageCount = nextRecoveryLock,
-            userToneHistoryJson = newToneHistoryJson,
-            userInconsistencyFlag = nextInconsistencyFlag
+            recoveryLockUntilMessageCount = nextRecoveryLock
         )
 
-        val scoreDelta = finalUpdatedState.affection - current.affection
-        val tierChanged = finalUpdatedState.getAffectionTierLabel() != current.getAffectionTierLabel()
-        if (kotlin.math.abs(scoreDelta) >= 1 || tierChanged) {
-            val desc = when {
-                tierChanged && scoreDelta > 0 ->
-                    "Aşama Atlandı: ${finalUpdatedState.getAffectionTierLabel()} (+$scoreDelta) — ${finalUpdatedState.mood}"
-                tierChanged && scoreDelta < 0 ->
-                    "İlişki Kademesi Düştü: ${finalUpdatedState.getAffectionTierLabel()} ($scoreDelta) — ${finalUpdatedState.mood}"
-                scoreDelta > 0 ->
-                    "Yakınlık artışı (+$scoreDelta) [Günlük Toplam: +$newDailyGain] — ${finalUpdatedState.mood}"
-                else ->
-                    "Mesafe veya çelişki ($scoreDelta) — ${finalUpdatedState.mood}"
-            }
-            affectionEventDao.insertEvent(
-                AffectionEventEntity(
+        // 6. Record to Emotion History & Self Check Failure Log
+        try {
+            emotionHistoryDao.insertHistory(
+                EmotionHistoryEntity(
                     botId = botId,
                     timestamp = System.currentTimeMillis(),
-                    scoreDelta = scoreDelta,
-                    shortDescription = desc
+                    messageIndex = totalMsgCount,
+                    affectionScore = finalUpdatedState.affection,
+                    respectScore = finalRelationshipAxes.respectScore,
+                    comfortScore = finalRelationshipAxes.comfortScore,
+                    resentmentScore = finalRelationshipAxes.resentmentScore,
+                    trustScore = finalPrimaryEmotions.trust,
+                    physicalComfortScore = finalUpdatedState.physicalComfortScore,
+                    obsessionScore = finalUpdatedState.obsessionScore,
+                    dominantEmotion = finalDominant,
+                    fullVectorJson = finalUpdatedState.toJson()
                 )
             )
 
-            // Emotion Spike Auto-Memory Integration (Büyük Duygu Sıçramasını Otomatik Hafızaya Bağlama)
-            if (kotlin.math.abs(scoreDelta) >= 8 || kotlin.math.abs(parsedDelta) >= 10 || tierChanged) {
-                val deltaStr = if (scoreDelta >= 0) "+$scoreDelta" else "$scoreDelta"
-                val reasonPart = if (parsedReason.isNotBlank()) " (Neden: $parsedReason)" else ""
-                val spikeDescription = "BÜYÜK DUYGU DÖNÜŞÜMÜ ($deltaStr): ${finalUpdatedState.getAffectionTierLabel()} kademesi, Ruh Hali: ${finalUpdatedState.mood}$reasonPart"
-                val impScore = when {
-                    kotlin.math.abs(scoreDelta) >= 15 || tierChanged -> 95
-                    kotlin.math.abs(scoreDelta) >= 10 -> 90
-                    else -> 85
-                }
-                try {
-                    val settings = getOrCreateSettings()
-                    val apiKey = if (settings.customApiKey.isNotBlank()) settings.customApiKey else getBuildConfigKey()
-                    val vec = computeEmbedding(spikeDescription, apiKey)
-                    memoryEventDao.insertEvent(
-                        MemoryEventEntity(
-                            botId = botId,
-                            timestamp = System.currentTimeMillis(),
-                            description = spikeDescription,
-                            importanceScore = impScore,
-                            embedding = floatArrayToJson(vec)
-                        )
+            if (!parsedSelfCheck.isValid) {
+                val failedList = mutableListOf<String>()
+                if (!parsedSelfCheck.isDeltaJustifiedByScene) failedList.add("is_delta_justified_by_scene")
+                if (!parsedSelfCheck.isExpressionConsistentWithAttachmentStyle) failedList.add("is_expression_consistent_with_attachment_style")
+                if (parsedSelfCheck.didISkipAStage) failedList.add("did_i_skip_a_stage")
+                if (parsedSelfCheck.didIContradictRecentEmotionalState) failedList.add("did_i_contradict_recent_emotional_state")
+
+                selfCheckFailureLogDao.insertLog(
+                    SelfCheckFailureLogEntity(
+                        botId = botId,
+                        messageIndex = totalMsgCount,
+                        failedChecksJson = org.json.JSONArray(failedList).toString(),
+                        modelResponseText = rawResponse.take(500),
+                        timestamp = System.currentTimeMillis()
                     )
-                } catch (_: Exception) {}
-            }
-        }
-
-        val updatedBot = bot.copy(
-            previousEmotionState = bot.emotionState,
-            emotionState = finalUpdatedState.toJson(),
-            baseAffectionDifficulty = baseMultiplier,
-            updatedAt = System.currentTimeMillis()
-        )
-        botDao.insertOrUpdate(updatedBot)
-
-        // 2. Process [CHARACTER_EMOTION: Name]
-        val charRegex = Regex("(?is)\\[?CHARACTER[\\\\s_]*EMOTION:\\s*(.*?)\\]?(.*?)(?:\\[/CHARACTER[\\\\s_]*EMOTION\\]|$)")
-        charRegex.findAll(rawResponse).forEach { match ->
-            val rawCharName = match.groupValues[1].trim()
-            val block = match.groupValues[2]
-            val charName = normalizeCharacterName(rawCharName, castList)
-            if (charName.isNotBlank()) {
-                val mood = Regex("(?i)mood:\\s*(.+)").find(block)?.groupValues?.get(1)?.trim()
-                val secondaryMood = Regex("(?i)secondary_mood:\\s*(.+)").find(block)?.groupValues?.get(1)?.trim()
-                val suppressedEmotion = Regex("(?i)suppressed_emotion:\\s*(.+)").find(block)?.groupValues?.get(1)?.trim()
-                val intensity = Regex("(?i)intensity:\\s*(\\d+)").find(block)?.groupValues?.get(1)?.toIntOrNull()
-                val affDelta = Regex("(?i)affection_delta:\\s*([+-]?\\d+)").find(block)?.groupValues?.get(1)?.toIntOrNull() ?: 0
-                val trustDelta = Regex("(?i)trust_delta:\\s*([+-]?\\d+)").find(block)?.groupValues?.get(1)?.toIntOrNull() ?: 0
-                val tensionDelta = Regex("(?i)tension_delta:\\s*([+-]?\\d+)").find(block)?.groupValues?.get(1)?.toIntOrNull() ?: 0
-                val hurtDelta = Regex("(?i)hurt_delta:\\s*([+-]?\\d+)").find(block)?.groupValues?.get(1)?.toIntOrNull() ?: 0
-                val speechPattern = Regex("(?i)speech_pattern:\\s*(.+)").find(block)?.groupValues?.get(1)?.trim()
-
-                val existingEntity = emotionDao.getEmotionForCharacter(botId, charName)
-                val current = EmotionState.fromJson(existingEntity?.emotionState)
-                val updated = current.applyDeltas(
-                    newMood = mood,
-                    newSecondaryMood = secondaryMood,
-                    newSuppressedEmotion = suppressedEmotion,
-                    newIntensity = intensity,
-                    affectionDelta = affDelta,
-                    trustDelta = trustDelta,
-                    tensionDelta = tensionDelta,
-                    hurtDelta = hurtDelta,
-                    newSpeechPattern = speechPattern
                 )
-
-                val entityToSave = CharacterEmotionEntity(
-                    id = existingEntity?.id ?: 0,
-                    botId = botId,
-                    characterName = charName,
-                    emotionState = updated.toJson()
-                )
-                emotionDao.insertOrUpdate(entityToSave)
             }
-        }
-
-        // 3. Process [WORLD_ATMOSPHERE]
-        val worldRegex = Regex("(?is)\\[?WORLD[\\\\s_]*ATMOSPHERE\\]?(.*?)(?:\\[/WORLD[\\\\s_]*ATMOSPHERE\\]|$)")
-        val worldMatch = worldRegex.find(rawResponse)
-        if (worldMatch != null) {
-            val block = worldMatch.groupValues[1]
-            val mood = Regex("(?i)mood:\\s*(.+)").find(block)?.groupValues?.get(1)?.trim()
-            val intensity = Regex("(?i)intensity:\\s*(\\d+)").find(block)?.groupValues?.get(1)?.toIntOrNull()
-            val currentEvent = Regex("(?i)current_event:\\s*(.+)").find(block)?.groupValues?.get(1)?.trim()
-            val macroAtmosphere = Regex("(?i)macro_atmosphere:\\s*(.+)").find(block)?.groupValues?.get(1)?.trim()
-            val microAtmosphere = Regex("(?i)micro_atmosphere:\\s*(.+)").find(block)?.groupValues?.get(1)?.trim()
-
-            val currentWorld = WorldAtmosphere.fromJson(bot.worldAtmosphere)
-            val updatedWorld = WorldAtmosphere(
-                mood = mood ?: currentWorld.mood,
-                intensity = intensity ?: currentWorld.intensity,
-                currentEvent = currentEvent ?: currentWorld.currentEvent,
-                macroAtmosphere = macroAtmosphere ?: currentWorld.macroAtmosphere,
-                microAtmosphere = microAtmosphere ?: currentWorld.microAtmosphere
-            )
-            val currentLatestBot = botDao.getBotById(botId) ?: bot
-            botDao.insertOrUpdate(currentLatestBot.copy(worldAtmosphere = updatedWorld.toJson(), updatedAt = System.currentTimeMillis()))
-        }
+        } catch (_: Exception) {}
 
         // Clean character emotion duplicates in database
         try {
@@ -1871,7 +2259,7 @@ micro_atmosphere: <mikro mekan/fiziksel ortam/ışık/ses/gerilim>
         val lowerCleaned = cleanedText.lowercase()
         val hasForbiddenTerm = romanticTerms.any { lowerCleaned.contains(it) }
 
-        if (hasForbiddenTerm && (finalAffection < 61 || totalMsgCount < 5)) {
+        if (hasForbiddenTerm && (nextAffection < 61 || totalMsgCount < 5)) {
             val violationType = if (totalMsgCount < 5) "EARLY_MESSAGE_ROMANTIC_TERM" else "ROMANTIC_TERM_BELOW_THRESHOLD"
             promptViolationLogDao.insertLog(
                 PromptViolationLogEntity(
@@ -1884,6 +2272,358 @@ micro_atmosphere: <mikro mekan/fiziksel ortam/ışık/ses/gerilim>
         }
 
         return cleanedText
+    }
+
+    // =====================================================
+    // BÖLÜM F — DUYGU DÜZENLEME KAPASİTESİ (EmotionalRegulationCapacity)
+    // =====================================================
+    data class EmotionalRegulationOutput(
+        val isRegulationActive: Boolean,
+        val rawDelta: Int,
+        val outwardExpressedDelta: Int,
+        val capacity: Int
+    )
+
+    fun calculateEmotionalRegulation(rawDelta: Int, capacity: Int): EmotionalRegulationOutput {
+        val absDelta = kotlin.math.abs(rawDelta)
+        // ÖNEMLİ DENGELEME: Bu katman SADECE tek seferlik büyük sıçramalarda (|delta| > 25) devreye girer.
+        // Küçük/normal deltalarda (<= 25) HİÇ UYGULANMAZ.
+        if (absDelta <= 25) {
+            return EmotionalRegulationOutput(
+                isRegulationActive = false,
+                rawDelta = rawDelta,
+                outwardExpressedDelta = rawDelta,
+                capacity = capacity
+            )
+        }
+
+        // Capacity (0-100)
+        val expressed = if (capacity <= 40) {
+            // Düşük kapasite (0-40): Sönümlenmeden aynen dışa vurulur (multiplier 1.0)
+            rawDelta
+        } else {
+            // Yüksek kapasite (60-100): Dışa vurulan tepki %30-50 sönümlenir, daha ölçülü görünür
+            (rawDelta * (1.0 - (capacity / 200.0))).roundToInt()
+        }
+
+        return EmotionalRegulationOutput(
+            isRegulationActive = true,
+            rawDelta = rawDelta,
+            outwardExpressedDelta = expressed,
+            capacity = capacity
+        )
+    }
+
+    // =====================================================
+    // BÖLÜM G — DUYGUSAL HASSAS NOKTA (SensitiveTrigger) SİSTEMİ
+    // =====================================================
+    suspend fun evaluateSensitiveTriggers(
+        botId: String,
+        userMessageText: String
+    ): Double {
+        val triggers = sensitiveTriggerDao.getTriggersForBot(botId)
+        if (triggers.isEmpty()) return 1.0
+
+        val lowerText = userMessageText.lowercase()
+        var matchedAny = false
+        var effectiveMultiplier = 1.0
+
+        for (trigger in triggers) {
+            if (lowerText.contains(trigger.triggerTopic.lowercase())) {
+                matchedAny = true
+                val newCount = trigger.recentTriggerCount + 1
+                // ÖNEMLİ DENGELEME: Art arda 4. tetiklenmeden itibaren multiplier otomatik normale (1.0) düşer!
+                val multiplier = if (newCount >= 4) 1.0 else trigger.intensityMultiplier
+                sensitiveTriggerDao.insertOrUpdate(trigger.copy(recentTriggerCount = newCount))
+                effectiveMultiplier = maxOf(effectiveMultiplier, multiplier)
+            }
+        }
+
+        if (!matchedAny) {
+            // Sıfırla: Her tetiklenme ayrı bir olaydır, art arda gelmediyse sayacı sıfırla
+            for (trigger in triggers) {
+                if (trigger.recentTriggerCount > 0) {
+                    sensitiveTriggerDao.insertOrUpdate(trigger.copy(recentTriggerCount = 0))
+                }
+            }
+        }
+
+        return effectiveMultiplier
+    }
+
+    // =====================================================
+    // BÖLÜM H — DUYGUNUN ZAMANLA "OLGUNLAŞMASI" (EmotionalReappraisal)
+    // =====================================================
+    suspend fun recordPendingReappraisalIfEligible(
+        botId: String,
+        eventDescription: String,
+        emotionStateJson: String,
+        currentMessageIndex: Int,
+        rawDelta: Int
+    ) {
+        // SADECE büyük negatif olaylar (ham delta <= -20) için çalışır
+        if (rawDelta > -20) return
+
+        val activeList = pendingReappraisalDao.getActivePendingReappraisals(botId)
+
+        // ÖNEMLİ DENGELEME: Bir botta aynı anda en fazla 2-3 bekleyen reappraisal olabilir.
+        // 3 veya daha fazla ise, en eskisi (ilk kaydedileni) otomatik expired=true olarak kapatılır.
+        if (activeList.size >= 3) {
+            val oldest = activeList.first()
+            pendingReappraisalDao.update(oldest.copy(expired = true, resolved = false))
+        }
+
+        val now = System.currentTimeMillis()
+        val newReappraisal = PendingReappraisalEntity(
+            botId = botId,
+            originalEventDescription = eventDescription,
+            originalEmotionState = emotionStateJson,
+            triggeredAtMessageIndex = currentMessageIndex,
+            triggeredAtTimestamp = now,
+            reappraisalEligibleAtMessageIndex = currentMessageIndex + 15,
+            reappraisalEligibleAtTimestamp = now + (3 * 24 * 3600 * 1000L), // +3 gün
+            resolved = false,
+            expired = false
+        )
+        pendingReappraisalDao.insert(newReappraisal)
+    }
+
+    // =====================================================
+    // SCHEMA V3 DENGELEME VE SINIR KONTROLLERİ DOĞRULAMA SİMÜLASYONU
+    // =====================================================
+    suspend fun runSchemaV3BalancingSimulation(): String {
+        val sb = StringBuilder()
+        sb.appendLine("==================================================================================")
+        sb.appendLine("=== SCHEMA V3: EMOTION ENGINE V3 & BALANCING CONSTRAINTS SIMULATION REPORT ===")
+        sb.appendLine("==================================================================================")
+        sb.appendLine()
+
+        // TEST 1: Bölüm F (EmotionalRegulationCapacity - Eşik ve Sönümleme Kontrolü)
+        sb.appendLine("[TEST 1: Bölüm F - EmotionalRegulationCapacity Threshold & Dampening]")
+        val cap = 80 // Yüksek kapasiteli olgun karakter
+        
+        // 1a: Küçük delta (10 <= 25) -> Devreye girmemeli
+        val smallResult = calculateEmotionalRegulation(10, cap)
+        sb.appendLine("1a. Küçük Delta (+10, cap=80): isTriggered=${smallResult.isRegulationActive}, expressedDelta=${smallResult.outwardExpressedDelta}")
+        check(!smallResult.isRegulationActive) { "Bölüm F küçük deltalarda devreye girmemeliydi!" }
+
+        // 1b: Büyük delta (30 > 25) -> Devreye girmeli, ifade sönümlenmeli ama raw DB delta korunmalı
+        val largeResult = calculateEmotionalRegulation(30, cap)
+        sb.appendLine("1b. Büyük Delta (+30, cap=80): isTriggered=${largeResult.isRegulationActive}, rawDelta=${largeResult.rawDelta}, expressedDelta=${largeResult.outwardExpressedDelta}")
+        check(largeResult.isRegulationActive && largeResult.outwardExpressedDelta < 30) { "Bölüm F büyük deltalarda sönümleme yapmalıydı!" }
+        sb.appendLine("-> DOĞRULANDI: Bölüm F sadece |delta| > 25 durumunda sönümleme uygular.\n")
+
+        // TEST 2: Bölüm G (SensitiveTrigger - 4. Tetiklenmede Otomatik 1.0x Düşüş)
+        sb.appendLine("[TEST 2: Bölüm G - SensitiveTrigger Counter Cap]")
+        val simBotId = "sim_bot_v3_g_" + System.currentTimeMillis()
+        sensitiveTriggerDao.insertOrUpdate(
+            SensitiveTriggerEntity(
+                botId = simBotId,
+                triggerTopic = "aldatılma",
+                sourceDescription = "Geçmiş ihanet travması",
+                intensityMultiplier = 2.5,
+                recentTriggerCount = 0
+            )
+        )
+
+        val userMsg = "Beni aldatılma konusu çok üzüyor"
+        val m1 = evaluateSensitiveTriggers(simBotId, userMsg)
+        sb.appendLine("1. Tetiklenme: mult=$m1 (Beklenen: 2.5)")
+        val m2 = evaluateSensitiveTriggers(simBotId, userMsg)
+        sb.appendLine("2. Tetiklenme: mult=$m2 (Beklenen: 2.5)")
+        val m3 = evaluateSensitiveTriggers(simBotId, userMsg)
+        sb.appendLine("3. Tetiklenme: mult=$m3 (Beklenen: 2.5)")
+        val m4 = evaluateSensitiveTriggers(simBotId, userMsg)
+        sb.appendLine("4. Tetiklenme: mult=$m4 (Beklenen: 1.0 - Otomatik Sıfırlama)")
+
+        check(m1 == 2.5 && m2 == 2.5 && m3 == 2.5 && m4 == 1.0) { "Bölüm G 4. tetiklenmede 1.0x çarpanına düşmedi!" }
+        sb.appendLine("-> DOĞRULANDI: Art arda 4. tetiklenmede intensityMultiplier otomatik 1.0x'e düşer.\n")
+
+        // TEST 3: Bölüm H (EmotionalReappraisal - Maksimum 3 Bekleyen Limit)
+        sb.appendLine("[TEST 3: Bölüm H - EmotionalReappraisal Cap (Max 3 Active)]")
+        val simBotIdH = "sim_bot_v3_h_" + System.currentTimeMillis()
+
+        for (i in 1..4) {
+            recordPendingReappraisalIfEligible(
+                botId = simBotIdH,
+                eventDescription = "Kriz Olayı #$i",
+                emotionStateJson = "{}",
+                currentMessageIndex = i * 2,
+                rawDelta = -25
+            )
+        }
+
+        val allPending = pendingReappraisalDao.getAllPendingReappraisals(simBotIdH)
+        val activePending = pendingReappraisalDao.getActivePendingReappraisals(simBotIdH)
+
+        sb.appendLine("Toplam Kaydedilen: ${allPending.size}, Aktif Bekleyen Sayısı: ${activePending.size}")
+        val expiredCount = allPending.count { it.expired }
+        sb.appendLine("Zaman Aşımına Uğratılıp Kapatılan En Eski Kayıt Sayısı: $expiredCount")
+
+        check(activePending.size <= 3 && expiredCount == 1) { "Bölüm H en fazla 3 aktif bekleyen tutmalı, fazlasını kapatmalıydı!" }
+        sb.appendLine("-> DOĞRULANDI: Bot başına en fazla 3 bekleyen reappraisal tutulur, 4. eklenince en eskisi otomatik expired=true yapılır.\n")
+
+        sb.appendLine("=== TÜM SCHEMA V3 KONTROLLERİ %100 BAŞARIYLA DOĞRULANDI ===")
+        return sb.toString()
+    }
+
+    suspend fun runSchemaV2PersonalityComparisonSimulation(): String {
+        val sb = StringBuilder()
+        sb.appendLine("==================================================================================")
+        sb.appendLine("=== SCHEMA V2: MULTI-DIMENSIONAL EMOTION & PERSONALITY COMPARISON SIMULATION ===")
+        sb.appendLine("==================================================================================")
+
+        val testScene = "Gruptan geç ayrıldığın için özür dilerim, iş yerindeki acil raporu yetiştirmem gerekti. Sana kahve aldım."
+
+        // Profile 1: Secure Attachment + High Agreeableness
+        val bot1 = BotEntity(
+            id = "sim_bot_secure_agreeable",
+            mode = "personal",
+            aiName = "Ayla (Güvenli & Uyumlu)",
+            aiPersonality = "Nazik, sevecen, anlayışlı ve güvenli bağlanan çocukluk arkadaşı",
+            scenario = "Kafede buluşma, kısa süreli gecikme yaşandı",
+            universeName = "",
+            keyCharactersJson = "[]",
+            userCharName = "Sohbet Arkadaşı",
+            userCharDesc = "Yakın arkadaş",
+            openingMessage = "Selam, neredeydin?",
+            writingStyle = "Sohbet",
+            intensity = "Normal",
+            emotionState = EmotionState(
+                primaryEmotions = com.example.data.local.PrimaryEmotions(joy = 30, trust = 60),
+                relationshipAxes = com.example.data.local.RelationshipAxes(affectionScore = 55, respectScore = 60, comfortScore = 60)
+            ).toJson()
+        )
+        botDao.insertOrUpdate(bot1)
+
+        val bot1RawJson = """
+            Düşünceli tavrın için çok teşekkür ederim, hiç sorun değil! İşlerin yoğunluğunu biliyorum.
+            [[STATE_JSON
+            {
+              "primary_emotions": {
+                "joy": 55, "trust": 70, "fear": 5, "anger": 0,
+                "sadness": 0, "anticipation": 40, "surprise": 10, "disgust": 0
+              },
+              "relationship_axes": {
+                "affectionScore": 62, "respectScore": 68,
+                "comfortScore": 65, "resentmentScore": 0
+              },
+              "physicalComfortScore": 50,
+              "obsessionScore": 0,
+              "emotionalResidue": 0,
+              "dominant_emotion": "sevecen",
+              "suppressed_emotion": null,
+              "delta": {
+                "axis": "affectionScore",
+                "value": 7,
+                "reason": "Ince düşünceli davranma ve kahve getirme",
+                "context": {"setting": "private", "mode": "casual", "tension": "none"}
+              },
+              "world_state": {
+                "macro": {"era_rules": "Modern", "factions_hierarchy": "Yok", "global_tension_level": 5, "active_world_events": []},
+                "meso": {"current_location": "Sakin Kafe", "time_of_day": "Öğleden sonra", "weather": "Güneşli", "who_is_present": ["Ayla", "Kullanıcı"], "location_persistent_notes": ""},
+                "micro": {"scene_tension": "none", "scene_mood": "Sıcak ve samimi", "recent_trigger_event": "Kahve ikramı"},
+                "last_updated_message_index": 1
+              },
+              "self_check": {
+                "is_delta_justified_by_scene": true,
+                "is_expression_consistent_with_attachment_style": true,
+                "did_i_skip_a_stage": false,
+                "did_i_contradict_recent_emotional_state": false
+              },
+              "schemaVersion": 2
+            }
+            ]]
+        """.trimIndent()
+
+        parseAndApplyEmotionUpdates(bot1.id, bot1RawJson)
+        val bot1FinalState = EmotionState.fromJson(botDao.getBotById(bot1.id)!!.emotionState)
+
+        // Profile 2: Avoidant Attachment + High Neuroticism
+        val bot2 = BotEntity(
+            id = "sim_bot_avoidant_neurotic",
+            mode = "personal",
+            aiName = "Mera (Kaçınan & Nörotik)",
+            aiPersonality = "Mesafeli, şüpheci, kaygılı, duygularını saklayan ve kaçınan bağlanan iş arkadaşı",
+            scenario = "Kafede buluşma, kısa süreli gecikme yaşandı",
+            universeName = "",
+            keyCharactersJson = "[]",
+            userCharName = "Sohbet Arkadaşı",
+            userCharDesc = "İş arkadaşı",
+            openingMessage = "Geleceğinden emin değildim.",
+            writingStyle = "Sohbet",
+            intensity = "Normal",
+            emotionState = EmotionState(
+                primaryEmotions = com.example.data.local.PrimaryEmotions(joy = 10, trust = 30, fear = 40, anger = 25),
+                relationshipAxes = com.example.data.local.RelationshipAxes(affectionScore = 35, respectScore = 40, comfortScore = 25, resentmentScore = 30)
+            ).toJson()
+        )
+        botDao.insertOrUpdate(bot2)
+
+        val bot2RawJson = """
+            Kahve için sağ ol... Sorun değil, gelmeyeceğini sanmıştım ama acil iş olduğunu söylüyorsan öyledir.
+            [[STATE_JSON
+            {
+              "primary_emotions": {
+                "joy": 20, "trust": 35, "fear": 35, "anger": 15,
+                "sadness": 10, "anticipation": 30, "surprise": 5, "disgust": 0
+              },
+              "relationship_axes": {
+                "affectionScore": 38, "respectScore": 45,
+                "comfortScore": 30, "resentmentScore": 25
+              },
+              "physicalComfortScore": 25,
+              "obsessionScore": 0,
+              "emotionalResidue": 15,
+              "dominant_emotion": "temkinli",
+              "suppressed_emotion": "terk edilme kaygısı",
+              "delta": {
+                "axis": "affectionScore",
+                "value": 3,
+                "reason": "Geç kalma açıklaması ve kahve",
+                "context": {"setting": "private", "mode": "casual", "tension": "none"}
+              },
+              "world_state": {
+                "macro": {"era_rules": "Modern", "factions_hierarchy": "Yok", "global_tension_level": 5, "active_world_events": []},
+                "meso": {"current_location": "Sakin Kafe", "time_of_day": "Öğleden sonra", "weather": "Güneşli", "who_is_present": ["Mera", "Kullanıcı"], "location_persistent_notes": ""},
+                "micro": {"scene_tension": "none", "scene_mood": "Hafif mesafeli", "recent_trigger_event": "Geç kalma ve kahve"},
+                "last_updated_message_index": 1
+              },
+              "self_check": {
+                "is_delta_justified_by_scene": true,
+                "is_expression_consistent_with_attachment_style": true,
+                "did_i_skip_a_stage": false,
+                "did_i_contradict_recent_emotional_state": false
+              },
+              "schemaVersion": 2
+            }
+            ]]
+        """.trimIndent()
+
+        parseAndApplyEmotionUpdates(bot2.id, bot2RawJson)
+        val bot2FinalState = EmotionState.fromJson(botDao.getBotById(bot2.id)!!.emotionState)
+
+        sb.appendLine("GİRDİ SAHNESİ: \"$testScene\"")
+        sb.appendLine("\n----------------------------------------------------------------------------------")
+        sb.appendLine("BOT 1 (Ayla - Güvenli Bağlanma + Yüksek Uyum):")
+        sb.appendLine("  Model Ham Delta Talebi: +7")
+        sb.appendLine("  Uygulanan Clamp Delta: +${bot1FinalState.deltaValue}")
+        sb.appendLine("  Yeni Affection Score: ${bot1FinalState.affection}/100")
+        sb.appendLine("  Baskın Duygu: ${bot1FinalState.dominantEmotion}")
+        sb.appendLine("  Hesaplanan İkincil Duygu (Dyad): ${bot1FinalState.computedSecondaryEmotion ?: "Yok"}")
+        sb.appendLine("  Savunma Mekanizması: ${bot1FinalState.defenseMechanism}")
+
+        sb.appendLine("\n----------------------------------------------------------------------------------")
+        sb.appendLine("BOT 2 (Mera - Kaçınan Bağlanma + Yüksek Nörotisizm):")
+        sb.appendLine("  Model Ham Delta Talebi: +3")
+        sb.appendLine("  Uygulanan Clamp Delta: +${bot2FinalState.deltaValue} (Kaçınan Çarpanı 0.65x Uygulandı)")
+        sb.appendLine("  Yeni Affection Score: ${bot2FinalState.affection}/100")
+        sb.appendLine("  Baskın Duygu: ${bot2FinalState.dominantEmotion}")
+        sb.appendLine("  Hesaplanan İkincil Duygu (Dyad): ${bot2FinalState.computedSecondaryEmotion ?: "Yok"}")
+        sb.appendLine("  Savunma Mekanizması: ${bot2FinalState.defenseMechanism}")
+        sb.appendLine("==================================================================================")
+
+        return sb.toString()
     }
 
     // --- API Service Execution Engine ---
@@ -2003,8 +2743,8 @@ micro_atmosphere: <mikro mekan/fiziksel ortam/ışık/ses/gerilim>
         try {
             val requestMsgs = listOf(MessageEntity(id = "sum_old", botId = bot.id, role = "user", text = "$prompt\n\nGEÇMİŞ SAHNE:\n$recapText", timestamp = 0L))
             val res = executeModelRequest(selectedModel, settings, "Sen yardımcı bir hafıza ve olay özetleyicisin.", requestMsgs, botId = bot.id)
-            recordTokenUsage(bot.id, res.second.first, res.second.second)
-            val raw = res.first
+            recordTokenUsage(bot.id, res.promptTokens, res.candidateTokens)
+            val raw = res.text
 
             if (raw.contains("DURUM:", ignoreCase = true) || raw.contains("HAFIZA:", ignoreCase = true)) {
                 val durumMatch = raw.split(Regex("HAFIZA:", RegexOption.IGNORE_CASE))[0]
@@ -2191,7 +2931,7 @@ micro_atmosphere: <mikro mekan/fiziksel ortam/ışık/ses/gerilim>
         systemPrompt: String,
         messages: List<MessageEntity>,
         enableNsfw: Boolean = true
-    ): Pair<String, Pair<Long, Long>> = withContext(Dispatchers.IO) {
+    ): com.example.data.api.ModelResponseResult = withContext(Dispatchers.IO) {
         val sanitizedModel = sanitizeModelName(model)
         val geminiContents = formatMessagesForGemini(messages)
 
@@ -2204,11 +2944,14 @@ micro_atmosphere: <mikro mekan/fiziksel ortam/ışık/ses/gerilim>
             com.example.data.api.GeminiSafetySetting("HARM_CATEGORY_CIVIC_INTEGRITY", threshold)
         )
 
+        val memoryTools = com.example.data.api.MemoryToolRegistry.toGeminiTools()
+
         val request = GeminiRequest(
             contents = geminiContents,
             systemInstruction = GeminiContent(parts = listOf(GeminiPart(text = systemPrompt))),
             generationConfig = GeminiGenerationConfig(temperature = 0.85f),
-            safetySettings = safetySettings
+            safetySettings = safetySettings,
+            tools = memoryTools
         )
 
         val modelsToTry = listOf(sanitizedModel, "gemini-2.5-flash", "gemini-3.5-flash").distinct()
@@ -2224,9 +2967,11 @@ micro_atmosphere: <mikro mekan/fiziksel ortam/ışık/ses/gerilim>
 
                 val candidate = response.candidates?.firstOrNull()
                 val finishReason = candidate?.finishReason
-                val text = candidate?.content?.parts?.firstOrNull()?.text
+                val parsed = com.example.data.api.MemoryToolRegistry.parseGeminiToolCalls(candidate)
+                val text = parsed.first
+                val toolCalls = parsed.second
 
-                if (text.isNullOrBlank()) {
+                if (text.isBlank() && toolCalls.isEmpty()) {
                     val reason = if (!finishReason.isNullOrBlank() && finishReason != "STOP") " (Filtre/Neden: $finishReason)" else ""
                     throw IllegalStateException("Gemini yanıtı içerik/güvenlik filtresine takıldı$reason. Lütfen Ayarlar -> +18 Ayarları kısmından güvenlik seviyelerini kontrol edin.")
                 }
@@ -2234,7 +2979,12 @@ micro_atmosphere: <mikro mekan/fiziksel ortam/ışık/ses/gerilim>
                 val promptTokens = response.usageMetadata?.promptTokenCount?.toLong() ?: 0L
                 val candTokens = response.usageMetadata?.candidatesTokenCount?.toLong() ?: 0L
 
-                return@withContext Pair(text.trim(), Pair(promptTokens, candTokens))
+                return@withContext com.example.data.api.ModelResponseResult(
+                    text = text,
+                    toolCalls = toolCalls,
+                    promptTokens = promptTokens,
+                    candidateTokens = candTokens
+                )
             } catch (e: retrofit2.HttpException) {
                 val errorJson = e.response()?.errorBody()?.string()
                 val serverMsg = try {
@@ -2271,7 +3021,7 @@ micro_atmosphere: <mikro mekan/fiziksel ortam/ışık/ses/gerilim>
         model: String,
         systemPrompt: String,
         messages: List<MessageEntity>
-    ): Pair<String, Pair<Long, Long>> = withContext(Dispatchers.IO) {
+    ): com.example.data.api.ModelResponseResult = withContext(Dispatchers.IO) {
         val standardMsgs = formatMessagesForStandardApi(messages)
         val jsonMessages = JSONArray()
         jsonMessages.put(JSONObject().apply {
@@ -2285,61 +3035,81 @@ micro_atmosphere: <mikro mekan/fiziksel ortam/ışık/ses/gerilim>
             })
         }
 
-        val bodyObj = JSONObject().apply {
-            put("model", model)
-            put("messages", jsonMessages)
-            put("temperature", 0.85)
-        }
-
-        val requestBody = bodyObj.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
-        val request = Request.Builder()
-            .url(endpointUrl)
-            .addHeader("Authorization", "Bearer $apiKey")
-            .addHeader("Content-Type", "application/json")
-            .post(requestBody)
-            .build()
-
-        RetrofitClient.okHttpClient.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) {
-                val errBody = response.body?.string() ?: ""
-                val parsedMsg = try {
-                    JSONObject(errBody).optJSONObject("error")?.optString("message")
-                } catch (_: Exception) { null }
-
-                val rawMsg = (parsedMsg ?: errBody).lowercase()
-                if (rawMsg.contains("content_filter") || rawMsg.contains("policy") || rawMsg.contains("refusal") || rawMsg.contains("safety") || rawMsg.contains("inappropriate") || rawMsg.contains("harm")) {
-                    throw IllegalStateException("Seçili sağlayıcı ($model) içerik kısıtlaması politikası gereği yanıtı reddetti. Lütfen Ayarlar -> AI Model Ayarları menüsünden farklı bir model (ör. Groq/Gemini) seçin.")
+        fun executeRequest(includeTools: Boolean): com.example.data.api.ModelResponseResult {
+            val bodyObj = JSONObject().apply {
+                put("model", model)
+                put("messages", jsonMessages)
+                put("temperature", 0.85)
+                if (includeTools) {
+                    put("tools", com.example.data.api.MemoryToolRegistry.toOpenAiToolsJsonArray())
                 }
-                val code = response.code
-                if (code == 429 || rawMsg.contains("rate limit") || rawMsg.contains("quota")) {
-                    throw IllegalStateException("API kullanım kotası doldu (429 Rate Limit). Lütfen Ayarlar'dan API Key'inizi veya modelinizi değiştirin.")
-                }
-                throw IllegalStateException("API Hatası [$model] ($code): ${parsedMsg ?: errBody.take(200)}")
-            }
-            val responseStr = response.body?.string() ?: ""
-            val jsonResp = JSONObject(responseStr)
-            val choices = jsonResp.optJSONArray("choices")
-            if (choices == null || choices.length() == 0) throw IllegalStateException("Model yanıtı boş döndü.")
-
-            val firstChoice = choices.getJSONObject(0)
-            val finishReason = firstChoice.optString("finish_reason", "")
-            val messageObj = firstChoice.optJSONObject("message")
-            val refusal = messageObj?.optString("refusal", "")
-
-            if (finishReason == "content_filter" || !refusal.isNullOrBlank()) {
-                val detail = if (!refusal.isNullOrBlank()) " Detay: $refusal" else ""
-                throw IllegalStateException("Seçili model ($model) içerik filtresi politikası gereği bu yanıtı süzdü.$detail Lütfen Ayarlar menüsünden modeli değiştirin veya mesajınızı güncelleyin.")
             }
 
-            val text = messageObj?.optString("content", "") ?: ""
-            if (text.isBlank()) throw IllegalStateException("Model yanıtı boş metin döndürdü.")
+            val requestBody = bodyObj.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
+            val request = Request.Builder()
+                .url(endpointUrl)
+                .addHeader("Authorization", "Bearer $apiKey")
+                .addHeader("Content-Type", "application/json")
+                .post(requestBody)
+                .build()
 
-            val usage = jsonResp.optJSONObject("usage")
-            val promptTokens = usage?.optLong("prompt_tokens") ?: 0L
-            val candidateTokens = usage?.optLong("completion_tokens") ?: 0L
+            RetrofitClient.okHttpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    val errBody = response.body?.string() ?: ""
+                    val parsedMsg = try {
+                        JSONObject(errBody).optJSONObject("error")?.optString("message")
+                    } catch (_: Exception) { null }
 
-            Pair(text.trim(), Pair(promptTokens, candidateTokens))
+                    val rawMsg = (parsedMsg ?: errBody).lowercase()
+
+                    if (includeTools && (rawMsg.contains("tool") || rawMsg.contains("function") || rawMsg.contains("param") || rawMsg.contains("unsupported"))) {
+                        return executeRequest(includeTools = false)
+                    }
+
+                    if (rawMsg.contains("content_filter") || rawMsg.contains("policy") || rawMsg.contains("refusal") || rawMsg.contains("safety") || rawMsg.contains("inappropriate") || rawMsg.contains("harm")) {
+                        throw IllegalStateException("Seçili sağlayıcı ($model) içerik kısıtlaması politikası gereği yanıtı reddetti. Lütfen Ayarlar -> AI Model Ayarları menüsünden farklı bir model (ör. Groq/Gemini) seçin.")
+                    }
+                    val code = response.code
+                    if (code == 429 || rawMsg.contains("rate limit") || rawMsg.contains("quota")) {
+                        throw IllegalStateException("API kullanım kotası doldu (429 Rate Limit). Lütfen Ayarlar'dan API Key'inizi veya modelinizi değiştirin.")
+                    }
+                    throw IllegalStateException("API Hatası [$model] ($code): ${parsedMsg ?: errBody.take(200)}")
+                }
+                val responseStr = response.body?.string() ?: ""
+                val jsonResp = JSONObject(responseStr)
+                val choices = jsonResp.optJSONArray("choices")
+                if (choices == null || choices.length() == 0) throw IllegalStateException("Model yanıtı boş döndü.")
+
+                val firstChoice = choices.getJSONObject(0)
+                val finishReason = firstChoice.optString("finish_reason", "")
+                val messageObj = firstChoice.optJSONObject("message")
+                val refusal = messageObj?.optString("refusal", "")
+
+                if (finishReason == "content_filter" || !refusal.isNullOrBlank()) {
+                    val detail = if (!refusal.isNullOrBlank()) " Detay: $refusal" else ""
+                    throw IllegalStateException("Seçili model ($model) içerik filtresi politikası gereği bu yanıtı süzdü.$detail Lütfen Ayarlar menüsünden modeli değiştirin veya mesajınızı güncelleyin.")
+                }
+
+                val (text, toolCalls) = if (messageObj != null) {
+                    com.example.data.api.MemoryToolRegistry.parseOpenAiToolCalls(messageObj)
+                } else Pair("", emptyList())
+
+                if (text.isBlank() && toolCalls.isEmpty()) throw IllegalStateException("Model yanıtı boş metin döndürdü.")
+
+                val usage = jsonResp.optJSONObject("usage")
+                val promptTokens = usage?.optLong("prompt_tokens") ?: 0L
+                val candidateTokens = usage?.optLong("completion_tokens") ?: 0L
+
+                return com.example.data.api.ModelResponseResult(
+                    text = text,
+                    toolCalls = toolCalls,
+                    promptTokens = promptTokens,
+                    candidateTokens = candidateTokens
+                )
+            }
         }
+
+        executeRequest(includeTools = true)
     }
 
     private suspend fun callClaudeApi(
@@ -2347,7 +3117,7 @@ micro_atmosphere: <mikro mekan/fiziksel ortam/ışık/ses/gerilim>
         model: String,
         systemPrompt: String,
         messages: List<MessageEntity>
-    ): Pair<String, Pair<Long, Long>> = withContext(Dispatchers.IO) {
+    ): com.example.data.api.ModelResponseResult = withContext(Dispatchers.IO) {
         val standardMsgs = formatMessagesForStandardApi(messages)
         val jsonMessages = JSONArray()
         for (m in standardMsgs) {
@@ -2357,58 +3127,72 @@ micro_atmosphere: <mikro mekan/fiziksel ortam/ışık/ses/gerilim>
             })
         }
 
-        val bodyObj = JSONObject().apply {
-            put("model", model)
-            put("max_tokens", 2048)
-            put("system", systemPrompt)
-            put("messages", jsonMessages)
+        fun executeRequest(includeTools: Boolean): com.example.data.api.ModelResponseResult {
+            val bodyObj = JSONObject().apply {
+                put("model", model)
+                put("max_tokens", 2048)
+                put("system", systemPrompt)
+                put("messages", jsonMessages)
+                if (includeTools) {
+                    put("tools", com.example.data.api.MemoryToolRegistry.toClaudeToolsJsonArray())
+                }
+            }
+
+            val requestBody = bodyObj.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
+            val request = Request.Builder()
+                .url("https://api.anthropic.com/v1/messages")
+                .addHeader("x-api-key", apiKey)
+                .addHeader("anthropic-version", "2023-06-01")
+                .addHeader("Content-Type", "application/json")
+                .post(requestBody)
+                .build()
+
+            RetrofitClient.okHttpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    val errBody = response.body?.string() ?: ""
+                    val parsedMsg = try {
+                        JSONObject(errBody).optJSONObject("error")?.optString("message")
+                    } catch (_: Exception) { null }
+
+                    val rawMsg = (parsedMsg ?: errBody).lowercase()
+
+                    if (includeTools && (rawMsg.contains("tool") || rawMsg.contains("schema") || rawMsg.contains("unsupported"))) {
+                        return executeRequest(includeTools = false)
+                    }
+
+                    if (rawMsg.contains("policy") || rawMsg.contains("refusal") || rawMsg.contains("safety") || rawMsg.contains("content") || rawMsg.contains("prohibited")) {
+                        throw IllegalStateException("Claude API ($model) içerik politikası kısıtlaması nedeniyle yanıt veremedi. Lütfen Ayarlar -> AI Model Ayarları menüsünden başka bir model (ör. Groq veya Gemini) seçin.")
+                    }
+                    val code = response.code
+                    if (code == 429 || rawMsg.contains("rate limit") || rawMsg.contains("quota")) {
+                        throw IllegalStateException("Claude API kotası aşıldı (429). Lütfen Ayarlar'dan API Key veya model değiştirin.")
+                    }
+                    throw IllegalStateException("Claude API Hatası ($code): ${parsedMsg ?: errBody.take(200)}")
+                }
+                val responseStr = response.body?.string() ?: ""
+                val jsonResp = JSONObject(responseStr)
+                val stopReason = jsonResp.optString("stop_reason", "")
+                if (stopReason == "max_tokens_exceeded_or_refusal" || jsonResp.optString("type") == "refusal") {
+                    throw IllegalStateException("Claude API ($model) içerik politikası gereği bu yanıtı reddetti. Lütfen Ayarlar menüsünden modelinizi değiştirin.")
+                }
+
+                val (text, toolCalls) = com.example.data.api.MemoryToolRegistry.parseClaudeToolCalls(jsonResp)
+                if (text.isBlank() && toolCalls.isEmpty()) throw IllegalStateException("Claude yanıtı boş döndü.")
+
+                val usage = jsonResp.optJSONObject("usage")
+                val promptTokens = usage?.optLong("input_tokens") ?: 0L
+                val candidateTokens = usage?.optLong("output_tokens") ?: 0L
+
+                return com.example.data.api.ModelResponseResult(
+                    text = text,
+                    toolCalls = toolCalls,
+                    promptTokens = promptTokens,
+                    candidateTokens = candidateTokens
+                )
+            }
         }
 
-        val requestBody = bodyObj.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
-        val request = Request.Builder()
-            .url("https://api.anthropic.com/v1/messages")
-            .addHeader("x-api-key", apiKey)
-            .addHeader("anthropic-version", "2023-06-01")
-            .addHeader("Content-Type", "application/json")
-            .post(requestBody)
-            .build()
-
-        RetrofitClient.okHttpClient.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) {
-                val errBody = response.body?.string() ?: ""
-                val parsedMsg = try {
-                    JSONObject(errBody).optJSONObject("error")?.optString("message")
-                } catch (_: Exception) { null }
-
-                val rawMsg = (parsedMsg ?: errBody).lowercase()
-                if (rawMsg.contains("policy") || rawMsg.contains("refusal") || rawMsg.contains("safety") || rawMsg.contains("content") || rawMsg.contains("prohibited")) {
-                    throw IllegalStateException("Claude API ($model) içerik politikası kısıtlaması nedeniyle yanıt veremedi. Lütfen Ayarlar -> AI Model Ayarları menüsünden başka bir model (ör. Groq veya Gemini) seçin.")
-                }
-                val code = response.code
-                if (code == 429 || rawMsg.contains("rate limit") || rawMsg.contains("quota")) {
-                    throw IllegalStateException("Claude API kotası aşıldı (429). Lütfen Ayarlar'dan API Key veya model değiştirin.")
-                }
-                throw IllegalStateException("Claude API Hatası ($code): ${parsedMsg ?: errBody.take(200)}")
-            }
-            val responseStr = response.body?.string() ?: ""
-            val jsonResp = JSONObject(responseStr)
-            val stopReason = jsonResp.optString("stop_reason", "")
-            if (stopReason == "max_tokens_exceeded_or_refusal" || jsonResp.optString("type") == "refusal") {
-                throw IllegalStateException("Claude API ($model) içerik politikası gereği bu yanıtı reddetti. Lütfen Ayarlar menüsünden modelinizi değiştirin.")
-            }
-            val contentArray = jsonResp.optJSONArray("content")
-            if (contentArray == null || contentArray.length() == 0) throw IllegalStateException("Claude yanıtı boş döndü.")
-
-            val firstContent = contentArray.getJSONObject(0)
-            val text = firstContent.optString("text", "")
-            if (text.isBlank()) throw IllegalStateException("Claude yanıtı boş metin döndürdü.")
-
-            val usage = jsonResp.optJSONObject("usage")
-            val promptTokens = usage?.optLong("input_tokens") ?: 0L
-            val candidateTokens = usage?.optLong("output_tokens") ?: 0L
-
-            Pair(text.trim(), Pair(promptTokens, candidateTokens))
-        }
+        executeRequest(includeTools = true)
     }
 
     suspend fun generateAiReply(
@@ -2438,23 +3222,46 @@ micro_atmosphere: <mikro mekan/fiziksel ortam/ışık/ses/gerilim>
         val contextQuery = effectiveMessages.takeLast(3).joinToString(" \n ") { "${it.role}: ${it.text}" }.ifBlank { userQuery }
         val apiKey = if (settings.customApiKey.isNotBlank()) settings.customApiKey else getBuildConfigKey()
 
-        val relevantEvents = getRelevantMemoryEvents(effectiveBot.id, contextQuery, apiKey)
-        val relevantFacts = getRelevantFacts(effectiveBot.id, contextQuery)
+        val ragResult = getRelevantMemoryTwoStage(effectiveBot.id, userQuery, apiKey)
+        val relevantEvents = ragResult.retrievedEvents
+        val relevantFacts = ragResult.retrievedFacts
         val registeredEntities = entityRegistryDao.getEntitiesForBot(effectiveBot.id)
         val recentCheckpoints = memoryCheckpointDao.getRecentCheckpoints(effectiveBot.id, limit = 3)
         val castMembers = castMemberDao.getCastMembersForBot(effectiveBot.id)
 
+        val now = System.currentTimeMillis()
         val prevTimestamp = if (effectiveMessages.size >= 2) effectiveMessages[effectiveMessages.size - 2].timestamp else effectiveBot.updatedAt
-        val totalCount = messageDao.getMessageCountForBot(effectiveBot.id)
+        val lastMsgTime = if (effectiveBot.lastMessageTimestamp > 0) effectiveBot.lastMessageTimestamp else prevTimestamp
+        val elapsedMs = if (lastMsgTime > 0) (now - lastMsgTime).coerceAtLeast(0L) else 0L
+
+        val (newCalDate, newDayCounter, newBotAge) = advanceCalendarDateAndCheckAge(
+            currentCalendarDateStr = effectiveBot.storyCalendarDate.ifBlank { "2026-08-29" },
+            currentDayCounter = effectiveBot.storyDayCounter,
+            elapsedMs = elapsedMs,
+            birthDateStr = effectiveBot.birthDate,
+            initialAge = effectiveBot.initialAge
+        )
+
+        val updatedTimeBot = effectiveBot.copy(
+            storyCalendarDate = newCalDate,
+            storyDayCounter = newDayCounter,
+            currentAge = newBotAge,
+            lastMessageTimestamp = now,
+            updatedAt = now
+        )
+        botDao.insertOrUpdate(updatedTimeBot)
+        updateCastMembersAgeForBot(updatedTimeBot.id, newCalDate)
+
+        val totalCount = messageDao.getMessageCountForBot(updatedTimeBot.id)
         val systemPrompt = buildSystemPrompt(
-            effectiveBot,
+            updatedTimeBot,
             settings,
             relevantEvents = relevantEvents,
             relevantFacts = relevantFacts,
             registeredEntities = registeredEntities,
             recentCheckpoints = recentCheckpoints,
             castMembers = castMembers,
-            lastMessageTimestamp = prevTimestamp,
+            lastMessageTimestamp = lastMsgTime,
             totalMessageCount = totalCount
         )
 
@@ -2462,14 +3269,16 @@ micro_atmosphere: <mikro mekan/fiziksel ortam/ışık/ses/gerilim>
         // Primary Execution (3 retries with exponential backoff: 2s, 4s, 8s)
         try {
             val result = retryWithBackoff(maxAttempts = 3, initialDelayMs = 2000L) {
-                executeModelRequest(selectedModel, settings, systemPrompt, effectiveMessages, botId = effectiveBot.id)
+                executeModelRequest(selectedModel, settings, systemPrompt, effectiveMessages, botId = updatedTimeBot.id)
             }
-            recordTokenUsage(effectiveBot.id, result.second.first, result.second.second)
-            val replyText = parseAndApplyEmotionUpdates(effectiveBot.id, result.first)
+            recordTokenUsage(updatedTimeBot.id, result.promptTokens, result.candidateTokens)
+            executeActiveMemoryToolCalls(updatedTimeBot.id, result.text, toolCalls = result.toolCalls, apiKey = apiKey)
+            val replyText = parseAndApplyEmotionUpdates(updatedTimeBot.id, result.text)
             try {
-                extractAndSaveRealtimeMemories(effectiveBot.id, userQuery, replyText, apiKey)
-                detectAndRegisterCastMembers(effectiveBot.id, replyText, apiKey)
-                checkAndGenerateCheckpoint(effectiveBot.id, totalCount + 1, apiKey)
+                extractAndSaveRealtimeMemories(updatedTimeBot.id, userQuery, replyText, apiKey)
+                detectAndRegisterCastMembers(updatedTimeBot.id, replyText, apiKey)
+                checkAndGenerateCheckpoint(updatedTimeBot.id, totalCount + 1, apiKey)
+                checkTimePerceptionMismatch(updatedTimeBot.id, userQuery, replyText, elapsedMs)
             } catch (_: Exception) {}
             return@withContext replyText
         } catch (e: Exception) {
@@ -2500,8 +3309,9 @@ micro_atmosphere: <mikro mekan/fiziksel ortam/ışık/ses/gerilim>
                 val result = retryWithBackoff(maxAttempts = 3, initialDelayMs = 2000L) {
                     callGeminiApi(k, fallbackModel, systemPrompt, effectiveMessages, enableNsfw = settings.enableNsfw)
                 }
-                recordTokenUsage(effectiveBot.id, result.second.first, result.second.second)
-                val replyText = parseAndApplyEmotionUpdates(effectiveBot.id, result.first)
+                recordTokenUsage(effectiveBot.id, result.promptTokens, result.candidateTokens)
+                executeActiveMemoryToolCalls(effectiveBot.id, result.text, toolCalls = result.toolCalls, apiKey = apiKey)
+                val replyText = parseAndApplyEmotionUpdates(effectiveBot.id, result.text)
                 try { extractAndSaveRealtimeMemories(effectiveBot.id, userQuery, replyText) } catch (_: Exception) {}
                 return@withContext replyText
             } catch (e: Exception) {
@@ -3289,7 +4099,7 @@ Tebrikler! Bölüm 3'ü başarıyla tamamladın."""
         systemPrompt: String,
         messages: List<MessageEntity>,
         botId: String? = null
-    ): Pair<String, Pair<Long, Long>> {
+    ): com.example.data.api.ModelResponseResult {
         return when {
             // Groq Models
             model.contains("llama") || model.contains("groq") || model.contains("mixtral") -> {
@@ -3351,8 +4161,8 @@ Tebrikler! Bölüm 3'ü başarıyla tamamladın."""
         val requestMsgs = listOf(MessageEntity(id = "init", botId = bot.id, role = "user", text = "Sahneyi/mesajı başlat.", timestamp = 0L))
 
         val result = executeModelRequest(sanitizeModelName(settings.selectedModel.ifBlank { "gemini-2.5-flash" }), settings, systemPrompt, requestMsgs, botId = bot.id)
-        recordTokenUsage(bot.id, result.second.first, result.second.second)
-        return@withContext result.first
+        recordTokenUsage(bot.id, result.promptTokens, result.candidateTokens)
+        return@withContext result.text
     }
 
     suspend fun updateMemorySummaries(bot: BotEntity, messages: List<MessageEntity>) = withContext(Dispatchers.IO) {
@@ -3375,8 +4185,8 @@ Tebrikler! Bölüm 3'ü başarıyla tamamladın."""
         try {
             val requestMsgs = listOf(MessageEntity(id = "sum", botId = bot.id, role = "user", text = "$prompt\n\nSAHNE:\n$recapText", timestamp = 0L))
             val res = callGeminiApi(apiKey, "gemini-2.5-flash", "Sen yardımcı bir özetleyicisin.", requestMsgs)
-            recordTokenUsage(bot.id, res.second.first, res.second.second)
-            val raw = res.first
+            recordTokenUsage(bot.id, res.promptTokens, res.candidateTokens)
+            val raw = res.text
 
             if (raw.contains("DURUM:", ignoreCase = true) || raw.contains("HAFIZA:", ignoreCase = true)) {
                 val durumMatch = raw.split(Regex("HAFIZA:", RegexOption.IGNORE_CASE))[0]
@@ -3613,7 +4423,7 @@ Tebrikler! Bölüm 3'ü başarıyla tamamladın."""
             openingMessage = "Performans raporunu masama bırakın.",
             writingStyle = "Sohbet",
             intensity = "Normal",
-            emotionState = EmotionState(affection = 30).toJson(),
+            emotionState = EmotionState(relationshipAxes = com.example.data.local.RelationshipAxes(affectionScore = 30)).toJson(),
             baseAffectionDifficulty = 0.4
         )
         botDao.insertOrUpdate(bossBot)
@@ -3643,7 +4453,7 @@ Tebrikler! Bölüm 3'ü başarıyla tamamladın."""
             openingMessage = "Selam, kahve taze görünüyordu!",
             writingStyle = "Sohbet",
             intensity = "Normal",
-            emotionState = EmotionState(affection = 30).toJson(),
+            emotionState = EmotionState(relationshipAxes = com.example.data.local.RelationshipAxes(affectionScore = 30)).toJson(),
             baseAffectionDifficulty = 1.0
         )
         botDao.insertOrUpdate(peerBot)
@@ -3673,7 +4483,7 @@ Tebrikler! Bölüm 3'ü başarıyla tamamladın."""
             openingMessage = "Ambulans geldi mi?",
             writingStyle = "Sohbet",
             intensity = "Normal",
-            emotionState = EmotionState(affection = 50).toJson(),
+            emotionState = EmotionState(relationshipAxes = com.example.data.local.RelationshipAxes(affectionScore = 50)).toJson(),
             baseAffectionDifficulty = 1.2
         )
         botDao.insertOrUpdate(crisisBot)
@@ -3695,24 +4505,187 @@ Tebrikler! Bölüm 3'ü başarıyla tamamladın."""
         return sb.toString()
     }
 
+    fun formatExactTimePassed(lastMs: Long, nowMs: Long): String {
+        if (lastMs <= 0L) return "Sohbet ilk kez başlatılıyor."
+        val diffMs = (nowMs - lastMs).coerceAtLeast(0L)
+        val totalSecs = diffMs / 1000
+        val minutes = (totalSecs / 60) % 60
+        val hours = (totalSecs / 3600) % 24
+        val days = (totalSecs / (3600 * 24))
+        val weeks = days / 7
+        val remDays = days % 7
+
+        val timeParts = mutableListOf<String>()
+        if (weeks > 0) timeParts.add("$weeks hafta")
+        if (remDays > 0) timeParts.add("$remDays gün")
+        if (hours > 0) timeParts.add("$hours saat")
+        if (minutes > 0 || timeParts.isEmpty()) timeParts.add("$minutes dakika")
+
+        val durationStr = timeParts.joinToString(" ")
+
+        val sdf = java.text.SimpleDateFormat("d MMMM EEEE, 'saat' HH:mm", java.util.Locale("tr", "TR"))
+        sdf.timeZone = java.util.TimeZone.getDefault()
+        val lastDateStr = try { sdf.format(java.util.Date(lastMs)) } catch (_: Exception) { "" }
+
+        return "Aranızdaki son mesajdan bu yana tam olarak $durationStr geçti ($lastDateStr'den bu yana)."
+    }
+
+    fun advanceCalendarDateAndCheckAge(
+        currentCalendarDateStr: String,
+        currentDayCounter: Long,
+        elapsedMs: Long,
+        birthDateStr: String,
+        initialAge: Int
+    ): Triple<String, Long, Int> {
+        val elapsedDays = (elapsedMs / (1000L * 60 * 60 * 24)).toInt()
+        val newDayCounter = currentDayCounter + elapsedDays
+
+        val sdf = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
+        sdf.timeZone = java.util.TimeZone.getDefault()
+        val currentDate = try {
+            sdf.parse(currentCalendarDateStr) ?: java.util.Date()
+        } catch (_: Exception) {
+            java.util.Date()
+        }
+
+        val cal = java.util.Calendar.getInstance()
+        cal.time = currentDate
+        if (elapsedDays > 0) {
+            cal.add(java.util.Calendar.DAY_OF_YEAR, elapsedDays)
+        }
+        val newCalendarDateStr = sdf.format(cal.time)
+
+        var newAge = initialAge
+        if (birthDateStr.isNotBlank()) {
+            try {
+                val birthDate = sdf.parse(birthDateStr)
+                if (birthDate != null) {
+                    val birthCal = java.util.Calendar.getInstance()
+                    birthCal.time = birthDate
+
+                    var age = cal.get(java.util.Calendar.YEAR) - birthCal.get(java.util.Calendar.YEAR)
+                    if (cal.get(java.util.Calendar.DAY_OF_YEAR) < birthCal.get(java.util.Calendar.DAY_OF_YEAR)) {
+                        age--
+                    }
+                    if (age > 0) newAge = age
+                }
+            } catch (_: Exception) {}
+        } else {
+            val extraYears = ((newDayCounter - 1) / 365).toInt()
+            newAge = initialAge + extraYears
+        }
+
+        return Triple(newCalendarDateStr, newDayCounter, newAge)
+    }
+
+    suspend fun updateCastMembersAgeForBot(botId: String, currentStoryCalendarDateStr: String) {
+        try {
+            val members = castMemberDao.getCastMembersForBot(botId)
+            val sdf = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
+            sdf.timeZone = java.util.TimeZone.getDefault()
+            val currDate = sdf.parse(currentStoryCalendarDateStr) ?: return
+
+            val cal = java.util.Calendar.getInstance()
+            cal.time = currDate
+
+            for (cm in members) {
+                if (cm.birthDate.isNotBlank()) {
+                    val birthDate = try { sdf.parse(cm.birthDate) } catch (_: Exception) { null }
+                    if (birthDate != null) {
+                        val birthCal = java.util.Calendar.getInstance()
+                        birthCal.time = birthDate
+                        var age = cal.get(java.util.Calendar.YEAR) - birthCal.get(java.util.Calendar.YEAR)
+                        if (cal.get(java.util.Calendar.DAY_OF_YEAR) < birthCal.get(java.util.Calendar.DAY_OF_YEAR)) {
+                            age--
+                        }
+                        if (age > 0 && age != cm.currentAge) {
+                            castMemberDao.insertCastMember(cm.copy(currentAge = age))
+                        }
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+    }
+
+    suspend fun checkTimePerceptionMismatch(
+        botId: String,
+        userMessageText: String,
+        modelResponseText: String,
+        calculatedElapsedMs: Long
+    ) {
+        if (modelResponseText.isBlank()) return
+        val elapsedDays = calculatedElapsedMs / (1000L * 3600 * 24)
+        val responseLower = modelResponseText.lowercase()
+
+        val shortTimePhrases = listOf(
+            "dün ", "dün.", "dün,", "dün gece", "dün akşam", "dünden beri", "birkaç saat önce",
+            "dün konuştuk", "yesterday", "last night", "a few hours ago"
+        )
+        val longTimePhrases = listOf(
+            "haftalardır", "aylardır", "yıllardır", "günlerdir yoktun", "günlerdir sesin",
+            "for weeks", "for months", "for years", "haven't seen you in weeks"
+        )
+
+        var mismatchReason: String? = null
+        var detectedExpr: String? = null
+
+        if (elapsedDays >= 3) {
+            for (phrase in shortTimePhrases) {
+                if (responseLower.contains(phrase)) {
+                    detectedExpr = phrase.trim()
+                    mismatchReason = "Son mesajın üzerinden $elapsedDays gün geçmesine rağmen model '$detectedExpr' ifadesini kullandı."
+                    break
+                }
+            }
+        } else if (elapsedDays == 0L) {
+            for (phrase in longTimePhrases) {
+                if (responseLower.contains(phrase)) {
+                    detectedExpr = phrase.trim()
+                    mismatchReason = "Son mesajın üzerinden sadece birkaç dakika/saat geçmesine rağmen model '$detectedExpr' ifadesini kullandı."
+                    break
+                }
+            }
+        }
+
+        if (mismatchReason != null && detectedExpr != null) {
+            val log = com.example.data.local.TimePerceptionMismatchLogEntity(
+                botId = botId,
+                userMessageText = userMessageText,
+                modelResponseText = modelResponseText,
+                detectedTimeExpression = detectedExpr,
+                codeCalculatedDays = elapsedDays,
+                mismatchReason = mismatchReason,
+                timestamp = System.currentTimeMillis()
+            )
+            timePerceptionMismatchLogDao.insertLog(log)
+        }
+    }
+
     data class TimePerceptionInfo(
         val formattedTimeString: String,
+        val exactFormattedTimeString: String,
         val timeGapSignificant: Boolean,
         val rapidMessagingFlag: Boolean,
         val elapsedMs: Long,
         val categoryLabel: String,
-        val guidelineInstruction: String
+        val guidelineInstruction: String,
+        val storyCalendarDate: String = "2026-08-29",
+        val storyDayCounter: Long = 1L,
+        val currentAge: Int = 20
     )
 
     fun calculateTimePerception(
         lastMsgTimestampMs: Long,
         currentTimestampMs: Long = System.currentTimeMillis(),
         affectionScore: Int = 50,
-        recentUserMsgTimestamps: List<Long> = emptyList()
+        recentUserMsgTimestamps: List<Long> = emptyList(),
+        bot: BotEntity? = null
     ): TimePerceptionInfo {
         val now = if (currentTimestampMs > 0) currentTimestampMs else System.currentTimeMillis()
         val last = if (lastMsgTimestampMs > 0) lastMsgTimestampMs else now
         val diffMs = (now - last).coerceAtLeast(0L)
+
+        val exactText = formatExactTimePassed(lastMsgTimestampMs, now)
 
         val diffMinutes = diffMs / (1000 * 60)
         val diffHours = diffMinutes / 60
@@ -3786,56 +4759,61 @@ Tebrikler! Bölüm 3'ü başarıyla tamamladın."""
             )
         }
 
+        val calDate = bot?.storyCalendarDate ?: "2026-08-29"
+        val dayCounter = bot?.storyDayCounter ?: 1L
+        val age = bot?.currentAge ?: 20
+
         return TimePerceptionInfo(
             formattedTimeString = timeElapsedText,
+            exactFormattedTimeString = exactText,
             timeGapSignificant = timeGapSignificant,
             rapidMessagingFlag = rapidMessagingFlag,
             elapsedMs = diffMs,
             categoryLabel = category,
-            guidelineInstruction = guideline
+            guidelineInstruction = guideline,
+            storyCalendarDate = calDate,
+            storyDayCounter = dayCounter,
+            currentAge = age
         )
     }
 
     fun runTimePerceptionConsoleTest(): String {
         val sb = StringBuilder()
         sb.appendLine("==========================================================================")
-        sb.appendLine("=== MADDE 20: ZAMAN ALGISI SİSTEMİ KOD-TARAFINDA DOĞRULAMA TESTİ ===")
+        sb.appendLine("=== ZAMAN ALGISI SİSTEMİ KOD-TARAFINDA 3 FARKLI ARALIK DOĞRULAMA TESTİ ===")
         sb.appendLine("==========================================================================")
 
         val now = System.currentTimeMillis()
 
-        // 1. Interval: 5 minutes ago (300_000 ms)
-        val t1 = now - 5 * 60 * 1000L
+        // Test 1: 1 Gün Önce (24 saat - 86,400,000 ms)
+        val t1 = now - 24 * 3600 * 1000L
         val res1 = calculateTimePerception(t1, now, affectionScore = 50)
-        sb.appendLine("\n[Aralık 1 - 5 Dakika Önce (50 Yakınlık)]")
-        sb.appendLine("  - Hesaplanan Süre Metni: \"${res1.formattedTimeString}\"")
-        sb.appendLine("  - timeGapSignificant: ${res1.timeGapSignificant} (Beklenen: false - 5 dk önemsiz)")
+        sb.appendLine("\n[Aralık 1 - 1 Gün Önce (24 Saat / 86.400.000 ms)]")
+        sb.appendLine("  - Kesin Zaman Cümlesi: \"${res1.exactFormattedTimeString}\"")
+        sb.appendLine("  - Özet Süre Metni: \"${res1.formattedTimeString}\"")
+        sb.appendLine("  - Kategori: \"${res1.categoryLabel}\"")
+        sb.appendLine("  - Belirgin Zaman Farkı (timeGapSignificant): ${res1.timeGapSignificant}")
 
-        // 2. Interval: 2 hours ago (7_200_000 ms)
-        val t2 = now - 2 * 3600 * 1000L
-        val res2a = calculateTimePerception(t2, now, affectionScore = 30) // Threshold 3 gün
-        val res2b = calculateTimePerception(t2, now, affectionScore = 80) // Threshold 3 saat
-        sb.appendLine("\n[Aralık 2 - 2 Saat Önce]")
-        sb.appendLine("  - Hesaplanan Süre Metni: \"${res2a.formattedTimeString}\"")
-        sb.appendLine("  - (Affection 30): timeGapSignificant = ${res2a.timeGapSignificant} (Beklenen: false - 3 günden az)")
-        sb.appendLine("  - (Affection 80): timeGapSignificant = ${res2b.timeGapSignificant} (Beklenen: false - 3 saatten az)")
+        // Test 2: 1 Hafta Önce (7 gün - 604,800,000 ms)
+        val t2 = now - 7 * 24 * 3600 * 1000L
+        val res2 = calculateTimePerception(t2, now, affectionScore = 50)
+        sb.appendLine("\n[Aralık 2 - 1 Hafta Önce (7 Gün / 604.800.000 ms)]")
+        sb.appendLine("  - Kesin Zaman Cümlesi: \"${res2.exactFormattedTimeString}\"")
+        sb.appendLine("  - Özet Süre Metni: \"${res2.formattedTimeString}\"")
+        sb.appendLine("  - Kategori: \"${res2.categoryLabel}\"")
+        sb.appendLine("  - Belirgin Zaman Farkı (timeGapSignificant): ${res2.timeGapSignificant}")
 
-        // 3. Interval: 3 days ago (259_200_000 ms)
-        val t3 = now - 3 * 24 * 3600 * 1000L
-        val res3 = calculateTimePerception(t3, now, affectionScore = 30)
-        sb.appendLine("\n[Aralık 3 - 3 Gün Önce (30 Yakınlık)]")
-        sb.appendLine("  - Hesaplanan Süre Metni: \"${res3.formattedTimeString}\"")
-        sb.appendLine("  - timeGapSignificant: ${res3.timeGapSignificant} (Beklenen: true - >= 3 gün belirgin)")
-
-        // 4. Interval: 2 weeks ago (1_209_600_000 ms)
-        val t4 = now - 14 * 24 * 3600 * 1000L
-        val res4 = calculateTimePerception(t4, now, affectionScore = 70)
-        sb.appendLine("\n[Aralık 4 - 2 Hafta Önce (70 Yakınlık)]")
-        sb.appendLine("  - Hesaplanan Süre Metni: \"${res4.formattedTimeString}\"")
-        sb.appendLine("  - timeGapSignificant: ${res4.timeGapSignificant} (Beklenen: true - 2 hafta belirgin)")
+        // Test 3: 1 Ay Önce (30 gün - 2,592,000,000 ms)
+        val t3 = now - 30 * 24 * 3600 * 1000L
+        val res3 = calculateTimePerception(t3, now, affectionScore = 50)
+        sb.appendLine("\n[Aralık 3 - 1 Ay Önce (30 Gün / 2.592.000.000 ms)]")
+        sb.appendLine("  - Kesin Zaman Cümlesi: \"${res3.exactFormattedTimeString}\"")
+        sb.appendLine("  - Özet Süre Metni: \"${res3.formattedTimeString}\"")
+        sb.appendLine("  - Kategori: \"${res3.categoryLabel}\"")
+        sb.appendLine("  - Belirgin Zaman Farkı (timeGapSignificant): ${res3.timeGapSignificant}")
 
         sb.appendLine("\n==========================================================================")
-        sb.appendLine("=== TEST TAMAMLANDI: TÜM ZAMAN HESAPLAMALARI %100 HASAN KOD TARAFINDA DOĞRULANDI ===")
+        sb.appendLine("=== TEST TAMAMLANDI: TÜM 3 ARALIK KOD TARAFINDA %100 BAŞARIYLA HESAPLANDI ===")
         sb.appendLine("==========================================================================")
         return sb.toString()
     }

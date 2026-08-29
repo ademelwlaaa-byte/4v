@@ -16,7 +16,11 @@ data class MemoryEventEntity(
     val description: String,
     val importanceScore: Int = 50,     // 0 - 100
     val embedding: String = "",         // JSON serialized List<Float>
-    val supersededBy: Long? = null
+    val supersededBy: Long? = null,
+    val isBotSaved: Boolean = true,
+    val realWorldTimestamp: Long = System.currentTimeMillis(),
+    val storyDayIndex: Long = 1L,
+    val storyCalendarDateStr: String = ""
 )
 
 @Dao
@@ -38,4 +42,7 @@ interface MemoryEventDao {
 
     @Query("DELETE FROM memory_events WHERE id IN (SELECT id FROM memory_events WHERE botId = :botId AND supersededBy IS NULL AND importanceScore < 80 ORDER BY timestamp ASC LIMIT :limit)")
     suspend fun deleteOldestLowImportanceEvents(botId: String, limit: Int)
+
+    @Query("DELETE FROM memory_events WHERE id = :id")
+    suspend fun deleteEvent(id: Long)
 }

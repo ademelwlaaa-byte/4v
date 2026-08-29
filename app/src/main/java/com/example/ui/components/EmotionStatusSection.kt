@@ -37,7 +37,7 @@ import com.example.data.local.AffectionEventEntity
 import com.example.data.local.BotEntity
 import com.example.data.local.CharacterEmotionEntity
 import com.example.data.local.EmotionState
-import com.example.data.local.WorldAtmosphere
+import com.example.data.local.WorldState
 import com.example.ui.theme.EmochiBorder
 import com.example.ui.theme.EmochiCard
 import com.example.ui.theme.EmochiPrimary
@@ -54,7 +54,7 @@ fun EmotionStatusSection(
 ) {
     val emotion = remember(bot.emotionState) { EmotionState.fromJson(bot.emotionState) }
     val isUniverse = bot.mode == "universe"
-    val worldAtmosphere = remember(bot.worldAtmosphere) { WorldAtmosphere.fromJson(bot.worldAtmosphere) }
+    val worldState = remember(bot.worldAtmosphere) { WorldState.fromJson(bot.worldAtmosphere) }
     var showTimeline by remember { mutableStateOf(false) }
 
     Card(
@@ -138,8 +138,8 @@ fun EmotionStatusSection(
             Spacer(modifier = Modifier.height(8.dp))
 
             EmotionBarItem(
-                label = "Gerginlik / Stres (Tension)",
-                value = emotion.tension,
+                label = "Gerginlik / Stres (${emotion.tension})",
+                value = when (emotion.tension.lowercase()) { "crisis" -> 100; "conflict" -> 50; else -> 0 },
                 maxValue = 100,
                 color = Color(0xFFFFB302),
                 icon = "⚡"
@@ -228,32 +228,32 @@ fun EmotionStatusSection(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Text("Genel Hava: ${worldAtmosphere.getMoodEmoji()} ${worldAtmosphere.mood.replaceFirstChar { it.uppercase() }}", color = EmochiTextPrimary, fontSize = 11.5.sp)
-                    Text("Şiddet: ${worldAtmosphere.intensity}/10", color = EmochiTextMuted, fontSize = 11.5.sp)
+                    Text("Mekan: ${worldState.meso.currentLocation.ifBlank { "Bilinmiyor" }}", color = EmochiTextPrimary, fontSize = 11.5.sp)
+                    Text("Gerilim: ${worldState.micro.sceneTension.uppercase()}", color = EmochiTextMuted, fontSize = 11.5.sp)
                 }
 
-                if (worldAtmosphere.macroAtmosphere.isNotBlank()) {
+                if (worldState.macro.eraRules.isNotBlank()) {
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "🌐 Makro Evren Düzeni: ${worldAtmosphere.macroAtmosphere}",
+                        text = "🌐 Makro Kurallar: ${worldState.macro.eraRules}",
                         color = EmochiTextSecondary,
                         fontSize = 11.sp
                     )
                 }
 
-                if (worldAtmosphere.microAtmosphere.isNotBlank()) {
+                if (worldState.meso.locationPersistentNotes.isNotBlank()) {
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "🏢 Mikro Mekan & Ortam: ${worldAtmosphere.microAtmosphere}",
+                        text = "🏢 Mekan Notları: ${worldState.meso.locationPersistentNotes}",
                         color = EmochiTextSecondary,
                         fontSize = 11.sp
                     )
                 }
 
-                if (worldAtmosphere.currentEvent.isNotBlank()) {
+                if (worldState.micro.sceneMood.isNotBlank()) {
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "⚡ Mevcut Olay: ${worldAtmosphere.currentEvent}",
+                        text = "⚡ Sahnede Hava: ${worldState.micro.sceneMood}",
                         color = EmochiPrimary,
                         fontSize = 11.sp
                     )
