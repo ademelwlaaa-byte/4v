@@ -98,6 +98,100 @@ class EmochiViewModel(application: Application) : AndroidViewModel(application) 
             initialValue = emptyList()
         )
 
+    val customProviders: StateFlow<List<com.example.data.local.CustomProviderEntity>> = db.customProviderDao().getAllProvidersFlow()
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.Eagerly,
+            initialValue = emptyList()
+        )
+
+    suspend fun testCustomProviderConnection(
+        baseUrl: String,
+        apiKey: String,
+        modelName: String,
+        apiFormat: String
+    ): EmochiRepository.ProviderTestResult {
+        return repository.testCustomProviderConnection(baseUrl, apiKey, modelName, apiFormat)
+    }
+
+    fun saveCustomProvider(
+        label: String,
+        baseUrl: String,
+        apiKey: String,
+        modelName: String,
+        apiFormat: String,
+        supportsFunctionCalling: Boolean
+    ) {
+        viewModelScope.launch {
+            val encryptedKey = com.example.util.KeystoreEncryptionManager.encrypt(apiKey.trim())
+            val entity = com.example.data.local.CustomProviderEntity(
+                label = label.ifBlank { modelName },
+                baseUrl = baseUrl.trim(),
+                apiKeyEncrypted = encryptedKey,
+                modelName = modelName.trim(),
+                apiFormat = apiFormat,
+                supportsFunctionCalling = supportsFunctionCalling
+            )
+            val newId = db.customProviderDao().insertProvider(entity)
+            val currentSettings = repository.getOrCreateSettings()
+            updateSettings(currentSettings.copy(selectedProvider = "custom_$newId", selectedModel = modelName.trim()))
+        }
+    }
+
+    fun updateCustomProviderModel(id: Long, newModelName: String) {
+        viewModelScope.launch {
+            val existing = db.customProviderDao().getProviderById(id) ?: return@launch
+            val updated = existing.copy(modelName = newModelName.trim())
+            db.customProviderDao().updateProvider(updated)
+            val currentSettings = repository.getOrCreateSettings()
+            if (currentSettings.selectedProvider == "custom_$id") {
+                updateSettings(currentSettings.copy(selectedModel = newModelName.trim()))
+            }
+        }
+    }
+
+    fun updateCustomProviderFull(
+        id: Long,
+        label: String,
+        baseUrl: String,
+        apiKey: String?,
+        modelName: String,
+        apiFormat: String,
+        supportsFunctionCalling: Boolean
+    ) {
+        viewModelScope.launch {
+            val existing = db.customProviderDao().getProviderById(id) ?: return@launch
+            val finalEncryptedKey = if (!apiKey.isNullOrBlank()) {
+                com.example.util.KeystoreEncryptionManager.encrypt(apiKey.trim())
+            } else {
+                existing.apiKeyEncrypted
+            }
+            val updated = existing.copy(
+                label = label.ifBlank { modelName },
+                baseUrl = baseUrl.trim(),
+                apiKeyEncrypted = finalEncryptedKey,
+                modelName = modelName.trim(),
+                apiFormat = apiFormat,
+                supportsFunctionCalling = supportsFunctionCalling
+            )
+            db.customProviderDao().updateProvider(updated)
+            val currentSettings = repository.getOrCreateSettings()
+            if (currentSettings.selectedProvider == "custom_$id") {
+                updateSettings(currentSettings.copy(selectedModel = modelName.trim()))
+            }
+        }
+    }
+
+    fun deleteCustomProvider(id: Long) {
+        viewModelScope.launch {
+            db.customProviderDao().deleteProvider(id)
+            val currentSettings = repository.getOrCreateSettings()
+            if (currentSettings.selectedProvider == "custom_$id") {
+                updateSettings(currentSettings.copy(selectedProvider = "gemini"))
+            }
+        }
+    }
+
     private val _isSending = MutableStateFlow(false)
     val isSending: StateFlow<Boolean> = _isSending.asStateFlow()
 

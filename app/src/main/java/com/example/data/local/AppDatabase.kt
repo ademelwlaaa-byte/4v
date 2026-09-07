@@ -184,6 +184,23 @@ val MIGRATION_23_24 = object : Migration(23, 24) {
     }
 }
 
+val MIGRATION_24_25 = object : Migration(24, 25) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `custom_providers` (" +
+                "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                "`label` TEXT NOT NULL, " +
+                "`baseUrl` TEXT NOT NULL, " +
+                "`apiKeyEncrypted` TEXT NOT NULL, " +
+                "`modelName` TEXT NOT NULL, " +
+                "`apiFormat` TEXT NOT NULL DEFAULT 'openai', " +
+                "`supportsFunctionCalling` INTEGER NOT NULL DEFAULT 1, " +
+                "`createdAt` INTEGER NOT NULL" +
+                ")"
+        )
+    }
+}
+
 @Database(
     entities = [
         BotEntity::class,
@@ -206,9 +223,10 @@ val MIGRATION_23_24 = object : Migration(23, 24) {
         SensitiveTriggerEntity::class,
         PendingReappraisalEntity::class,
         ActiveMemoryCallLogEntity::class,
-        TimePerceptionMismatchLogEntity::class
+        TimePerceptionMismatchLogEntity::class,
+        CustomProviderEntity::class
     ],
-    version = 24,
+    version = 25,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -232,6 +250,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun pendingReappraisalDao(): PendingReappraisalDao
     abstract fun activeMemoryCallLogDao(): ActiveMemoryCallLogDao
     abstract fun timePerceptionMismatchLogDao(): TimePerceptionMismatchLogDao
+    abstract fun customProviderDao(): CustomProviderDao
 
     companion object {
         @Volatile
@@ -259,7 +278,8 @@ abstract class AppDatabase : RoomDatabase() {
                         MIGRATION_20_21,
                         MIGRATION_21_22,
                         MIGRATION_22_23,
-                        MIGRATION_23_24
+                        MIGRATION_23_24,
+                        MIGRATION_24_25
                     )
                     .fallbackToDestructiveMigration(dropAllTables = true)
                     .build()

@@ -1389,7 +1389,15 @@ class EmochiRepository(
                     l.startsWith("[[state")
         }
 
-        return cleanLines.joinToString("\n").trim()
+        val cleaned = cleanLines.joinToString("\n").trim()
+        if (cleaned.isNotBlank()) return cleaned
+
+        val basicClean = rawText
+            .replace(Regex("""(?is)\[\[STATE_JSON\s*\{.*?\}\s*\]\]"""), "")
+            .replace(Regex("""(?is)```(?:json)?.*?```"""), "")
+            .trim()
+
+        return if (basicClean.isNotBlank()) basicClean else rawText.take(500)
     }
 
     suspend fun mergeDuplicateCharacterEmotions(botId: String) {
@@ -2021,6 +2029,30 @@ micro_atmosphere: <mikro mekan/fiziksel ortam/ışık/ses/gerilim>
             val worldObj = jsonObj.optJSONObject("world_state")
             if (worldObj != null) {
                 parsedWorldState = com.example.data.local.WorldState.fromJson(worldObj.toString())
+            }
+
+            val storySkipObj = jsonObj.optJSONObject("story_time_skip")
+            if (storySkipObj != null && storySkipObj.optBoolean("detected", false)) {
+                val amountStr = storySkipObj.optString("amount", "")
+                val daysToSkip = parseDaysToSkip(amountStr)
+                if (daysToSkip > 0) {
+                    val skipElapsedMs = daysToSkip * 24 * 3600 * 1000L
+                    val (newDate, newDayCounter, newAge) = advanceCalendarDateAndCheckAge(
+                        currentCalendarDateStr = bot.storyCalendarDate.ifBlank { "2026-08-29" },
+                        currentDayCounter = bot.storyDayCounter,
+                        elapsedMs = skipElapsedMs,
+                        birthDateStr = bot.birthDate,
+                        initialAge = bot.initialAge
+                    )
+                    botDao.insertOrUpdate(
+                        bot.copy(
+                            storyCalendarDate = newDate,
+                            storyDayCounter = newDayCounter,
+                            currentAge = newAge
+                        )
+                    )
+                    updateCastMembersAgeForBot(bot.id, newDate)
+                }
             }
 
             val scObj = jsonObj.optJSONObject("self_check")
@@ -3015,6 +3047,42 @@ micro_atmosphere: <mikro mekan/fiziksel ortam/ışık/ses/gerilim>
         throw lastException ?: IllegalStateException("Gemini API çağrısı başarısız oldu. Lütfen Ayarlar'dan API Key'inizi kontrol edin.")
     }
 
+    private suspend fun fetchAvailableModels(endpointUrl: String, apiKey: String): List<String> = withContext(Dispatchers.IO) {
+        try {
+            val modelsUrl = when {
+                endpointUrl.contains("/chat/completions") -> endpointUrl.replace("/chat/completions", "/models")
+                endpointUrl.contains("/messages") -> endpointUrl.replace("/messages", "/models")
+                endpointUrl.endsWith("/") -> "${endpointUrl}models"
+                else -> "$endpointUrl/models"
+            }
+            val request = Request.Builder()
+                .url(modelsUrl)
+                .addHeader("Authorization", "Bearer $apiKey")
+                .addHeader("x-api-key", apiKey)
+                .get()
+                .build()
+            RetrofitClient.okHttpClient.newCall(request).execute().use { resp ->
+                if (resp.isSuccessful) {
+                    val str = resp.body?.string() ?: ""
+                    val json = JSONObject(str)
+                    val data = json.optJSONArray("data")
+                    val list = mutableListOf<String>()
+                    if (data != null) {
+                        for (i in 0 until data.length()) {
+                            val item = data.getJSONObject(i)
+                            val id = item.optString("id")
+                            if (id.isNotBlank()) list.add(id)
+                        }
+                    }
+                    return@withContext list
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("EmochiRepository", "Sunucu modelleri sorgulanırken hata: ${e.message}")
+        }
+        return@withContext emptyList()
+    }
+
     private suspend fun callOpenAiCompatibleApi(
         endpointUrl: String,
         apiKey: String,
@@ -3035,9 +3103,9 @@ micro_atmosphere: <mikro mekan/fiziksel ortam/ışık/ses/gerilim>
             })
         }
 
-        fun executeRequest(includeTools: Boolean): com.example.data.api.ModelResponseResult {
+        fun executeRequest(targetModel: String, includeTools: Boolean): com.example.data.api.ModelResponseResult {
             val bodyObj = JSONObject().apply {
-                put("model", model)
+                put("model", targetModel)
                 put("messages", jsonMessages)
                 put("temperature", 0.85)
                 if (includeTools) {
@@ -3063,17 +3131,40 @@ micro_atmosphere: <mikro mekan/fiziksel ortam/ışık/ses/gerilim>
                     val rawMsg = (parsedMsg ?: errBody).lowercase()
 
                     if (includeTools && (rawMsg.contains("tool") || rawMsg.contains("function") || rawMsg.contains("param") || rawMsg.contains("unsupported"))) {
-                        return executeRequest(includeTools = false)
+                        return executeRequest(targetModel = targetModel, includeTools = false)
                     }
 
                     if (rawMsg.contains("content_filter") || rawMsg.contains("policy") || rawMsg.contains("refusal") || rawMsg.contains("safety") || rawMsg.contains("inappropriate") || rawMsg.contains("harm")) {
-                        throw IllegalStateException("Seçili sağlayıcı ($model) içerik kısıtlaması politikası gereği yanıtı reddetti. Lütfen Ayarlar -> AI Model Ayarları menüsünden farklı bir model (ör. Groq/Gemini) seçin.")
+                        throw IllegalStateException("Seçili sağlayıcı ($targetModel) içerik kısıtlaması politikası gereği yanıtı reddetti. Lütfen Ayarlar -> AI Model Ayarları menüsünden farklı bir model (ör. Groq/Gemini) seçin.")
                     }
                     val code = response.code
                     if (code == 429 || rawMsg.contains("rate limit") || rawMsg.contains("quota")) {
                         throw IllegalStateException("API kullanım kotası doldu (429 Rate Limit). Lütfen Ayarlar'dan API Key'inizi veya modelinizi değiştirin.")
                     }
-                    throw IllegalStateException("API Hatası [$model] ($code): ${parsedMsg ?: errBody.take(200)}")
+
+                    // Otomatik Model Düzeltme & Fallback Kontrolü:
+                    // Eğer kullanıcının yazdığı model bulunamadıysa (404 veya model_not_found vb.):
+                    val isModelNotFoundError = code == 404 ||
+                            (rawMsg.contains("model") && (rawMsg.contains("not found") || rawMsg.contains("not_found") || rawMsg.contains("does not exist") || rawMsg.contains("invalid") || rawMsg.contains("unknown") || rawMsg.contains("no such model")))
+
+                    if (isModelNotFoundError && targetModel == model) {
+                        val availableModels = kotlinx.coroutines.runBlocking { fetchAvailableModels(endpointUrl, apiKey) }
+                        val discoveredModel = availableModels.firstOrNull { m ->
+                            m.contains("chat") || m.contains("instruct") || m.contains("llama") || m.contains("gpt") || m.contains("gemini") || m.contains("qwen") || m.contains("deepseek") || m.contains("mistral")
+                        } ?: availableModels.firstOrNull()
+
+                        val fallbackToUse = discoveredModel ?: when {
+                            endpointUrl.contains("groq.com") -> "llama-3.3-70b-versatile"
+                            endpointUrl.contains("deepseek.com") -> "deepseek-chat"
+                            endpointUrl.contains("openai.com") -> "gpt-4o-mini"
+                            else -> "meta-llama/llama-3.3-70b-instruct"
+                        }
+
+                        android.util.Log.w("EmochiRepository", "Yazılan model '$model' bulunamadı. Sunucudaki '$fallbackToUse' modeli otomatik kullanılıyor...")
+                        return executeRequest(targetModel = fallbackToUse, includeTools = includeTools)
+                    }
+
+                    throw IllegalStateException("API Hatası [$targetModel] ($code): ${parsedMsg ?: errBody.take(200)}")
                 }
                 val responseStr = response.body?.string() ?: ""
                 val jsonResp = JSONObject(responseStr)
@@ -3087,7 +3178,7 @@ micro_atmosphere: <mikro mekan/fiziksel ortam/ışık/ses/gerilim>
 
                 if (finishReason == "content_filter" || !refusal.isNullOrBlank()) {
                     val detail = if (!refusal.isNullOrBlank()) " Detay: $refusal" else ""
-                    throw IllegalStateException("Seçili model ($model) içerik filtresi politikası gereği bu yanıtı süzdü.$detail Lütfen Ayarlar menüsünden modeli değiştirin veya mesajınızı güncelleyin.")
+                    throw IllegalStateException("Seçili model ($targetModel) içerik filtresi politikası gereği bu yanıtı süzdü.$detail Lütfen Ayarlar menüsünden modeli değiştirin veya mesajınızı güncelleyin.")
                 }
 
                 val (text, toolCalls) = if (messageObj != null) {
@@ -3109,14 +3200,15 @@ micro_atmosphere: <mikro mekan/fiziksel ortam/ışık/ses/gerilim>
             }
         }
 
-        executeRequest(includeTools = true)
+        executeRequest(targetModel = model, includeTools = true)
     }
 
     private suspend fun callClaudeApi(
         apiKey: String,
         model: String,
         systemPrompt: String,
-        messages: List<MessageEntity>
+        messages: List<MessageEntity>,
+        baseUrl: String = "https://api.anthropic.com/v1/messages"
     ): com.example.data.api.ModelResponseResult = withContext(Dispatchers.IO) {
         val standardMsgs = formatMessagesForStandardApi(messages)
         val jsonMessages = JSONArray()
@@ -3138,10 +3230,17 @@ micro_atmosphere: <mikro mekan/fiziksel ortam/ışık/ses/gerilim>
                 }
             }
 
+            val endpointUrl = when {
+                baseUrl.endsWith("/messages") -> baseUrl
+                baseUrl.endsWith("/") -> "${baseUrl}messages"
+                else -> "$baseUrl/messages"
+            }
+
             val requestBody = bodyObj.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
             val request = Request.Builder()
-                .url("https://api.anthropic.com/v1/messages")
+                .url(endpointUrl)
                 .addHeader("x-api-key", apiKey)
+                .addHeader("Authorization", "Bearer $apiKey")
                 .addHeader("anthropic-version", "2023-06-01")
                 .addHeader("Content-Type", "application/json")
                 .post(requestBody)
@@ -4100,6 +4199,36 @@ Tebrikler! Bölüm 3'ü başarıyla tamamladın."""
         messages: List<MessageEntity>,
         botId: String? = null
     ): com.example.data.api.ModelResponseResult {
+        if (settings.selectedProvider.startsWith("custom_")) {
+            val customId = settings.selectedProvider.removePrefix("custom_").toLongOrNull()
+            val customProvider = if (customId != null) db.customProviderDao().getProviderById(customId) else null
+            if (customProvider != null) {
+                val apiKey = com.example.util.KeystoreEncryptionManager.decrypt(customProvider.apiKeyEncrypted)
+                return if (customProvider.apiFormat == "anthropic") {
+                    callClaudeApi(
+                        apiKey = apiKey,
+                        model = customProvider.modelName,
+                        systemPrompt = systemPrompt,
+                        messages = messages,
+                        baseUrl = customProvider.baseUrl
+                    )
+                } else {
+                    val endpointUrl = when {
+                        customProvider.baseUrl.endsWith("/chat/completions") -> customProvider.baseUrl
+                        customProvider.baseUrl.endsWith("/") -> "${customProvider.baseUrl}chat/completions"
+                        else -> "${customProvider.baseUrl}/chat/completions"
+                    }
+                    callOpenAiCompatibleApi(
+                        endpointUrl = endpointUrl,
+                        apiKey = apiKey,
+                        model = customProvider.modelName,
+                        systemPrompt = systemPrompt,
+                        messages = messages
+                    )
+                }
+            }
+        }
+
         return when {
             // Groq Models
             model.contains("llama") || model.contains("groq") || model.contains("mixtral") -> {
@@ -4816,6 +4945,211 @@ Tebrikler! Bölüm 3'ü başarıyla tamamladın."""
         sb.appendLine("=== TEST TAMAMLANDI: TÜM 3 ARALIK KOD TARAFINDA %100 BAŞARIYLA HESAPLANDI ===")
         sb.appendLine("==========================================================================")
         return sb.toString()
+    }
+
+    fun parseDaysToSkip(amountStr: String): Int {
+        val lower = amountStr.lowercase().trim()
+        if (lower.isBlank()) return 0
+
+        val numberRegex = Regex("""\d+""")
+        val num = numberRegex.find(lower)?.value?.toIntOrNull()
+
+        return when {
+            lower.contains("gün") || lower.contains("day") -> num ?: 1
+            lower.contains("hafta") || lower.contains("week") -> (num ?: 1) * 7
+            lower.contains("ay") || lower.contains("month") -> (num ?: 1) * 30
+            lower.contains("yıl") || lower.contains("year") -> (num ?: 1) * 365
+            lower.contains("ertesi") || lower.contains("gece") || lower.contains("sabah") || lower.contains("akşam") -> 1
+            else -> num ?: 1
+        }
+    }
+
+    data class ProviderTestResult(
+        val isSuccess: Boolean,
+        val supportsFunctionCalling: Boolean,
+        val errorMessage: String
+    )
+
+    suspend fun testCustomProviderConnection(
+        baseUrl: String,
+        apiKey: String,
+        modelName: String,
+        apiFormat: String
+    ): ProviderTestResult = withContext(Dispatchers.IO) {
+        val trimmedUrl = baseUrl.trim()
+        val trimmedKey = apiKey.trim()
+        val trimmedModel = modelName.trim()
+
+        if (!trimmedUrl.startsWith("https://")) {
+            return@withContext ProviderTestResult(
+                isSuccess = false,
+                supportsFunctionCalling = false,
+                errorMessage = "Base URL 'https://' ile başlamalıdır. Güvenlik ve SSL zorunludur."
+            )
+        }
+        if (trimmedKey.isBlank()) {
+            return@withContext ProviderTestResult(
+                isSuccess = false,
+                supportsFunctionCalling = false,
+                errorMessage = "API Key boş olamaz."
+            )
+        }
+        if (trimmedModel.isBlank()) {
+            return@withContext ProviderTestResult(
+                isSuccess = false,
+                supportsFunctionCalling = false,
+                errorMessage = "Model Adı boş olamaz."
+            )
+        }
+
+        try {
+            var functionCallingSupported = false
+            val formattedUrl = when {
+                apiFormat == "anthropic" -> {
+                    if (trimmedUrl.endsWith("/messages")) trimmedUrl
+                    else if (trimmedUrl.endsWith("/")) "${trimmedUrl}messages"
+                    else "$trimmedUrl/messages"
+                }
+                else -> {
+                    if (trimmedUrl.endsWith("/chat/completions")) trimmedUrl
+                    else if (trimmedUrl.endsWith("/")) "${trimmedUrl}chat/completions"
+                    else "$trimmedUrl/chat/completions"
+                }
+            }
+
+            if (apiFormat == "anthropic") {
+                val body = JSONObject().apply {
+                    put("model", trimmedModel)
+                    put("max_tokens", 10)
+                    put("messages", JSONArray().put(JSONObject().apply {
+                        put("role", "user")
+                        put("content", "test")
+                    }))
+                    put("tools", com.example.data.api.MemoryToolRegistry.toClaudeToolsJsonArray())
+                }
+
+                val request = Request.Builder()
+                    .url(formattedUrl)
+                    .addHeader("x-api-key", trimmedKey)
+                    .addHeader("Authorization", "Bearer $trimmedKey")
+                    .addHeader("anthropic-version", "2023-06-01")
+                    .addHeader("Content-Type", "application/json")
+                    .post(body.toString().toRequestBody("application/json".toMediaType()))
+                    .build()
+
+                RetrofitClient.okHttpClient.newCall(request).execute().use { resp ->
+                    if (!resp.isSuccessful) {
+                        val err = resp.body?.string() ?: ""
+                        val code = resp.code
+                        val msg = try { JSONObject(err).optJSONObject("error")?.optString("message") } catch (_: Exception) { null }
+
+                        // Try without tools
+                        val noToolsBody = JSONObject().apply {
+                            put("model", trimmedModel)
+                            put("max_tokens", 10)
+                            put("messages", JSONArray().put(JSONObject().apply {
+                                put("role", "user")
+                                put("content", "test")
+                            }))
+                        }
+                        val noToolsReq = Request.Builder()
+                            .url(formattedUrl)
+                            .addHeader("x-api-key", trimmedKey)
+                            .addHeader("Authorization", "Bearer $trimmedKey")
+                            .addHeader("anthropic-version", "2023-06-01")
+                            .addHeader("Content-Type", "application/json")
+                            .post(noToolsBody.toString().toRequestBody("application/json".toMediaType()))
+                            .build()
+
+                        RetrofitClient.okHttpClient.newCall(noToolsReq).execute().use { noToolsResp ->
+                            if (!noToolsResp.isSuccessful) {
+                                val noToolsErr = noToolsResp.body?.string() ?: ""
+                                val noToolsCode = noToolsResp.code
+                                val noToolsMsg = try { JSONObject(noToolsErr).optJSONObject("error")?.optString("message") } catch (_: Exception) { null }
+                                return@withContext ProviderTestResult(
+                                    isSuccess = false,
+                                    supportsFunctionCalling = false,
+                                    errorMessage = "Anthropic API Hatası ($noToolsCode): ${noToolsMsg ?: noToolsErr.take(250)}"
+                                )
+                            } else {
+                                functionCallingSupported = false
+                            }
+                        }
+                    } else {
+                        functionCallingSupported = true
+                    }
+                }
+            } else {
+                val body = JSONObject().apply {
+                    put("model", trimmedModel)
+                    put("max_tokens", 10)
+                    put("messages", JSONArray().put(JSONObject().apply {
+                        put("role", "user")
+                        put("content", "test")
+                    }))
+                    put("tools", com.example.data.api.MemoryToolRegistry.toOpenAiToolsJsonArray())
+                }
+
+                val request = Request.Builder()
+                    .url(formattedUrl)
+                    .addHeader("Authorization", "Bearer $trimmedKey")
+                    .addHeader("Content-Type", "application/json")
+                    .post(body.toString().toRequestBody("application/json".toMediaType()))
+                    .build()
+
+                RetrofitClient.okHttpClient.newCall(request).execute().use { resp ->
+                    if (!resp.isSuccessful) {
+                        val err = resp.body?.string() ?: ""
+                        val code = resp.code
+
+                        // Try without tools
+                        val noToolsBody = JSONObject().apply {
+                            put("model", trimmedModel)
+                            put("max_tokens", 10)
+                            put("messages", JSONArray().put(JSONObject().apply {
+                                put("role", "user")
+                                put("content", "test")
+                            }))
+                        }
+                        val noToolsReq = Request.Builder()
+                            .url(formattedUrl)
+                            .addHeader("Authorization", "Bearer $trimmedKey")
+                            .addHeader("Content-Type", "application/json")
+                            .post(noToolsBody.toString().toRequestBody("application/json".toMediaType()))
+                            .build()
+
+                        RetrofitClient.okHttpClient.newCall(noToolsReq).execute().use { noToolsResp ->
+                            if (!noToolsResp.isSuccessful) {
+                                val noToolsErr = noToolsResp.body?.string() ?: ""
+                                val noToolsCode = noToolsResp.code
+                                val noToolsMsg = try { JSONObject(noToolsErr).optJSONObject("error")?.optString("message") } catch (_: Exception) { null }
+                                return@withContext ProviderTestResult(
+                                    isSuccess = false,
+                                    supportsFunctionCalling = false,
+                                    errorMessage = "OpenAI Format Hatası ($noToolsCode): ${noToolsMsg ?: noToolsErr.take(250)}"
+                                )
+                            } else {
+                                functionCallingSupported = false
+                            }
+                        }
+                    } else {
+                        functionCallingSupported = true
+                    }
+                }
+            }
+
+            ProviderTestResult(
+                isSuccess = true,
+                supportsFunctionCalling = functionCallingSupported,
+                errorMessage = ""
+            )
+        } catch (e: Exception) {
+            ProviderTestResult(
+                isSuccess = false,
+                supportsFunctionCalling = false,
+                errorMessage = "Bağlantı Hatası: ${e.localizedMessage ?: e.toString()}"
+            )
+        }
     }
 
     suspend fun ensureDefaultSceneTemplates() {

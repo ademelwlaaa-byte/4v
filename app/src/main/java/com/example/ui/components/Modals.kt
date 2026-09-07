@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -27,6 +28,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Close
@@ -58,6 +60,12 @@ import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Error
+import androidx.compose.runtime.collectAsState
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.OutlinedButton
+import com.example.data.repository.EmochiRepository
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableFloatStateOf
@@ -254,7 +262,8 @@ fun GlobalSettingsModal(
     onDismiss: () -> Unit,
     onSaveSettings: (UserSettingsEntity) -> Unit,
     onExportData: suspend () -> String,
-    onImportData: suspend (String) -> Unit
+    onImportData: suspend (String) -> Unit,
+    viewModel: com.example.ui.viewmodel.EmochiViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
 ) {
     var geminiApiKey by remember { mutableStateOf(settings.customApiKey) }
     var groqApiKey by remember { mutableStateOf(settings.groqApiKey) }
@@ -281,7 +290,7 @@ fun GlobalSettingsModal(
     var appLanguage by remember { mutableStateOf(settings.appLanguage) }
 
     var showKeys by remember { mutableStateOf(false) }
-    var expandedSection by remember { mutableStateOf<String?>(null) }
+    var expandedSection by remember { mutableStateOf<String?>("models") }
 
     var exportJson by remember { mutableStateOf("") }
     var importJson by remember { mutableStateOf("") }
@@ -418,40 +427,77 @@ fun GlobalSettingsModal(
     var fallbackDropdownExpanded by remember { mutableStateOf(false) }
     val totalTokensUsed = settings.totalPromptTokens + settings.totalCandidateTokens
 
-    Dialog(onDismissRequest = onDismiss) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
         Surface(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 12.dp),
-            shape = RoundedCornerShape(20.dp),
-            color = Color.Transparent,
+                .fillMaxWidth(0.95f)
+                .fillMaxHeight(0.92f)
+                .clip(RoundedCornerShape(24.dp)),
+            color = Color(0xFF130E26),
             border = androidx.compose.foundation.BorderStroke(1.dp, EmochiBorder)
         ) {
-            Box {
+            Box(modifier = Modifier.fillMaxSize()) {
                 AppBackground()
-                Column(
-                    modifier = Modifier
-                        .padding(20.dp)
-                        .verticalScroll(rememberScrollState())
-                ) {
-                // Modal Header
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "Genel AI & Uygulama Ayarları",
-                        color = EmochiTextPrimary,
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    IconButton(onClick = onDismiss) {
-                        Icon(Icons.Default.Close, contentDescription = "Kapat", tint = EmochiTextSecondary)
-                    }
-                }
 
-                Spacer(modifier = Modifier.height(10.dp))
+                Column(modifier = Modifier.fillMaxSize()) {
+                    // FIXED HEADER AT TOP
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color(0xFF1A1333))
+                            .padding(horizontal = 18.dp, vertical = 12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(EmochiPrimary.copy(alpha = 0.2f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Settings,
+                                    contentDescription = null,
+                                    tint = EmochiPrimary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column {
+                                Text(
+                                    text = "Uygulama & AI Ayarları",
+                                    color = EmochiTextPrimary,
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = "Model, API anahtarları ve filtreler",
+                                    color = EmochiTextMuted,
+                                    fontSize = 11.sp
+                                )
+                            }
+                        }
+                        IconButton(onClick = onDismiss) {
+                            Icon(Icons.Default.Close, contentDescription = "Kapat", tint = EmochiTextSecondary)
+                        }
+                    }
+
+                    Divider(color = EmochiBorder)
+
+                    // SCROLLABLE CONTENT BODY
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                            .verticalScroll(rememberScrollState())
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
 
                 // OPTION 1: MODELS & API KEYS
                 CollapsibleSettingsOption(
@@ -485,53 +531,69 @@ fun GlobalSettingsModal(
                         }
                     }
 
+                    val customProviders by viewModel.customProviders.collectAsState()
+                    var showAddCustomModal by remember { mutableStateOf(false) }
+                    var editingCustomProvider by remember { mutableStateOf<com.example.data.local.CustomProviderEntity?>(null) }
+                    var quickModelEditProvider by remember { mutableStateOf<com.example.data.local.CustomProviderEntity?>(null) }
+
                     // Primary Provider Selector Segmented Buttons
                     Text("Ana Sağlayıcı Seçin:", color = EmochiTextPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     Spacer(modifier = Modifier.height(4.dp))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         val providers = listOf(
-                            "gemini" to "Google Gemini",
-                            "groq" to "Groq API",
+                            "gemini" to "Gemini",
+                            "groq" to "Groq",
                             "claude" to "Claude",
-                            "openai" to "OpenAI / DeepSeek"
+                            "openai" to "OpenAI",
+                            "custom" to "🌐 Özel API"
                         )
                         providers.forEach { (pKey, pLabel) ->
-                            val isSel = selectedProvider == pKey
+                            val isSel = if (pKey == "custom") selectedProvider.startsWith("custom") else selectedProvider == pKey
                             Box(
                                 modifier = Modifier
                                     .weight(1f)
                                     .clip(RoundedCornerShape(10.dp))
-                                    .background(if (isSel) EmochiPrimary.copy(alpha = 0.2f) else EmochiCard)
+                                    .background(if (isSel) EmochiPrimary.copy(alpha = 0.25f) else EmochiCard)
                                     .border(
                                         width = if (isSel) 1.5.dp else 1.dp,
                                         color = if (isSel) EmochiPrimary else EmochiBorder,
                                         shape = RoundedCornerShape(10.dp)
                                     )
                                     .clickable {
-                                        selectedProvider = pKey
-                                        val providerModels = modelsList.filter {
-                                            when (pKey) {
-                                                "gemini" -> it.provider == "Google Gemini"
-                                                "groq" -> it.provider == "Groq API"
-                                                "claude" -> it.provider == "Anthropic"
-                                                "openai" -> it.provider == "OpenAI" || it.provider == "DeepSeek"
-                                                else -> false
+                                        if (pKey == "custom") {
+                                            if (customProviders.isNotEmpty()) {
+                                                selectedProvider = "custom_${customProviders.first().id}"
+                                                selectedModel = customProviders.first().modelName
+                                            } else {
+                                                selectedProvider = "custom"
+                                                showAddCustomModal = true
+                                            }
+                                        } else {
+                                            selectedProvider = pKey
+                                            val providerModels = modelsList.filter {
+                                                when (pKey) {
+                                                    "gemini" -> it.provider == "Google Gemini"
+                                                    "groq" -> it.provider == "Groq API"
+                                                    "claude" -> it.provider == "Anthropic"
+                                                    "openai" -> it.provider == "OpenAI" || it.provider == "DeepSeek"
+                                                    else -> false
+                                                }
+                                            }
+                                            if (providerModels.none { it.key == selectedModel } && providerModels.isNotEmpty()) {
+                                                selectedModel = providerModels.first().key
                                             }
                                         }
-                                        if (providerModels.none { it.key == selectedModel } && providerModels.isNotEmpty()) {
-                                            selectedModel = providerModels.first().key
-                                        }
                                     }
-                                    .padding(vertical = 8.dp, horizontal = 2.dp),
+                                    .padding(vertical = 8.dp, horizontal = 1.dp),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text(
                                     text = pLabel,
-                                    color = if (isSel) EmochiPrimary else EmochiTextSecondary,
-                                    fontSize = 10.5.sp,
+                                    color = if (isSel) Color.White else EmochiTextSecondary,
+                                    fontSize = 10.sp,
                                     fontWeight = if (isSel) FontWeight.Bold else FontWeight.Medium,
                                     textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                                     maxLines = 1
@@ -633,7 +695,7 @@ fun GlobalSettingsModal(
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Icon(Icons.Default.Speed, contentDescription = null, tint = Color(0xFFFF9800), modifier = Modifier.size(16.dp))
                                     Spacer(modifier = Modifier.width(6.dp))
-                                    Text("2. Groq API (Llama 3.3 & DeepSeek R1)", color = EmochiTextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                    Text("2. Groq API (Süper Hızlı)", color = EmochiTextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                                 }
                                 if (isGroqActive) {
                                     Box(
@@ -838,6 +900,227 @@ fun GlobalSettingsModal(
                         }
                     }
 
+                    // Provider Card 5: Özel API / OpenRouter / Proxy (HER ZAMAN GÖRÜNÜR & BELİRGİN)
+                    val isCustomActive = selectedProvider.startsWith("custom")
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = EmochiCard),
+                        shape = RoundedCornerShape(14.dp),
+                        border = androidx.compose.foundation.BorderStroke(if (isCustomActive) 2.dp else 1.dp, if (isCustomActive) Color(0xFFFF9800) else EmochiBorder),
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.Language, contentDescription = null, tint = Color(0xFFFF9800), modifier = Modifier.size(18.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("5. Özel API & OpenRouter Proxy", color = EmochiTextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                }
+                                if (isCustomActive) {
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .background(Color(0xFFFF9800).copy(alpha = 0.2f))
+                                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                                    ) {
+                                        Text("AKTİF SAĞLAYICI", color = Color(0xFFFF9800), fontSize = 9.5.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                "OpenRouter, VLLM, LM Studio, Ollama veya özel bir proxy adresi bağlayarak dilediğiniz yapay zeka modelinin kodunu (örn. Llama 3.3, DeepSeek R1, Qwen 2.5) yazıp kullanabilirsiniz.",
+                                color = EmochiTextSecondary,
+                                fontSize = 11.sp,
+                                lineHeight = 15.sp
+                            )
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            // Direct Model Code Editing Field
+                            Text("Özel Model Kodu / Adı (Elle Yazabilirsiniz):", color = Color(0xFFFFB74D), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            OutlinedTextField(
+                                value = selectedModel,
+                                onValueChange = { newM ->
+                                    selectedModel = newM
+                                    if (selectedProvider.startsWith("custom_")) {
+                                        val cId = selectedProvider.removePrefix("custom_").toLongOrNull()
+                                        val activeP = customProviders.find { it.id == cId }
+                                        if (activeP != null) {
+                                            viewModel.updateCustomProviderModel(activeP.id, newM)
+                                        }
+                                    }
+                                },
+                                placeholder = { Text("örn. meta-llama/llama-3.3-70b-instruct", fontSize = 11.sp, color = EmochiTextMuted) },
+                                modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
+                                singleLine = true,
+                                colors = customTextFieldColors()
+                            )
+
+                            // Quick Model Template Chips
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text("Popüler Model Kısayolları (Dokun & Doldur):", color = EmochiTextSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            Spacer(modifier = Modifier.height(4.dp))
+                            val quickChips = listOf(
+                                "🦙 Llama 3.3 70B" to "meta-llama/llama-3.3-70b-instruct",
+                                "🐋 DeepSeek R1" to "deepseek/deepseek-r1",
+                                "🌐 Qwen 2.5 72B" to "qwen/qwen-2.5-72b-instruct",
+                                "⚡ Gemini 2.0 Flash" to "google/gemini-2.0-flash-001",
+                                "🧠 Claude 3.5 Sonnet" to "anthropic/claude-3.5-sonnet",
+                                "🤖 GPT-4o Mini" to "openai/gpt-4o-mini"
+                            )
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                quickChips.forEach { (lbl, code) ->
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(EmochiSurface)
+                                            .border(1.dp, Color(0xFFFF9800).copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+                                            .clickable {
+                                                selectedModel = code
+                                                if (selectedProvider.startsWith("custom_")) {
+                                                    val cId = selectedProvider.removePrefix("custom_").toLongOrNull()
+                                                    val activeP = customProviders.find { it.id == cId }
+                                                    if (activeP != null) {
+                                                        viewModel.updateCustomProviderModel(activeP.id, code)
+                                                    }
+                                                }
+                                            }
+                                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                                    ) {
+                                        Text(lbl, color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Medium)
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            // GÖRÜNÜR & BELİRGİN EKLE BUTONU
+                            Button(
+                                onClick = { showAddCustomModal = true },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF9800)),
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(Icons.Default.Add, contentDescription = null, tint = Color.Black, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("+ Yeni Özel API / Model Ekle", color = Color.Black, fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
+                            }
+
+                            if (customProviders.isNotEmpty()) {
+                                Spacer(modifier = Modifier.height(10.dp))
+                                Text("Kayıtlı Özel API Sağlayıcılarınız:", color = Color.White, fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                                Spacer(modifier = Modifier.height(4.dp))
+
+                                customProviders.forEach { cp ->
+                                    val isThisSelected = selectedProvider == "custom_${cp.id}"
+                                    Card(
+                                        colors = CardDefaults.cardColors(containerColor = if (isThisSelected) EmochiPrimary.copy(alpha = 0.15f) else EmochiSurface),
+                                        shape = RoundedCornerShape(10.dp),
+                                        border = androidx.compose.foundation.BorderStroke(1.dp, if (isThisSelected) EmochiPrimary else EmochiBorder),
+                                        modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)
+                                    ) {
+                                        Column(modifier = Modifier.padding(10.dp)) {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Column(modifier = Modifier.weight(1f)) {
+                                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                                        Text(cp.label, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                                        Spacer(modifier = Modifier.width(6.dp))
+                                                        Box(
+                                                            modifier = Modifier
+                                                                .clip(RoundedCornerShape(4.dp))
+                                                                .background(EmochiBorder)
+                                                                .padding(horizontal = 4.dp, vertical = 1.dp)
+                                                        ) {
+                                                            Text(cp.apiFormat.uppercase(), color = EmochiTextSecondary, fontSize = 8.5.sp, fontWeight = FontWeight.Bold)
+                                                        }
+                                                    }
+                                                    Spacer(modifier = Modifier.height(2.dp))
+                                                    Text("URL: ${cp.baseUrl}", color = EmochiTextMuted, fontSize = 9.5.sp, maxLines = 1)
+                                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                                        Text("Model: ", color = EmochiTextSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                                        Text(cp.modelName, color = Color(0xFF4ADE80), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                                    }
+                                                }
+
+                                                if (isThisSelected) {
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .clip(RoundedCornerShape(6.dp))
+                                                            .background(EmochiPrimary.copy(alpha = 0.3f))
+                                                            .padding(horizontal = 6.dp, vertical = 3.dp)
+                                                    ) {
+                                                        Text("SEÇİLİ", color = EmochiPrimary, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                                    }
+                                                } else {
+                                                    Button(
+                                                        onClick = {
+                                                            selectedProvider = "custom_${cp.id}"
+                                                            selectedModel = cp.modelName
+                                                        },
+                                                        colors = ButtonDefaults.buttonColors(containerColor = EmochiPrimary),
+                                                        shape = RoundedCornerShape(6.dp),
+                                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                                        modifier = Modifier.height(28.dp)
+                                                    ) {
+                                                        Text("Seç", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                                    }
+                                                }
+                                            }
+
+                                            Spacer(modifier = Modifier.height(6.dp))
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.End,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                OutlinedButton(
+                                                    onClick = { quickModelEditProvider = cp },
+                                                    shape = RoundedCornerShape(6.dp),
+                                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                                                    modifier = Modifier.height(26.dp)
+                                                ) {
+                                                    Icon(Icons.Default.Edit, contentDescription = null, tint = Color(0xFFFFB74D), modifier = Modifier.size(12.dp))
+                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                    Text("Modeli Yaz / Değiştir", color = Color(0xFFFFB74D), fontSize = 9.5.sp)
+                                                }
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                OutlinedButton(
+                                                    onClick = { editingCustomProvider = cp },
+                                                    shape = RoundedCornerShape(6.dp),
+                                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                                                    modifier = Modifier.height(26.dp)
+                                                ) {
+                                                    Text("Düzenle", color = EmochiTextPrimary, fontSize = 9.5.sp)
+                                                }
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                IconButton(
+                                                    onClick = { viewModel.deleteCustomProvider(cp.id) },
+                                                    modifier = Modifier.size(26.dp)
+                                                ) {
+                                                    Icon(Icons.Default.Delete, contentDescription = "Sil", tint = Color.Red.copy(alpha = 0.7f), modifier = Modifier.size(14.dp))
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     // Backup Gemini Key Field
                     Spacer(modifier = Modifier.height(6.dp))
                     Text("Yedek Gemini API Key:", color = EmochiTextSecondary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
@@ -853,28 +1136,556 @@ fun GlobalSettingsModal(
 
                     // Active Selected Model Details Card
                     Spacer(modifier = Modifier.height(10.dp))
-                    val currentSelectedSpec = modelsList.find { it.key == selectedModel } ?: modelsList.first()
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = EmochiSurface),
-                        shape = RoundedCornerShape(14.dp),
-                        border = androidx.compose.foundation.BorderStroke(1.5.dp, Color(0xFF10B981)),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(modifier = Modifier.padding(12.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(Icons.Default.TrackChanges, contentDescription = null, tint = Color(0xFFEF4444), modifier = Modifier.size(16.dp))
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text("Aktif Seçili Model: ${currentSelectedSpec.name}", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    val activeCustomProvider = customProviders.find { "custom_${it.id}" == selectedProvider }
+                    if (activeCustomProvider != null) {
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = EmochiSurface),
+                            shape = RoundedCornerShape(14.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.5.dp, Color(0xFFFF9800)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(Icons.Default.TrackChanges, contentDescription = null, tint = Color(0xFFFF9800), modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("Aktif Özel Model: ${activeCustomProvider.modelName}", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                    Text(activeCustomProvider.label, color = Color(0xFFFF9800), fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
                                 }
-                                Text(currentSelectedSpec.tokenCostRate, color = Color(0xFF10B981), fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text("URL: ${activeCustomProvider.baseUrl} | Format: ${activeCustomProvider.apiFormat.uppercase()}", color = EmochiTextSecondary, fontSize = 10.5.sp)
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Button(
+                                    onClick = { quickModelEditProvider = activeCustomProvider },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF9800)),
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Icon(Icons.Default.Edit, contentDescription = null, tint = Color.Black, modifier = Modifier.size(14.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Farklı Model Kodu Yaz / Değiştir", color = Color.Black, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                }
                             }
-                            Spacer(modifier = Modifier.height(6.dp))
-                            Text(currentSelectedSpec.description, color = EmochiTextSecondary, fontSize = 11.sp, lineHeight = 15.sp)
+                        }
+                    } else {
+                        val currentSelectedSpec = modelsList.find { it.key == selectedModel } ?: modelsList.first()
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = EmochiSurface),
+                            shape = RoundedCornerShape(14.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.5.dp, Color(0xFF10B981)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(Icons.Default.TrackChanges, contentDescription = null, tint = Color(0xFFEF4444), modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("Aktif Seçili Model: ${currentSelectedSpec.name}", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                    Text(currentSelectedSpec.tokenCostRate, color = Color(0xFF10B981), fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
+                                }
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(currentSelectedSpec.description, color = EmochiTextSecondary, fontSize = 11.sp, lineHeight = 15.sp)
+                            }
+                        }
+                    }
+
+                    // MODAL 1: YENİ ÖZEL SAĞLAYICI & MODEL EKLE
+                    if (showAddCustomModal) {
+                        var cLabel by remember { mutableStateOf("") }
+                        var cBaseUrl by remember { mutableStateOf("https://openrouter.ai/api/v1") }
+                        var cApiKey by remember { mutableStateOf("") }
+                        var cModelName by remember { mutableStateOf("") }
+                        var cApiFormat by remember { mutableStateOf("openai") }
+                        var showKeyText by remember { mutableStateOf(false) }
+
+                        var isTesting by remember { mutableStateOf(false) }
+                        var testRes by remember { mutableStateOf<EmochiRepository.ProviderTestResult?>(null) }
+                        val customModalScope = rememberCoroutineScope()
+
+                        Dialog(onDismissRequest = { showAddCustomModal = false }) {
+                            Surface(
+                                shape = RoundedCornerShape(20.dp),
+                                color = EmochiSurface,
+                                border = androidx.compose.foundation.BorderStroke(1.dp, EmochiBorder),
+                                modifier = Modifier.fillMaxWidth().padding(12.dp)
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(16.dp).verticalScroll(rememberScrollState()),
+                                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    Text("🌐 Yeni Özel API & Model Ekle", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+
+                                    OutlinedTextField(
+                                        value = cLabel,
+                                        onValueChange = { cLabel = it; testRes = null },
+                                        label = { Text("Sağlayıcı Etiketi (ör. OpenRouter, LM Studio)", fontSize = 11.sp) },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        singleLine = true,
+                                        colors = customTextFieldColors()
+                                    )
+
+                                    Text("API Formatı:", color = EmochiTextSecondary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        FilterChip(
+                                            selected = cApiFormat == "openai",
+                                            onClick = { cApiFormat = "openai"; testRes = null },
+                                            label = { Text("OpenAI Uyumlu", fontSize = 11.sp) },
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        FilterChip(
+                                            selected = cApiFormat == "anthropic",
+                                            onClick = { cApiFormat = "anthropic"; testRes = null },
+                                            label = { Text("Anthropic Uyumlu", fontSize = 11.sp) },
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                    }
+
+                                    OutlinedTextField(
+                                        value = cBaseUrl,
+                                        onValueChange = { cBaseUrl = it; testRes = null },
+                                        label = { Text("Base URL (HTTPS zorunlu)", fontSize = 11.sp) },
+                                        placeholder = { Text("https://openrouter.ai/api/v1", fontSize = 11.sp) },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        singleLine = true,
+                                        colors = customTextFieldColors()
+                                    )
+
+                                    // URL Preset Chips
+                                    Text("Hızlı Adres Kısayolları:", color = EmochiTextMuted, fontSize = 10.sp)
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        listOf(
+                                            "OpenRouter" to "https://openrouter.ai/api/v1",
+                                            "Groq Proxy" to "https://api.groq.com/openai/v1",
+                                            "DeepSeek" to "https://api.deepseek.com/v1",
+                                            "Ollama Local" to "http://localhost:11434/v1"
+                                        ).forEach { (presetName, presetUrl) ->
+                                            OutlinedButton(
+                                                onClick = { cBaseUrl = presetUrl; testRes = null },
+                                                shape = RoundedCornerShape(8.dp),
+                                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                                                modifier = Modifier.height(28.dp)
+                                            ) {
+                                                Text(presetName, fontSize = 9.5.sp)
+                                            }
+                                        }
+                                    }
+
+                                    OutlinedTextField(
+                                        value = cApiKey,
+                                        onValueChange = { cApiKey = it; testRes = null },
+                                        label = { Text("API Key", fontSize = 11.sp) },
+                                        visualTransformation = if (showKeyText) VisualTransformation.None else PasswordVisualTransformation(),
+                                        trailingIcon = {
+                                            IconButton(onClick = { showKeyText = !showKeyText }) {
+                                                Icon(if (showKeyText) Icons.Default.VisibilityOff else Icons.Default.Visibility, contentDescription = null, modifier = Modifier.size(16.dp))
+                                            }
+                                        },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        singleLine = true,
+                                        colors = customTextFieldColors()
+                                    )
+
+                                    // MODEL SEÇİMİ VE EL İLE MODEL YAZMA ALANI
+                                    OutlinedTextField(
+                                        value = cModelName,
+                                        onValueChange = { cModelName = it; testRes = null },
+                                        label = { Text("Model Kodu / Adı (El ile Dilediğinizi Yazın)", fontSize = 11.sp) },
+                                        placeholder = { Text("meta-llama/llama-3.3-70b-instruct", fontSize = 11.sp) },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        singleLine = true,
+                                        colors = customTextFieldColors()
+                                    )
+
+                                    // MODEL HAZIR ŞABLON ŞİPLERİ
+                                    Text("Popüler Model Kısayolları (Dokun & Doldur):", color = EmochiTextMuted, fontSize = 10.sp)
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        listOf(
+                                            "🦙 Llama 3.3 70B" to "meta-llama/llama-3.3-70b-instruct",
+                                            "🐋 DeepSeek R1" to "deepseek/deepseek-r1",
+                                            "🌐 Qwen 2.5 72B" to "qwen/qwen-2.5-72b-instruct",
+                                            "⚡ Gemini 2.0 Flash" to "google/gemini-2.0-flash-001",
+                                            "🧠 Claude 3.5 Sonnet" to "anthropic/claude-3.5-sonnet",
+                                            "🤖 GPT-4o Mini" to "openai/gpt-4o-mini",
+                                            "💨 Mistral Large" to "mistralai/mistral-large"
+                                        ).forEach { (mTag, mCode) ->
+                                            OutlinedButton(
+                                                onClick = { cModelName = mCode; testRes = null },
+                                                shape = RoundedCornerShape(8.dp),
+                                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                                                modifier = Modifier.height(28.dp)
+                                            ) {
+                                                Text(mTag, fontSize = 9.5.sp)
+                                            }
+                                        }
+                                    }
+
+                                    Card(
+                                        colors = CardDefaults.cardColors(containerColor = Color(0xFF332A00)),
+                                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFFC107)),
+                                        shape = RoundedCornerShape(10.dp)
+                                    ) {
+                                        Row(modifier = Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(Icons.Default.Security, contentDescription = null, tint = Color(0xFFFFC107), modifier = Modifier.size(18.dp))
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text(
+                                                "Güvenlik Uyarısı: Buraya girdiğin API key, doğrudan girdiğin adrese ($cBaseUrl) gönderilir. Güvendiğin ve HTTPS olan bir kaynak olduğundan emin ol. Key Keystore ile şifrelenir.",
+                                                color = Color(0xFFFFE082),
+                                                fontSize = 10.sp,
+                                                lineHeight = 14.sp
+                                            )
+                                        }
+                                    }
+
+                                    val currentTestRes = testRes
+                                    if (currentTestRes != null) {
+                                        Card(
+                                            colors = CardDefaults.cardColors(containerColor = if (currentTestRes.isSuccess) Color(0xFF0D331A) else Color(0xFF330D0D)),
+                                            border = androidx.compose.foundation.BorderStroke(1.dp, if (currentTestRes.isSuccess) Color(0xFF4CAF50) else Color(0xFFF44336)),
+                                            shape = RoundedCornerShape(10.dp)
+                                        ) {
+                                            Column(modifier = Modifier.padding(10.dp)) {
+                                                if (currentTestRes.isSuccess) {
+                                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                                        Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color(0xFF4CAF50), modifier = Modifier.size(16.dp))
+                                                        Spacer(modifier = Modifier.width(6.dp))
+                                                        Text("Bağlantı Başarılı!", color = Color(0xFF81C784), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                                    }
+                                                    Spacer(modifier = Modifier.height(4.dp))
+                                                    Text(
+                                                        if (currentTestRes.supportsFunctionCalling) "✅ Bu sağlayıcı gelişmiş hafıza (tools/function calling) modunu destekliyor."
+                                                        else "⚠️ Bu sağlayıcı gelişmiş hafıza özelliğini desteklemiyor olabilir, metin tabanlı yedek hafıza modu kullanılacak.",
+                                                        color = Color.White,
+                                                        fontSize = 10.5.sp
+                                                    )
+                                                } else {
+                                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                                        Icon(Icons.Default.Error, contentDescription = null, tint = Color(0xFFF44336), modifier = Modifier.size(16.dp))
+                                                        Spacer(modifier = Modifier.width(6.dp))
+                                                        Text("Bağlantı Başarısız", color = Color(0xFFE57373), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                                    }
+                                                    Spacer(modifier = Modifier.height(4.dp))
+                                                    Text(currentTestRes.errorMessage, color = Color.White, fontSize = 10.5.sp)
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        OutlinedButton(
+                                            onClick = { showAddCustomModal = false },
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Text("İptal", fontSize = 11.sp)
+                                        }
+
+                                        Button(
+                                            onClick = {
+                                                customModalScope.launch {
+                                                    isTesting = true
+                                                    testRes = viewModel.testCustomProviderConnection(cBaseUrl, cApiKey, cModelName, cApiFormat)
+                                                    isTesting = false
+                                                }
+                                            },
+                                            enabled = !isTesting && cBaseUrl.isNotBlank() && cApiKey.isNotBlank() && cModelName.isNotBlank(),
+                                            modifier = Modifier.weight(1f),
+                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF9800))
+                                        ) {
+                                            if (isTesting) {
+                                                CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp, color = Color.White)
+                                            } else {
+                                                Text("Bağlantıyı Test Et", fontSize = 10.5.sp, maxLines = 1)
+                                            }
+                                        }
+                                    }
+
+                                    Button(
+                                        onClick = {
+                                            val finalResult = testRes
+                                            viewModel.saveCustomProvider(
+                                                label = cLabel.ifBlank { "Özel API" },
+                                                baseUrl = cBaseUrl,
+                                                apiKey = cApiKey,
+                                                modelName = cModelName,
+                                                apiFormat = cApiFormat,
+                                                supportsFunctionCalling = finalResult?.supportsFunctionCalling ?: true
+                                            )
+                                            selectedModel = cModelName
+                                            showAddCustomModal = false
+                                        },
+                                        enabled = cBaseUrl.isNotBlank() && cApiKey.isNotBlank() && cModelName.isNotBlank(),
+                                        modifier = Modifier.fillMaxWidth(),
+                                        colors = ButtonDefaults.buttonColors(containerColor = EmochiPrimary)
+                                    ) {
+                                        Text("Kaydet ve Kullan", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // MODAL 2: HIZLI MODEL DEĞİŞTİRME / YAZMA PENCERESİ
+                    val currentQuickProvider = quickModelEditProvider
+                    if (currentQuickProvider != null) {
+                        var newMName by remember { mutableStateOf(currentQuickProvider.modelName) }
+                        Dialog(onDismissRequest = { quickModelEditProvider = null }) {
+                            Surface(
+                                shape = RoundedCornerShape(20.dp),
+                                color = EmochiSurface,
+                                border = androidx.compose.foundation.BorderStroke(1.dp, EmochiBorder),
+                                modifier = Modifier.fillMaxWidth().padding(12.dp)
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(16.dp),
+                                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    Text("✏️ Model Kodunu Güncelle", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                                    Text("Sağlayıcı: ${currentQuickProvider.label}", color = EmochiTextSecondary, fontSize = 11.sp)
+
+                                    OutlinedTextField(
+                                        value = newMName,
+                                        onValueChange = { newMName = it },
+                                        label = { Text("Model Kodu / Adı (El ile İstediğinizi Yazın)", fontSize = 11.sp) },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        singleLine = true,
+                                        colors = customTextFieldColors()
+                                    )
+
+                                    Text("Hızlı Model Şablonları:", color = EmochiTextMuted, fontSize = 10.sp)
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        listOf(
+                                            "🦙 Llama 3.3 70B" to "meta-llama/llama-3.3-70b-instruct",
+                                            "🐋 DeepSeek R1" to "deepseek/deepseek-r1",
+                                            "🌐 Qwen 2.5 72B" to "qwen/qwen-2.5-72b-instruct",
+                                            "⚡ Gemini 2.0 Flash" to "google/gemini-2.0-flash-001",
+                                            "🧠 Claude 3.5 Sonnet" to "anthropic/claude-3.5-sonnet",
+                                            "🤖 GPT-4o Mini" to "openai/gpt-4o-mini",
+                                            "💨 Mistral Large" to "mistralai/mistral-large"
+                                        ).forEach { (mTag, mCode) ->
+                                            OutlinedButton(
+                                                onClick = { newMName = mCode },
+                                                shape = RoundedCornerShape(8.dp),
+                                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                                                modifier = Modifier.height(28.dp)
+                                            ) {
+                                                Text(mTag, fontSize = 9.5.sp)
+                                            }
+                                        }
+                                    }
+
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        OutlinedButton(
+                                            onClick = { quickModelEditProvider = null },
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Text("İptal", fontSize = 11.sp)
+                                        }
+                                        Button(
+                                            onClick = {
+                                                if (newMName.isNotBlank()) {
+                                                    viewModel.updateCustomProviderModel(currentQuickProvider.id, newMName)
+                                                    selectedModel = newMName.trim()
+                                                    quickModelEditProvider = null
+                                                }
+                                            },
+                                            enabled = newMName.isNotBlank(),
+                                            modifier = Modifier.weight(1f),
+                                            colors = ButtonDefaults.buttonColors(containerColor = EmochiPrimary)
+                                        ) {
+                                            Text("Modeli Güncelle", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // MODAL 3: TAM SAĞLAYICI DÜZENLEME PENCERESİ
+                    val currentEditProvider = editingCustomProvider
+                    if (currentEditProvider != null) {
+                        var eLabel by remember { mutableStateOf(currentEditProvider.label) }
+                        var eBaseUrl by remember { mutableStateOf(currentEditProvider.baseUrl) }
+                        var eApiKey by remember { mutableStateOf("") }
+                        var eModelName by remember { mutableStateOf(currentEditProvider.modelName) }
+                        var eApiFormat by remember { mutableStateOf(currentEditProvider.apiFormat) }
+                        var showEKeyText by remember { mutableStateOf(false) }
+
+                        var isETesting by remember { mutableStateOf(false) }
+                        var eTestRes by remember { mutableStateOf<EmochiRepository.ProviderTestResult?>(null) }
+                        val editModalScope = rememberCoroutineScope()
+
+                        Dialog(onDismissRequest = { editingCustomProvider = null }) {
+                            Surface(
+                                shape = RoundedCornerShape(20.dp),
+                                color = EmochiSurface,
+                                border = androidx.compose.foundation.BorderStroke(1.dp, EmochiBorder),
+                                modifier = Modifier.fillMaxWidth().padding(12.dp)
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(16.dp).verticalScroll(rememberScrollState()),
+                                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    Text("🛠️ Özel API Sağlayıcısını Düzenle", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+
+                                    OutlinedTextField(
+                                        value = eLabel,
+                                        onValueChange = { eLabel = it; eTestRes = null },
+                                        label = { Text("Sağlayıcı Etiketi", fontSize = 11.sp) },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        singleLine = true,
+                                        colors = customTextFieldColors()
+                                    )
+
+                                    Text("API Formatı:", color = EmochiTextSecondary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        FilterChip(
+                                            selected = eApiFormat == "openai",
+                                            onClick = { eApiFormat = "openai"; eTestRes = null },
+                                            label = { Text("OpenAI Uyumlu", fontSize = 11.sp) },
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        FilterChip(
+                                            selected = eApiFormat == "anthropic",
+                                            onClick = { eApiFormat = "anthropic"; eTestRes = null },
+                                            label = { Text("Anthropic Uyumlu", fontSize = 11.sp) },
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                    }
+
+                                    OutlinedTextField(
+                                        value = eBaseUrl,
+                                        onValueChange = { eBaseUrl = it; eTestRes = null },
+                                        label = { Text("Base URL", fontSize = 11.sp) },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        singleLine = true,
+                                        colors = customTextFieldColors()
+                                    )
+
+                                    OutlinedTextField(
+                                        value = eApiKey,
+                                        onValueChange = { eApiKey = it; eTestRes = null },
+                                        label = { Text("Yeni API Key (Boş Bırakırsanız Değişmez)", fontSize = 11.sp) },
+                                        visualTransformation = if (showEKeyText) VisualTransformation.None else PasswordVisualTransformation(),
+                                        trailingIcon = {
+                                            IconButton(onClick = { showEKeyText = !showEKeyText }) {
+                                                Icon(if (showEKeyText) Icons.Default.VisibilityOff else Icons.Default.Visibility, contentDescription = null, modifier = Modifier.size(16.dp))
+                                            }
+                                        },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        singleLine = true,
+                                        colors = customTextFieldColors()
+                                    )
+
+                                    OutlinedTextField(
+                                        value = eModelName,
+                                        onValueChange = { eModelName = it; eTestRes = null },
+                                        label = { Text("Model Kodu / Adı (El ile Yazın)", fontSize = 11.sp) },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        singleLine = true,
+                                        colors = customTextFieldColors()
+                                    )
+
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        listOf(
+                                            "🦙 Llama 3.3 70B" to "meta-llama/llama-3.3-70b-instruct",
+                                            "🐋 DeepSeek R1" to "deepseek/deepseek-r1",
+                                            "🌐 Qwen 2.5 72B" to "qwen/qwen-2.5-72b-instruct",
+                                            "⚡ Gemini 2.0 Flash" to "google/gemini-2.0-flash-001",
+                                            "🧠 Claude 3.5 Sonnet" to "anthropic/claude-3.5-sonnet",
+                                            "🤖 GPT-4o Mini" to "openai/gpt-4o-mini"
+                                        ).forEach { (mTag, mCode) ->
+                                            OutlinedButton(
+                                                onClick = { eModelName = mCode; eTestRes = null },
+                                                shape = RoundedCornerShape(8.dp),
+                                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                                                modifier = Modifier.height(28.dp)
+                                            ) {
+                                                Text(mTag, fontSize = 9.5.sp)
+                                            }
+                                        }
+                                    }
+
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        OutlinedButton(
+                                            onClick = { editingCustomProvider = null },
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Text("İptal", fontSize = 11.sp)
+                                        }
+
+                                        Button(
+                                            onClick = {
+                                                editModalScope.launch {
+                                                    isETesting = true
+                                                    val testKeyToUse = eApiKey.ifBlank { "existing_key" }
+                                                    eTestRes = viewModel.testCustomProviderConnection(eBaseUrl, testKeyToUse, eModelName, eApiFormat)
+                                                    isETesting = false
+                                                }
+                                            },
+                                            enabled = !isETesting && eBaseUrl.isNotBlank() && eModelName.isNotBlank(),
+                                            modifier = Modifier.weight(1f),
+                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF9800))
+                                        ) {
+                                            if (isETesting) {
+                                                CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp, color = Color.White)
+                                            } else {
+                                                Text("Bağlantıyı Test Et", fontSize = 10.5.sp, maxLines = 1)
+                                            }
+                                        }
+                                    }
+
+                                    Button(
+                                        onClick = {
+                                            viewModel.updateCustomProviderFull(
+                                                id = currentEditProvider.id,
+                                                label = eLabel,
+                                                baseUrl = eBaseUrl,
+                                                apiKey = eApiKey.ifBlank { null },
+                                                modelName = eModelName,
+                                                apiFormat = eApiFormat,
+                                                supportsFunctionCalling = eTestRes?.supportsFunctionCalling ?: currentEditProvider.supportsFunctionCalling
+                                            )
+                                            selectedModel = eModelName
+                                            editingCustomProvider = null
+                                        },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        colors = ButtonDefaults.buttonColors(containerColor = EmochiPrimary)
+                                    ) {
+                                        Text("Değişiklikleri Kaydet", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -1385,49 +2196,74 @@ fun GlobalSettingsModal(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(18.dp))
+                    } // End of scrollable content Column
 
-                // SAVE BUTTON
-                Button(
-                    onClick = {
-                        onSaveSettings(
-                            settings.copy(
-                                customApiKey = geminiApiKey.trim(),
-                                groqApiKey = groqApiKey.trim(),
-                                claudeApiKey = claudeApiKey.trim(),
-                                openaiApiKey = openaiApiKey.trim(),
-                                backupApiKey = backupApiKey.trim(),
-                                selectedProvider = selectedProvider,
-                                selectedModel = selectedModel,
-                                fallbackModel = fallbackModel,
-                                responseLength = responseLength,
-                                enableNsfw = enableNsfw,
-                                enableFlirty = enableFlirty,
-                                enableHardcore = enableHardcore,
-                                enableFetish = enableFetish,
-                                enableDarkRp = enableDarkRp,
-                                enableSweet = enableSweet,
-                                enablePrimal = enablePrimal,
-                                enableAutoFallback = enableAutoFallback,
-                                enableTts = enableTts,
-                                ttsSpeed = ttsSpeed,
-                                ttsPitch = ttsPitch,
-                                selectedVoiceName = selectedVoiceName,
-                                appLanguage = appLanguage
-                            )
-                        )
-                        onDismiss()
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = EmochiPrimary, contentColor = Color(0xFF1A1B2E)),
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Text("Ayarları Kaydet", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                }
-            }
-        }
-        }
-    }
+                    // FIXED FOOTER AT BOTTOM
+                    Divider(color = EmochiBorder)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color(0xFF1A1333))
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedButton(
+                            onClick = onDismiss,
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(46.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, EmochiBorder)
+                        ) {
+                            Text("Vazgeç", color = EmochiTextSecondary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                        }
+
+                        Button(
+                            onClick = {
+                                onSaveSettings(
+                                    settings.copy(
+                                        customApiKey = geminiApiKey.trim(),
+                                        groqApiKey = groqApiKey.trim(),
+                                        claudeApiKey = claudeApiKey.trim(),
+                                        openaiApiKey = openaiApiKey.trim(),
+                                        backupApiKey = backupApiKey.trim(),
+                                        selectedProvider = selectedProvider,
+                                        selectedModel = selectedModel,
+                                        fallbackModel = fallbackModel,
+                                        responseLength = responseLength,
+                                        enableNsfw = enableNsfw,
+                                        enableFlirty = enableFlirty,
+                                        enableHardcore = enableHardcore,
+                                        enableFetish = enableFetish,
+                                        enableDarkRp = enableDarkRp,
+                                        enableSweet = enableSweet,
+                                        enablePrimal = enablePrimal,
+                                        enableAutoFallback = enableAutoFallback,
+                                        enableTts = enableTts,
+                                        ttsSpeed = ttsSpeed,
+                                        ttsPitch = ttsPitch,
+                                        selectedVoiceName = selectedVoiceName,
+                                        appLanguage = appLanguage
+                                    )
+                                )
+                                onDismiss()
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = EmochiPrimary, contentColor = Color(0xFF1A1B2E)),
+                            modifier = Modifier
+                                .weight(2f)
+                                .height(46.dp),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Ayarları Kaydet", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        }
+                    }
+                } // End of outer Column
+            } // End of Box
+        } // End of Surface
+    } // End of Dialog
 
     if (showUpdateModal) {
         UpdateCheckerModal(onDismiss = { showUpdateModal = false })
