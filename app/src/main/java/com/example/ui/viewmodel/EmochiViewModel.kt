@@ -37,6 +37,14 @@ class EmochiViewModel(application: Application) : AndroidViewModel(application) 
     private val _uiState = MutableStateFlow<UiState>(UiState.Menu)
     val uiState: StateFlow<UiState> = _uiState.asStateFlow()
 
+    init {
+        viewModelScope.launch {
+            try {
+                repository.deleteEmptyMessages()
+            } catch (_: Exception) {}
+        }
+    }
+
     val botList: StateFlow<List<BotEntity>> = repository.allBots
         .stateIn(
             scope = viewModelScope,
@@ -411,7 +419,10 @@ class EmochiViewModel(application: Application) : AndroidViewModel(application) 
 
                 val currentMsgs = repository.getMessageListForBot(botId)
 
-                val replyText = repository.generateAiReply(currentBot, currentMsgs)
+                var replyText = repository.generateAiReply(currentBot, currentMsgs)
+                if (replyText.isBlank()) {
+                    replyText = "*${currentBot.aiName} gülümsedi ve seni dinlemeye devam etti.*"
+                }
 
                 val aiMsg = MessageEntity(
                     id = UUID.randomUUID().toString(),
@@ -471,7 +482,10 @@ class EmochiViewModel(application: Application) : AndroidViewModel(application) 
                 repository.deleteMessage(msgId)
 
                 val currentMsgs = repository.getMessageListForBot(botId)
-                val replyText = repository.generateAiReply(currentBot, currentMsgs)
+                var replyText = repository.generateAiReply(currentBot, currentMsgs)
+                if (replyText.isBlank()) {
+                    replyText = "*${currentBot.aiName} gülümsedi ve yanıt verdi.*"
+                }
 
                 val now = System.currentTimeMillis()
                 val aiMsg = MessageEntity(
@@ -551,7 +565,10 @@ class EmochiViewModel(application: Application) : AndroidViewModel(application) 
 
                 // Generate first before deleting targetMsg to prevent wiping message on network error
                 repository.incrementRegenerateCount(botId)
-                val replyText = repository.generateAiReply(botToUse, remainingMsgs)
+                var replyText = repository.generateAiReply(botToUse, remainingMsgs)
+                if (replyText.isBlank()) {
+                    replyText = "*${botToUse.aiName} gülümsedi ve gözlerinin içine baktı.*"
+                }
 
                 if (targetMsg != null) {
                     repository.deleteMessage(targetMsg.id)
@@ -609,7 +626,10 @@ class EmochiViewModel(application: Application) : AndroidViewModel(application) 
                     } else currentBot
 
                     val truncatedList = msgs.subList(0, idx) + editedMsg
-                    val replyText = repository.generateAiReply(botToUse, truncatedList)
+                    var replyText = repository.generateAiReply(botToUse, truncatedList)
+                    if (replyText.isBlank()) {
+                        replyText = "*${botToUse.aiName} gülümsedi ve yanıtını tazeledi.*"
+                    }
 
                     // Delete old trailing messages ONLY after generation succeeds
                     for (i in (idx + 1) until msgs.size) {

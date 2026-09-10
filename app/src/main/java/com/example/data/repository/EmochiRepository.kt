@@ -239,8 +239,13 @@ class EmochiRepository(
     }
 
     suspend fun saveMessage(msg: MessageEntity) {
+        if (msg.text.isBlank()) return
         messageDao.insertMessage(msg)
         autoBackupToStorage()
+    }
+
+    suspend fun deleteEmptyMessages() {
+        messageDao.deleteEmptyMessages()
     }
 
     suspend fun deleteMessage(id: String) {
@@ -1359,10 +1364,12 @@ class EmochiRepository(
     }
 
     fun cleanEmotionTags(rawText: String): String {
-        if (rawText.isBlank()) return rawText
+        if (rawText.isBlank()) return "*Sessizce gülümsedi ve gözlerinin içine baktı.*"
         var result = rawText
 
         result = result
+            .replace(Regex("""(?is)<think>.*?</think>"""), "")
+            .replace(Regex("""(?is)<reasoning>.*?</reasoning>"""), "")
             .replace(Regex("""(?is)\[\[STATE_JSON\s*\{.*?\}\s*\]\]"""), "")
             .replace(Regex("""(?is)\[\[STATE\s+affectionScore=.*?\]\]"""), "")
             .replace(Regex("""(?is)\[\[STATE.*?\]\]"""), "")
@@ -1392,12 +1399,30 @@ class EmochiRepository(
         val cleaned = cleanLines.joinToString("\n").trim()
         if (cleaned.isNotBlank()) return cleaned
 
+        // Fallback 1: Try parsing JSON for embedded response text
+        try {
+            val jsonMatch = Regex("""(?is)\{.*\}""").find(rawText)?.value
+            if (jsonMatch != null) {
+                val jsonObj = org.json.JSONObject(jsonMatch)
+                val possibleKeys = listOf("response_text", "dialogue", "response", "reply", "message", "content", "narrative", "text")
+                for (key in possibleKeys) {
+                    val str = jsonObj.optString(key, "")
+                    if (str.isNotBlank()) {
+                        return str.trim()
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+
+        // Fallback 2: Basic clean
         val basicClean = rawText
             .replace(Regex("""(?is)\[\[STATE_JSON\s*\{.*?\}\s*\]\]"""), "")
             .replace(Regex("""(?is)```(?:json)?.*?```"""), "")
             .trim()
 
-        return if (basicClean.isNotBlank()) basicClean else rawText.take(500)
+        if (basicClean.isNotBlank()) return basicClean
+
+        return "*Sessizce gülümsedi ve seni dinlemeye devam etti.*"
     }
 
     suspend fun mergeDuplicateCharacterEmotions(botId: String) {
@@ -1464,7 +1489,11 @@ class EmochiRepository(
 
         """.trimIndent()
 
-        val isEarlyConversation = totalMessageCount < 5
+        val isEstablishedRomantic = emotionStateObj.affection >= 60 ||
+                listOf("eş", "eşim", "sevgili", "sevgilim", "aşık", "partner", "evli", "nişanlı", "koca", "karı", "gelin", "damat")
+                    .any { term -> "${bot.aiName} ${bot.aiPersonality} ${bot.scenario}".lowercase().contains(term) }
+
+        val isEarlyConversation = totalMessageCount < 5 && !isEstablishedRomantic
         val topEarlyMessageDirective = if (isEarlyConversation) {
             """
             ## ZORUNLU KURAL: İLK MESAJLAR / FLÖRT VE KELİME KISITLAMASI (MEVCUT MESAJ SAYISI: $totalMessageCount < 5)
@@ -1920,27 +1949,27 @@ micro_atmosphere: <mikro mekan/fiziksel ortam/ışık/ses/gerilim>
     fun calculateAffectionDifficultyMultiplier(aiName: String, personality: String, scenario: String): Double {
         val combined = "$aiName $personality $scenario".lowercase()
         return when {
-            // Power distance / Hierarchy (0.3 - 0.5)
+            // Power distance / Hierarchy
             combined.contains("patron") || combined.contains("boss") || combined.contains("yönetici") ||
             combined.contains("müdür") || combined.contains("ceo") || combined.contains("öğretmen") ||
             combined.contains("hoca") || combined.contains("profesör") || combined.contains("doktor") ||
             combined.contains("komutan") || combined.contains("subay") || combined.contains("amir") ||
             combined.contains("ünlü") || combined.contains("idol") || combined.contains("kral") ||
-            combined.contains("imparator") -> 0.4
+            combined.contains("imparator") -> 0.75
 
-            // Neutral / Stranger / Service (0.6 - 0.8)
+            // Neutral / Stranger / Service
             combined.contains("yabancı") || combined.contains("yeni tanış") || combined.contains("müşteri") ||
             combined.contains("barista") || combined.contains("resepsiyonist") || combined.contains("garson") ||
-            combined.contains("sürücü") || combined.contains("taksi") -> 0.7
+            combined.contains("sürücü") || combined.contains("taksi") -> 0.9
 
-            // Intimate / Childhood / Established bond (1.1 - 1.3)
+            // Intimate / Childhood / Established bond
             combined.contains("çocukluk arkadaşı") || combined.contains("eski dost") || combined.contains("sevgili") ||
             combined.contains("eş ") || combined.contains("nişanlı") || combined.contains("aşık") ||
             combined.contains("partner") || combined.contains("anne") || combined.contains("baba") ||
-            combined.contains("kardeş") -> 1.2
+            combined.contains("kardeş") || combined.contains("karı") || combined.contains("koca") -> 1.4
 
-            // Peer / Familiar baseline (0.9 - 1.1)
-            else -> 1.0
+            // Peer / Familiar baseline
+            else -> 1.1
         }
     }
 
@@ -2133,27 +2162,25 @@ micro_atmosphere: <mikro mekan/fiziksel ortam/ışık/ses/gerilim>
         val todayStr = sdfDate.format(java.util.Date())
         val currentDailyGain = if (current.lastGainResetDate == todayStr) current.dailyAffectionGain else 0
 
+        val isEstablishedRomantic = current.affection >= 60 ||
+                listOf("eş", "eşim", "sevgili", "sevgilim", "aşık", "partner", "evli", "nişanlı", "koca", "karı", "gelin", "damat")
+                    .any { term -> "${bot.aiName} ${bot.aiPersonality} ${bot.scenario}".lowercase().contains(term) }
+
         var clampedDelta = parsedDelta
         if (clampedDelta > 0) {
-            if (totalMsgCount < 5) clampedDelta = minOf(clampedDelta, 2)
+            if (totalMsgCount < 5 && !isEstablishedRomantic) clampedDelta = minOf(clampedDelta, 3)
             var maxAllowed = when {
-                prevAffection < 60 -> 6
-                prevAffection in 60..85 -> 4
-                else -> 2
+                prevAffection < 60 -> 8
+                prevAffection in 60..85 -> 6
+                else -> 4
             }
             if (totalMsgCount < current.recoveryLockUntilMessageCount) {
-                maxAllowed = (maxAllowed * 0.4).roundToInt().coerceAtLeast(1)
+                maxAllowed = (maxAllowed * 0.5).roundToInt().coerceAtLeast(1)
             }
-            val effectiveMaxAllowed = (maxAllowed * baseMultiplier * combinedContextMult * pAffectionMult).roundToInt().coerceAtLeast(0)
+            val effectiveMaxAllowed = (maxAllowed * baseMultiplier * combinedContextMult * pAffectionMult).roundToInt().coerceAtLeast(1)
             clampedDelta = minOf(clampedDelta, effectiveMaxAllowed)
 
-            if (current.consecutivePositiveCount >= 6) {
-                clampedDelta = (clampedDelta / 4).coerceAtLeast(1)
-            } else if (current.consecutivePositiveCount >= 3) {
-                clampedDelta = (clampedDelta / 2).coerceAtLeast(1)
-            }
-
-            val maxDailyBudget = (15 * baseMultiplier).roundToInt().coerceAtLeast(3)
+            val maxDailyBudget = (35 * baseMultiplier).roundToInt().coerceAtLeast(12)
             val remainingDailyBudget = (maxDailyBudget - currentDailyGain).coerceAtLeast(0)
             clampedDelta = minOf(clampedDelta, remainingDailyBudget)
 

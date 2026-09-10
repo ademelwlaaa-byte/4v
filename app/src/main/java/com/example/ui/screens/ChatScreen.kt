@@ -913,6 +913,9 @@ fun ChatScreen(
                     }
                 }
 
+                val validMessages = remember(messages) { messages.filter { it.text.isNotBlank() } }
+                val lastValidAiIndex = remember(validMessages) { validMessages.indexOfLast { it.role == "assistant" } }
+
                 LazyColumn(
                     state = listState,
                     modifier = Modifier
@@ -921,7 +924,7 @@ fun ChatScreen(
                         .padding(horizontal = 14.dp, vertical = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
-                    if (messages.isEmpty() && !isSending) {
+                    if (validMessages.isEmpty() && !isSending) {
                         item(key = "empty_placeholder_card") {
                             Box(
                                 modifier = Modifier
@@ -966,10 +969,10 @@ fun ChatScreen(
                             }
                         }
                     } else {
-                        itemsIndexed(messages, key = { _, msg -> msg.id }) { idx, msg ->
+                        itemsIndexed(validMessages, key = { _, msg -> msg.id }) { idx, msg ->
                             val isUser = msg.role == "user"
-                            val isLastAi = !isUser && idx == lastAiIndex
-                            val isLastUserUnanswered = isUser && idx == messages.lastIndex
+                            val isLastAi = !isUser && idx == lastValidAiIndex
+                            val isLastUserUnanswered = isUser && idx == validMessages.lastIndex
 
                             val timeFormatted = remember(msg.timestamp) {
                                 if (msg.timestamp > 0L) {

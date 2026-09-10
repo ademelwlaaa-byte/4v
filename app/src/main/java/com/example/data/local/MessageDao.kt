@@ -7,16 +7,16 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface MessageDao {
-    @Query("SELECT * FROM messages WHERE botId = :botId ORDER BY timestamp ASC")
+    @Query("SELECT * FROM messages WHERE botId = :botId AND LENGTH(TRIM(text)) > 0 ORDER BY timestamp ASC")
     fun getMessagesForBot(botId: String): Flow<List<MessageEntity>>
 
-    @Query("SELECT * FROM messages WHERE botId = :botId ORDER BY timestamp ASC")
+    @Query("SELECT * FROM messages WHERE botId = :botId AND LENGTH(TRIM(text)) > 0 ORDER BY timestamp ASC")
     suspend fun getMessagesForBotList(botId: String): List<MessageEntity>
 
-    @Query("SELECT COUNT(*) FROM messages WHERE botId = :botId")
+    @Query("SELECT COUNT(*) FROM messages WHERE botId = :botId AND LENGTH(TRIM(text)) > 0")
     suspend fun getMessageCountForBot(botId: String): Int
 
-    @Query("SELECT * FROM messages")
+    @Query("SELECT * FROM messages WHERE LENGTH(TRIM(text)) > 0")
     suspend fun getAllMessagesList(): List<MessageEntity>
 
     @Upsert
@@ -30,6 +30,9 @@ interface MessageDao {
 
     @Query("DELETE FROM messages WHERE botId = :botId")
     suspend fun deleteMessagesForBot(botId: String)
+
+    @Query("DELETE FROM messages WHERE text IS NULL OR LENGTH(TRIM(text)) = 0")
+    suspend fun deleteEmptyMessages()
 
     @Query("DELETE FROM messages")
     suspend fun deleteAllMessages()
