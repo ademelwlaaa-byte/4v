@@ -166,6 +166,7 @@ class EmochiRepository(
     private val pendingReappraisalDao = db.pendingReappraisalDao()
     private val activeMemoryCallLogDao = db.activeMemoryCallLogDao()
     private val timePerceptionMismatchLogDao = db.timePerceptionMismatchLogDao()
+    private val malformedOutputLogDao = db.malformedOutputLogDao()
 
     val lastRetrievalStageMap = java.util.concurrent.ConcurrentHashMap<String, String>()
     private val regenerateCountMap = java.util.concurrent.ConcurrentHashMap<String, Int>()
@@ -1511,11 +1512,33 @@ class EmochiRepository(
         recentCheckpoints: List<MemoryCheckpointEntity> = emptyList(),
         castMembers: List<CastMemberEntity> = emptyList(),
         lastMessageTimestamp: Long = 0L,
-        totalMessageCount: Int = 0
+        totalMessageCount: Int = 0,
+        compactMode: Boolean = listOf("llm7", "pollinations", "opencode_zen", "openrouter", "nvidia", "mistral").contains(settings.selectedProvider)
     ): String {
         val now = System.currentTimeMillis()
         val emotionStateObj = EmotionState.fromJson(bot.emotionState)
         val timeInfo = calculateTimePerception(lastMessageTimestamp, now, emotionStateObj.affection, bot = bot)
+
+        if (compactMode) {
+            val factsStr = if (relevantFacts.isNotEmpty()) "\n- Hafıza Gerçekleri: " + relevantFacts.joinToString("; ") { "${it.key}: ${it.value}" } else ""
+            val eventsStr = if (relevantEvents.isNotEmpty()) "\n- Geçmiş Olaylar: " + relevantEvents.joinToString("; ") { it.description } else ""
+            val castStr = if (castMembers.isNotEmpty()) "\n- Çevredekiler: " + castMembers.joinToString(", ") { "${it.name} (${it.role})" } else ""
+
+            return """
+                [KARAKTER KARTI (COMPACT MODE)]
+                Karakter Adı: ${bot.aiName}
+                Kişilik: ${bot.aiPersonality}
+                Senaryo: ${bot.scenario}
+                Duygu Durumu: Sevgi=${emotionStateObj.affection}, Güven=${emotionStateObj.trust}, Gerilim=${emotionStateObj.tension}
+                Zaman Algısı: ${timeInfo.formattedTimeString}$factsStr$eventsStr$castStr
+
+                [TEMEL TALİMATLAR]
+                • ${bot.aiName} rolünden çıkma, doğal, tutarlı ve samimi Türkçe yanıt ver.
+                • Basit maddeler halinde düşün; yapay/klişe ifadeleri ("gülümsedi", "gözlerinin içine baktı") tekrar etme.
+                • Yanıtının EN SONUNA şu durum bloğunu ekle: [[STATE affectionScore=${emotionStateObj.affection} delta=0 reason="normal sohbet"]]
+                • Önemli yeni bir bilgi öğrendiğinde yanıt sonuna ekle: [[MEMORY_SAVE action="save" content="öğrenilen bilgi" category="fact" importance="5"]]
+            """.trimIndent()
+        }
 
         val baseMultiplier = if (bot.baseAffectionDifficulty > 0.0) {
             bot.baseAffectionDifficulty
@@ -2133,8 +2156,29 @@ micro_atmosphere: <mikro mekan/fiziksel ortam/ışık/ses/gerilim>
                 parsedSelfCheck = com.example.data.local.SelfCheckData.fromJsonObject(scObj)
             }
         } else {
-            // Fallback: If JSON parsing fails or block is missing, delta = 0 across ALL axes!
-            parsedDelta = 0
+            // Tolerant Regex Parsing for LLM7 or weak JSON models
+            val regexDeltaMatch = Regex("""(?i)(?:delta|value|affectionScore|score)\s*[:=]\s*([+-]?\d+)""").find(rawResponse)
+            val regexReasonMatch = Regex("""(?i)(?:reason|neden)\s*[:=]\s*["']?([^"\n\r,\]\}]+)["']?""").find(rawResponse)
+            
+            if (regexDeltaMatch != null) {
+                parsedDelta = regexDeltaMatch.groupValues[1].toIntOrNull() ?: 0
+                parsedReason = regexReasonMatch?.groupValues[1]?.trim() ?: "Regex Tolerant Parsing"
+            } else {
+                parsedDelta = 0
+            }
+
+            try {
+                malformedOutputLogDao.insertLog(
+                    com.example.data.local.MalformedOutputLogEntity(
+                        botId = botId,
+                        provider = "llm7",
+                        model = "default",
+                        rawOutput = rawResponse.take(1000),
+                        errorMessage = if (regexDeltaMatch != null) "JSON_SYNTAX_ERROR_RECOVERED_BY_REGEX" else "JSON_AND_REGEX_PARSING_FAILED",
+                        timestamp = System.currentTimeMillis()
+                    )
+                )
+            } catch (_: Exception) {}
         }
 
         // 2. Personality Profile Multipliers & Multi-dimensional Clamping
@@ -4262,6 +4306,20 @@ Tebrikler! Bölüm 3'ü başarıyla tamamladın."""
         return@withContext db.emptyResponseLogDao().getContentFilterCountForBot(botId)
     }
 
+    private fun checkForRecentCliches(messages: List<MessageEntity>): Boolean {
+        val assistantMsgs = messages.filter { it.role == "assistant" }.takeLast(5)
+        if (assistantMsgs.isEmpty()) return false
+        val cliches = listOf("gülümsedi", "gözlerinin içine baktı", "derin bir nefes", "hafifçe tebessüm", "yavaşça sordu")
+        var totalMatches = 0
+        for (m in assistantMsgs) {
+            val txt = m.text.lowercase()
+            for (c in cliches) {
+                if (txt.contains(c)) totalMatches++
+            }
+        }
+        return totalMatches >= 2
+    }
+
     private suspend fun executeSingleModelRequest(
         model: String,
         settings: UserSettingsEntity,
@@ -4282,18 +4340,39 @@ Tebrikler! Bölüm 3'ü başarıyla tamamladın."""
             buildConfigGeminiKey = getBuildConfigKey()
         )
 
+        val isSecondary = adapter.reliabilityTier == com.example.data.api.ReliabilityTier.SECONDARY
+        val providerKey = adapter.providerName
+
+        if (isSecondary) {
+            val (canSend, rateReason) = com.example.util.ProviderRateLimitTracker.canSendRequest(providerKey)
+            if (!canSend) {
+                com.example.util.ProviderRateLimitTracker.recordFallbackTrigger(providerKey)
+                throw IllegalStateException("$providerKey Rate Limit Önceden Engelledi: $rateReason")
+            }
+        }
+
         var currentPrompt = if (!adapter.supportsFunctionCalling()) {
             systemPrompt + "\n\n[SİSTEM UYARISI: Bu model Function Calling desteklememektedir. Önemli bir yeni bilgi öğrendiğinde veya var olan bir bilgiyi değiştirdiğinde yanıtının sonuna [[MEMORY_SAVE action=\"save\" content=\"...\" category=\"fact\" importance=\"5\"]] formatında ekleme yap. Ayrıca her mesaj sonunda [[STATE affectionScore=... delta=... reason=\"...\"]] bloğunu eklemeyi unutma.]"
         } else {
             systemPrompt
         }
 
+        if (isSecondary && com.example.util.OutputQualityValidator.checkForRecentCliches(messages)) {
+            currentPrompt += com.example.util.OutputQualityValidator.buildClichePromptInstruction()
+        }
+
         val tools = if (adapter.supportsFunctionCalling()) com.example.data.api.MemoryToolRegistry.CENTRAL_TOOLS else null
 
         var lastError: Exception? = null
+        val startTime = System.currentTimeMillis()
         for (attempt in 1..2) {
             try {
-                val resp = adapter.sendMessage(currentPrompt, messages, tools)
+                var resp = adapter.sendMessage(currentPrompt, messages, tools)
+
+                if (isSecondary && com.example.util.OutputQualityValidator.isResponseTooShort(resp.text, settings.responseLength, attempt)) {
+                    currentPrompt += com.example.util.OutputQualityValidator.buildElaboratePromptInstruction()
+                    resp = adapter.sendMessage(currentPrompt, messages, tools)
+                }
 
                 if (resp.text.isBlank() && resp.toolCalls.isNullOrEmpty()) {
                     logEmptyResponse(
@@ -4304,7 +4383,16 @@ Tebrikler! Bölüm 3'ü başarıyla tamamladın."""
                         rawLength = 0,
                         errorMessage = "Model içerik döndürmedi (attempt=$attempt)."
                     )
+                    if (isSecondary) {
+                        com.example.util.ProviderRateLimitTracker.recordMalformedOutput(providerKey)
+                    }
                     throw IllegalStateException("Sağlayıcı (${resp.usedProvider}) boş yanıt döndürdü.")
+                }
+
+                if (isSecondary) {
+                    val duration = System.currentTimeMillis() - startTime
+                    val totalTokens = (resp.usage?.promptTokens ?: 0L) + (resp.usage?.candidateTokens ?: 0L)
+                    com.example.util.ProviderRateLimitTracker.recordRequest(providerKey, tokensUsed = totalTokens, responseTimeMs = duration)
                 }
 
                 return com.example.data.api.ModelResponseResult(
@@ -4316,6 +4404,9 @@ Tebrikler! Bölüm 3'ü başarıyla tamamladın."""
                 )
             } catch (e: Exception) {
                 lastError = e
+                if (isSecondary) {
+                    com.example.util.ProviderRateLimitTracker.recordFallbackTrigger(providerKey)
+                }
                 val errMsg = e.message ?: e.toString()
                 val isContentFilter = errMsg.contains("içerik filtresi", ignoreCase = true) ||
                         errMsg.contains("content_filter", ignoreCase = true) ||
@@ -4365,15 +4456,49 @@ Tebrikler! Bölüm 3'ü başarıyla tamamladın."""
         customProvidersMap: Map<Long, com.example.data.local.CustomProviderEntity>
     ): com.example.data.api.ModelResponseResult? {
         when {
+            key == "main" -> {
+                val label = "Ana Seçim (${settings.selectedProvider})"
+                logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "TRYING"))
+                try {
+                    val result = executeSingleModelRequest(model, settings, systemPrompt, messages, botId)
+                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "SUCCESS"))
+                    return result
+                } catch (e: Exception) {
+                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "FAILED", errorMessage = e.message ?: e.toString()))
+                }
+            }
             key == "llm7" -> {
-                if (!settings.enableLlm7) return null
+                if (!settings.enableLlm7 || settings.selectedProvider == "llm7") return null
+                val (canSend, rateReason) = com.example.util.ProviderRateLimitTracker.canSendRequest("llm7")
+                if (!canSend) {
+                    com.example.util.ProviderRateLimitTracker.recordFallbackTrigger("llm7")
+                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = "LLM7 (Ücretsiz Servis)", status = "FAILED", errorMessage = "Önceden Engellendi (Rate Limit): $rateReason"))
+                    return null
+                }
+
                 logFallbackAttempt(ProviderFallbackLogEntry(providerName = "LLM7 (Ücretsiz Servis)", status = "TRYING"))
                 try {
                     val adapter = com.example.data.api.LLMAdapterFactory.createAdapter("llm7", "default", settings)
-                    val resp = adapter.sendMessage(systemPrompt, messages, if (adapter.supportsFunctionCalling()) com.example.data.api.MemoryToolRegistry.CENTRAL_TOOLS else null)
+                    var llm7Prompt = systemPrompt
+                    if (com.example.util.OutputQualityValidator.checkForRecentCliches(messages)) {
+                        llm7Prompt += com.example.util.OutputQualityValidator.buildClichePromptInstruction()
+                    }
+                    val startTime = System.currentTimeMillis()
+                    var resp = adapter.sendMessage(llm7Prompt, messages, null)
+
+                    if (com.example.util.OutputQualityValidator.isResponseTooShort(resp.text, settings.responseLength, 1)) {
+                        llm7Prompt += com.example.util.OutputQualityValidator.buildElaboratePromptInstruction()
+                        resp = adapter.sendMessage(llm7Prompt, messages, null)
+                    }
+
+                    val duration = System.currentTimeMillis() - startTime
+                    val totalTokens = (resp.usage?.promptTokens ?: 0L) + (resp.usage?.candidateTokens ?: 0L)
+                    com.example.util.ProviderRateLimitTracker.recordRequest("llm7", tokensUsed = totalTokens, responseTimeMs = duration)
+
                     logFallbackAttempt(ProviderFallbackLogEntry(providerName = "LLM7 (Ücretsiz Servis)", status = "SUCCESS"))
                     return com.example.data.api.ModelResponseResult(resp.text, resp.toolCalls ?: emptyList(), resp.usage?.promptTokens ?: 0L, resp.usage?.candidateTokens ?: 0L, resp.usedProvider)
                 } catch (e: Exception) {
+                    com.example.util.ProviderRateLimitTracker.recordFallbackTrigger("llm7")
                     logFallbackAttempt(ProviderFallbackLogEntry(providerName = "LLM7 (Ücretsiz Servis)", status = "FAILED", errorMessage = e.message ?: e.toString()))
                 }
             }
@@ -4381,27 +4506,202 @@ Tebrikler! Bölüm 3'ü başarıyla tamamladın."""
                 if (!settings.enablePollinations || settings.selectedProvider == "pollinations") return null
                 val pModel = settings.pollinationsModel.ifBlank { "openai" }
                 val label = "Pollinations ($pModel)"
+                val (canSend, rateReason) = com.example.util.ProviderRateLimitTracker.canSendRequest("pollinations")
+                if (!canSend) {
+                    com.example.util.ProviderRateLimitTracker.recordFallbackTrigger("pollinations")
+                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "FAILED", errorMessage = "Önceden Engellendi (Rate Limit): $rateReason"))
+                    return null
+                }
                 logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "TRYING"))
                 try {
                     val adapter = com.example.data.api.LLMAdapterFactory.createAdapter("pollinations", pModel, settings)
-                    val resp = adapter.sendMessage(systemPrompt, messages, null)
+                    var prompt = systemPrompt
+                    if (com.example.util.OutputQualityValidator.checkForRecentCliches(messages)) {
+                        prompt += com.example.util.OutputQualityValidator.buildClichePromptInstruction()
+                    }
+                    val startTime = System.currentTimeMillis()
+                    var resp = adapter.sendMessage(prompt, messages, null)
+                    val duration = System.currentTimeMillis() - startTime
+                    val totalTokens = (resp.usage?.promptTokens ?: 0L) + (resp.usage?.candidateTokens ?: 0L)
+                    com.example.util.ProviderRateLimitTracker.recordRequest("pollinations", tokensUsed = totalTokens, responseTimeMs = duration)
+                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "SUCCESS"))
+                    return com.example.data.api.ModelResponseResult(resp.text, resp.toolCalls ?: emptyList(), resp.usage?.promptTokens ?: 0L, resp.usage?.candidateTokens ?: 0L, resp.usedProvider)
+                } catch (e: Exception) {
+                    com.example.util.ProviderRateLimitTracker.recordFallbackTrigger("pollinations")
+                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "FAILED", errorMessage = e.message ?: e.toString()))
+                }
+            }
+            key == "opencode_zen" -> {
+                if (!settings.enableOpencodeZen || settings.selectedProvider == "opencode_zen" || settings.opencodeZenApiKey.isBlank()) return null
+                val zenModel = settings.opencodeZenModel.ifBlank { "deepseek-v4-flash-free" }
+                val label = "OpenCode Zen ($zenModel)"
+                val (canSend, rateReason) = com.example.util.ProviderRateLimitTracker.canSendRequest("opencode_zen")
+                if (!canSend) {
+                    com.example.util.ProviderRateLimitTracker.recordFallbackTrigger("opencode_zen")
+                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "FAILED", errorMessage = "Önceden Engellendi (Rate Limit): $rateReason"))
+                    return null
+                }
+                logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "TRYING"))
+                try {
+                    val adapter = com.example.data.api.LLMAdapterFactory.createAdapter("opencode_zen", zenModel, settings)
+                    var prompt = systemPrompt
+                    if (com.example.util.OutputQualityValidator.checkForRecentCliches(messages)) {
+                        prompt += com.example.util.OutputQualityValidator.buildClichePromptInstruction()
+                    }
+                    val startTime = System.currentTimeMillis()
+                    val resp = adapter.sendMessage(prompt, messages, if (adapter.supportsFunctionCalling()) com.example.data.api.MemoryToolRegistry.CENTRAL_TOOLS else null)
+                    val duration = System.currentTimeMillis() - startTime
+                    val totalTokens = (resp.usage?.promptTokens ?: 0L) + (resp.usage?.candidateTokens ?: 0L)
+                    com.example.util.ProviderRateLimitTracker.recordRequest("opencode_zen", tokensUsed = totalTokens, responseTimeMs = duration)
+                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "SUCCESS"))
+                    return com.example.data.api.ModelResponseResult(resp.text, resp.toolCalls ?: emptyList(), resp.usage?.promptTokens ?: 0L, resp.usage?.candidateTokens ?: 0L, resp.usedProvider)
+                } catch (e: Exception) {
+                    com.example.util.ProviderRateLimitTracker.recordFallbackTrigger("opencode_zen")
+                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "FAILED", errorMessage = e.message ?: e.toString()))
+                }
+            }
+            key == "gemini" -> {
+                if (settings.selectedProvider == "gemini") return null
+                val gemKey = if (settings.customApiKey.isNotBlank()) settings.customApiKey else getBuildConfigKey()
+                if (gemKey.isBlank()) return null
+                val gModel = settings.geminiModel.ifBlank { "gemini-2.5-flash" }
+                val label = "Gemini AI ($gModel)"
+                logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "TRYING"))
+                try {
+                    val adapter = com.example.data.api.LLMAdapterFactory.createAdapter("gemini", gModel, settings, buildConfigGeminiKey = gemKey)
+                    val resp = adapter.sendMessage(systemPrompt, messages, com.example.data.api.MemoryToolRegistry.CENTRAL_TOOLS)
                     logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "SUCCESS"))
                     return com.example.data.api.ModelResponseResult(resp.text, resp.toolCalls ?: emptyList(), resp.usage?.promptTokens ?: 0L, resp.usage?.candidateTokens ?: 0L, resp.usedProvider)
                 } catch (e: Exception) {
                     logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "FAILED", errorMessage = e.message ?: e.toString()))
                 }
             }
-            key == "opencode_zen" -> {
-                if (!settings.enableOpencodeZen || settings.selectedProvider == "opencode_zen") return null
-                val zenModel = settings.opencodeZenModel.ifBlank { "deepseek-v4-flash-free" }
-                val label = "OpenCode Zen ($zenModel)"
+            key == "claude" -> {
+                if (settings.selectedProvider == "claude" || settings.claudeApiKey.isBlank()) return null
+                val cModel = settings.claudeModel.ifBlank { "claude-3-5-sonnet-20241022" }
+                val label = "Claude AI ($cModel)"
                 logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "TRYING"))
                 try {
-                    val adapter = com.example.data.api.LLMAdapterFactory.createAdapter("opencode_zen", zenModel, settings)
-                    val resp = adapter.sendMessage(systemPrompt, messages, if (adapter.supportsFunctionCalling()) com.example.data.api.MemoryToolRegistry.CENTRAL_TOOLS else null)
+                    val adapter = com.example.data.api.LLMAdapterFactory.createAdapter("claude", cModel, settings)
+                    val resp = adapter.sendMessage(systemPrompt, messages, com.example.data.api.MemoryToolRegistry.CENTRAL_TOOLS)
                     logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "SUCCESS"))
                     return com.example.data.api.ModelResponseResult(resp.text, resp.toolCalls ?: emptyList(), resp.usage?.promptTokens ?: 0L, resp.usage?.candidateTokens ?: 0L, resp.usedProvider)
                 } catch (e: Exception) {
+                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "FAILED", errorMessage = e.message ?: e.toString()))
+                }
+            }
+            key == "groq" -> {
+                if (settings.selectedProvider == "groq" || settings.groqApiKey.isBlank()) return null
+                val gModel = settings.groqModel.ifBlank { "llama-3.3-70b-versatile" }
+                val label = "Groq ($gModel)"
+                logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "TRYING"))
+                try {
+                    val adapter = com.example.data.api.LLMAdapterFactory.createAdapter("groq", gModel, settings)
+                    val resp = adapter.sendMessage(systemPrompt, messages, com.example.data.api.MemoryToolRegistry.CENTRAL_TOOLS)
+                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "SUCCESS"))
+                    return com.example.data.api.ModelResponseResult(resp.text, resp.toolCalls ?: emptyList(), resp.usage?.promptTokens ?: 0L, resp.usage?.candidateTokens ?: 0L, resp.usedProvider)
+                } catch (e: Exception) {
+                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "FAILED", errorMessage = e.message ?: e.toString()))
+                }
+            }
+            key == "openai" -> {
+                if (settings.selectedProvider == "openai" || settings.openaiApiKey.isBlank()) return null
+                val oModel = settings.openaiModel.ifBlank { "gpt-4o" }
+                val label = "OpenAI ($oModel)"
+                logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "TRYING"))
+                try {
+                    val adapter = com.example.data.api.LLMAdapterFactory.createAdapter("openai", oModel, settings)
+                    val resp = adapter.sendMessage(systemPrompt, messages, com.example.data.api.MemoryToolRegistry.CENTRAL_TOOLS)
+                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "SUCCESS"))
+                    return com.example.data.api.ModelResponseResult(resp.text, resp.toolCalls ?: emptyList(), resp.usage?.promptTokens ?: 0L, resp.usage?.candidateTokens ?: 0L, resp.usedProvider)
+                } catch (e: Exception) {
+                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "FAILED", errorMessage = e.message ?: e.toString()))
+                }
+            }
+            key == "openrouter" -> {
+                if (settings.selectedProvider == "openrouter" || settings.openRouterApiKey.isBlank()) return null
+                val mName = settings.openRouterModel.ifBlank { "deepseek/deepseek-chat" }
+                val label = "OpenRouter ($mName)"
+                val (canSend, rateReason) = com.example.util.ProviderRateLimitTracker.canSendRequest("openrouter")
+                if (!canSend) {
+                    com.example.util.ProviderRateLimitTracker.recordFallbackTrigger("openrouter")
+                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "FAILED", errorMessage = "Önceden Engellendi (Rate Limit): $rateReason"))
+                    return null
+                }
+                logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "TRYING"))
+                try {
+                    val adapter = com.example.data.api.LLMAdapterFactory.createAdapter("openrouter", mName, settings)
+                    var prompt = systemPrompt
+                    if (com.example.util.OutputQualityValidator.checkForRecentCliches(messages)) {
+                        prompt += com.example.util.OutputQualityValidator.buildClichePromptInstruction()
+                    }
+                    val startTime = System.currentTimeMillis()
+                    val resp = adapter.sendMessage(prompt, messages, com.example.data.api.MemoryToolRegistry.CENTRAL_TOOLS)
+                    val duration = System.currentTimeMillis() - startTime
+                    val totalTokens = (resp.usage?.promptTokens ?: 0L) + (resp.usage?.candidateTokens ?: 0L)
+                    com.example.util.ProviderRateLimitTracker.recordRequest("openrouter", tokensUsed = totalTokens, responseTimeMs = duration)
+                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "SUCCESS"))
+                    return com.example.data.api.ModelResponseResult(resp.text, resp.toolCalls ?: emptyList(), resp.usage?.promptTokens ?: 0L, resp.usage?.candidateTokens ?: 0L, resp.usedProvider)
+                } catch (e: Exception) {
+                    com.example.util.ProviderRateLimitTracker.recordFallbackTrigger("openrouter")
+                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "FAILED", errorMessage = e.message ?: e.toString()))
+                }
+            }
+            key == "nvidia" -> {
+                if (settings.selectedProvider == "nvidia" || settings.nvidiaApiKey.isBlank()) return null
+                val mName = settings.nvidiaModel
+                val label = "NVIDIA NIM ($mName)"
+                val (canSend, rateReason) = com.example.util.ProviderRateLimitTracker.canSendRequest("nvidia")
+                if (!canSend) {
+                    com.example.util.ProviderRateLimitTracker.recordFallbackTrigger("nvidia")
+                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "FAILED", errorMessage = "Önceden Engellendi (Rate Limit): $rateReason"))
+                    return null
+                }
+                logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "TRYING"))
+                try {
+                    val adapter = com.example.data.api.LLMAdapterFactory.createAdapter("nvidia", mName, settings)
+                    var prompt = systemPrompt
+                    if (com.example.util.OutputQualityValidator.checkForRecentCliches(messages)) {
+                        prompt += com.example.util.OutputQualityValidator.buildClichePromptInstruction()
+                    }
+                    val startTime = System.currentTimeMillis()
+                    val resp = adapter.sendMessage(prompt, messages, com.example.data.api.MemoryToolRegistry.CENTRAL_TOOLS)
+                    val duration = System.currentTimeMillis() - startTime
+                    val totalTokens = (resp.usage?.promptTokens ?: 0L) + (resp.usage?.candidateTokens ?: 0L)
+                    com.example.util.ProviderRateLimitTracker.recordRequest("nvidia", tokensUsed = totalTokens, responseTimeMs = duration)
+                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "SUCCESS"))
+                    return com.example.data.api.ModelResponseResult(resp.text, resp.toolCalls ?: emptyList(), resp.usage?.promptTokens ?: 0L, resp.usage?.candidateTokens ?: 0L, resp.usedProvider)
+                } catch (e: Exception) {
+                    com.example.util.ProviderRateLimitTracker.recordFallbackTrigger("nvidia")
+                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "FAILED", errorMessage = e.message ?: e.toString()))
+                }
+            }
+            key == "mistral" -> {
+                if (settings.selectedProvider == "mistral" || settings.mistralApiKey.isBlank()) return null
+                val mName = settings.mistralModel.ifBlank { "mistral-large-latest" }
+                val label = "Mistral AI ($mName)"
+                val (canSend, rateReason) = com.example.util.ProviderRateLimitTracker.canSendRequest("mistral")
+                if (!canSend) {
+                    com.example.util.ProviderRateLimitTracker.recordFallbackTrigger("mistral")
+                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "FAILED", errorMessage = "Önceden Engellendi (Rate Limit): $rateReason"))
+                    return null
+                }
+                logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "TRYING"))
+                try {
+                    val adapter = com.example.data.api.LLMAdapterFactory.createAdapter("mistral", mName, settings)
+                    var prompt = systemPrompt
+                    if (com.example.util.OutputQualityValidator.checkForRecentCliches(messages)) {
+                        prompt += com.example.util.OutputQualityValidator.buildClichePromptInstruction()
+                    }
+                    val startTime = System.currentTimeMillis()
+                    val resp = adapter.sendMessage(prompt, messages, com.example.data.api.MemoryToolRegistry.CENTRAL_TOOLS)
+                    val duration = System.currentTimeMillis() - startTime
+                    val totalTokens = (resp.usage?.promptTokens ?: 0L) + (resp.usage?.candidateTokens ?: 0L)
+                    com.example.util.ProviderRateLimitTracker.recordRequest("mistral", tokensUsed = totalTokens, responseTimeMs = duration)
+                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "SUCCESS"))
+                    return com.example.data.api.ModelResponseResult(resp.text, resp.toolCalls ?: emptyList(), resp.usage?.promptTokens ?: 0L, resp.usage?.candidateTokens ?: 0L, resp.usedProvider)
+                } catch (e: Exception) {
+                    com.example.util.ProviderRateLimitTracker.recordFallbackTrigger("mistral")
                     logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "FAILED", errorMessage = e.message ?: e.toString()))
                 }
             }
@@ -4418,128 +4718,6 @@ Tebrikler! Bölüm 3'ü başarıyla tamamladın."""
                     } else systemPrompt
                     val tools = if (cpAdapter.supportsFunctionCalling()) com.example.data.api.MemoryToolRegistry.CENTRAL_TOOLS else null
                     val resp = cpAdapter.sendMessage(finalPrompt, messages, tools)
-                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "SUCCESS"))
-                    return com.example.data.api.ModelResponseResult(resp.text, resp.toolCalls ?: emptyList(), resp.usage?.promptTokens ?: 0L, resp.usage?.candidateTokens ?: 0L, resp.usedProvider)
-                } catch (e: Exception) {
-                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "FAILED", errorMessage = e.message ?: e.toString()))
-                }
-            }
-            key == "main" -> {
-                val mainProviderLabel = when {
-                    settings.selectedProvider == "llm7" -> "LLM7 (Sabit)"
-                    settings.selectedProvider == "pollinations" -> "Pollinations (${settings.pollinationsModel})"
-                    settings.selectedProvider == "opencode_zen" -> "OpenCode Zen (${settings.opencodeZenModel})"
-                    settings.selectedProvider == "ovh" -> "OVH AI (${settings.ovhModel})"
-                    settings.selectedProvider == "openrouter" -> "OpenRouter (${settings.openRouterModel})"
-                    settings.selectedProvider == "nvidia" -> "NVIDIA NIM (${settings.nvidiaModel})"
-                    settings.selectedProvider == "github" -> "GitHub Models (${settings.githubModel})"
-                    settings.selectedProvider == "mistral" -> "Mistral AI (${settings.mistralModel})"
-                    settings.selectedProvider.startsWith("custom_") -> "Özel Sağlayıcı"
-                    settings.selectedProvider == "groq" -> "Groq ($model)"
-                    settings.selectedProvider == "claude" -> "Claude ($model)"
-                    settings.selectedProvider == "openai" -> "OpenAI/DeepSeek ($model)"
-                    else -> "Gemini ($model)"
-                }
-                logFallbackAttempt(ProviderFallbackLogEntry(providerName = mainProviderLabel, status = "TRYING"))
-                try {
-                    val result = executeSingleModelRequest(model, settings, systemPrompt, messages, botId)
-                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = mainProviderLabel, status = "SUCCESS"))
-                    return result
-                } catch (e: Exception) {
-                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = mainProviderLabel, status = "FAILED", errorMessage = e.message ?: e.toString()))
-                }
-            }
-            key == "autofallback" -> {
-                if (settings.enableAutoFallback && settings.selectedProvider != "llm7") {
-                    val fbModel = sanitizeModelName(settings.fallbackModel.ifBlank { "gemini-2.5-flash" })
-                    val fbLabel = "Otomatik Gemini Fallback ($fbModel)"
-                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = fbLabel, status = "TRYING"))
-                    try {
-                        val geminiAdapter = com.example.data.api.LLMAdapterFactory.createAdapter("gemini", fbModel, settings, buildConfigGeminiKey = getBuildConfigKey())
-                        val resp = geminiAdapter.sendMessage(systemPrompt, messages, com.example.data.api.MemoryToolRegistry.CENTRAL_TOOLS)
-                        logFallbackAttempt(ProviderFallbackLogEntry(providerName = fbLabel, status = "SUCCESS"))
-                        return com.example.data.api.ModelResponseResult(resp.text, resp.toolCalls ?: emptyList(), resp.usage?.promptTokens ?: 0L, resp.usage?.candidateTokens ?: 0L, resp.usedProvider)
-                    } catch (e: Exception) {
-                        logFallbackAttempt(ProviderFallbackLogEntry(providerName = fbLabel, status = "FAILED", errorMessage = e.message ?: e.toString()))
-                    }
-                }
-            }
-            key == "ovh" -> {
-                if (settings.enableOvh && settings.selectedProvider != "ovh") {
-                    if (System.currentTimeMillis() < ovhCooldownUntilTimestamp) {
-                        val remainingSec = (ovhCooldownUntilTimestamp - System.currentTimeMillis()) / 1000
-                        logFallbackAttempt(ProviderFallbackLogEntry(providerName = "OVH AI Endpoints", status = "SKIPPED", errorMessage = "429 Rate-limit cooldown aktif ($remainingSec sn kaldı)."))
-                    } else {
-                        val ovhModel = settings.ovhModel.ifBlank { "meta-llama/Meta-Llama-3-70B-Instruct" }
-                        val label = "OVH AI Endpoints ($ovhModel)"
-                        logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "TRYING"))
-                        try {
-                            val ovhAdapter = com.example.data.api.LLMAdapterFactory.createAdapter("ovh", ovhModel, settings)
-                            val resp = ovhAdapter.sendMessage(systemPrompt, messages, null)
-                            logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "SUCCESS"))
-                            return com.example.data.api.ModelResponseResult(resp.text, resp.toolCalls ?: emptyList(), resp.usage?.promptTokens ?: 0L, resp.usage?.candidateTokens ?: 0L, resp.usedProvider)
-                        } catch (e: Exception) {
-                            val msg = e.message ?: e.toString()
-                            if (msg.contains("429") || msg.contains("Too Many Requests", ignoreCase = true)) {
-                                ovhCooldownUntilTimestamp = System.currentTimeMillis() + 300_000L
-                                logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "FAILED", errorMessage = "429 Rate limit alındı! OVH 5 dakika süreyle otomatik devre dışı bırakıldı."))
-                            } else {
-                                logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "FAILED", errorMessage = msg))
-                            }
-                        }
-                    }
-                }
-            }
-            key == "openrouter" -> {
-                if (settings.openRouterApiKey.isBlank() || settings.selectedProvider == "openrouter") return null
-                val mName = settings.openRouterModel.ifBlank { "deepseek/deepseek-chat" }
-                val label = "OpenRouter ($mName)"
-                logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "TRYING"))
-                try {
-                    val adapter = com.example.data.api.LLMAdapterFactory.createAdapter("openrouter", mName, settings)
-                    val resp = adapter.sendMessage(systemPrompt, messages, com.example.data.api.MemoryToolRegistry.CENTRAL_TOOLS)
-                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "SUCCESS"))
-                    return com.example.data.api.ModelResponseResult(resp.text, resp.toolCalls ?: emptyList(), resp.usage?.promptTokens ?: 0L, resp.usage?.candidateTokens ?: 0L, resp.usedProvider)
-                } catch (e: Exception) {
-                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "FAILED", errorMessage = e.message ?: e.toString()))
-                }
-            }
-            key == "nvidia" -> {
-                if (settings.nvidiaApiKey.isBlank() || settings.selectedProvider == "nvidia") return null
-                val mName = settings.nvidiaModel.ifBlank { "deepseek-ai/deepseek-v4-flash" }
-                val label = "NVIDIA NIM ($mName)"
-                logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "TRYING"))
-                try {
-                    val adapter = com.example.data.api.LLMAdapterFactory.createAdapter("nvidia", mName, settings)
-                    val resp = adapter.sendMessage(systemPrompt, messages, com.example.data.api.MemoryToolRegistry.CENTRAL_TOOLS)
-                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "SUCCESS"))
-                    return com.example.data.api.ModelResponseResult(resp.text, resp.toolCalls ?: emptyList(), resp.usage?.promptTokens ?: 0L, resp.usage?.candidateTokens ?: 0L, resp.usedProvider)
-                } catch (e: Exception) {
-                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "FAILED", errorMessage = e.message ?: e.toString()))
-                }
-            }
-            key == "github" -> {
-                if (settings.githubPatToken.isBlank() || settings.selectedProvider == "github") return null
-                val mName = settings.githubModel.ifBlank { "openai/gpt-4o" }
-                val label = "GitHub Models ($mName)"
-                logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "TRYING"))
-                try {
-                    val adapter = com.example.data.api.LLMAdapterFactory.createAdapter("github", mName, settings)
-                    val resp = adapter.sendMessage(systemPrompt, messages, com.example.data.api.MemoryToolRegistry.CENTRAL_TOOLS)
-                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "SUCCESS"))
-                    return com.example.data.api.ModelResponseResult(resp.text, resp.toolCalls ?: emptyList(), resp.usage?.promptTokens ?: 0L, resp.usage?.candidateTokens ?: 0L, resp.usedProvider)
-                } catch (e: Exception) {
-                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "FAILED", errorMessage = e.message ?: e.toString()))
-                }
-            }
-            key == "mistral" -> {
-                if (settings.mistralApiKey.isBlank() || settings.selectedProvider == "mistral") return null
-                val mName = settings.mistralModel.ifBlank { "mistral-large-latest" }
-                val label = "Mistral AI ($mName)"
-                logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "TRYING"))
-                try {
-                    val adapter = com.example.data.api.LLMAdapterFactory.createAdapter("mistral", mName, settings)
-                    val resp = adapter.sendMessage(systemPrompt, messages, com.example.data.api.MemoryToolRegistry.CENTRAL_TOOLS)
                     logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "SUCCESS"))
                     return com.example.data.api.ModelResponseResult(resp.text, resp.toolCalls ?: emptyList(), resp.usage?.promptTokens ?: 0L, resp.usage?.candidateTokens ?: 0L, resp.usedProvider)
                 } catch (e: Exception) {
@@ -4565,10 +4743,20 @@ Tebrikler! Bölüm 3'ü başarıyla tamamladın."""
         val orderList = if (settings.fallbackChainOrder.isNotBlank()) {
             settings.fallbackChainOrder.split(",").map { it.trim() }.filter { it.isNotBlank() }
         } else {
-            val defaultList = mutableListOf("llm7", "pollinations", "opencode_zen", "main")
+            val defaultList = mutableListOf(
+                "main",
+                "llm7",
+                "pollinations",
+                "opencode_zen",
+                "gemini",
+                "claude",
+                "groq",
+                "openai",
+                "openrouter",
+                "nvidia",
+                "mistral"
+            )
             customProvidersList.forEach { cp -> defaultList.add("custom_${cp.id}") }
-            defaultList.add("autofallback")
-            defaultList.add("ovh")
             defaultList
         }
 
@@ -5517,52 +5705,39 @@ Tebrikler! Bölüm 3'ü başarıyla tamamladın."""
         return@withContext verifiedDefaultFree
     }
 
-    suspend fun testOvhConnection(modelName: String = "meta-llama/Meta-Llama-3-70B-Instruct"): ProviderTestResult = withContext(Dispatchers.IO) {
-        if (System.currentTimeMillis() < ovhCooldownUntilTimestamp) {
-            val remainingSec = (ovhCooldownUntilTimestamp - System.currentTimeMillis()) / 1000
-            return@withContext ProviderTestResult(
-                isSuccess = false,
-                supportsFunctionCalling = false,
-                errorMessage = "⚠️ OVH 429 Rate-Limit Cooldown aktif ($remainingSec saniye kaldı)."
-            )
-        }
-        val res = testCustomProviderConnection(
-            baseUrl = "https://oai.endpoints.kepler.ai.cloud.ovh.net/v1",
-            apiKey = "unused",
-            modelName = modelName.ifBlank { "meta-llama/Meta-Llama-3-70B-Instruct" },
-            apiFormat = "openai"
+    suspend fun fetchNvidiaModels(apiKey: String): List<String> = withContext(Dispatchers.IO) {
+        val defaultModels = listOf(
+            "deepseek-ai/deepseek-r1",
+            "mistralai/mistral-large-2-instruct",
+            "nvidia/nemotron-4-340b-instruct",
+            "meta/llama-3.3-70b-instruct"
         )
-        if (!res.isSuccess && (res.errorMessage.contains("429") || res.errorMessage.contains("Too Many Requests", ignoreCase = true))) {
-            ovhCooldownUntilTimestamp = System.currentTimeMillis() + 300_000L
-        }
-        return@withContext res
-    }
-
-    suspend fun simulateOvhRateLimitTest(): ProviderTestResult = withContext(Dispatchers.IO) {
-        var lastResult = ProviderTestResult(false, false, "")
-        for (i in 1..3) {
-            val reqResult = testCustomProviderConnection(
-                baseUrl = "https://oai.endpoints.kepler.ai.cloud.ovh.net/v1",
-                apiKey = "unused",
-                modelName = "meta-llama/Meta-Llama-3-70B-Instruct",
-                apiFormat = "openai"
-            )
-            lastResult = reqResult
-            if (!reqResult.isSuccess && (reqResult.errorMessage.contains("429") || reqResult.errorMessage.contains("Too Many Requests", ignoreCase = true))) {
-                ovhCooldownUntilTimestamp = System.currentTimeMillis() + 300_000L
-                return@withContext ProviderTestResult(
-                    isSuccess = false,
-                    supportsFunctionCalling = false,
-                    errorMessage = "🛑 429 Rate Limit algılandı! OVH sağlayıcısı 5 dakika boyunca otomatik olarak geçici devre dışı bırakıldı (cooldown başlatıldı)."
-                )
+        if (apiKey.isBlank()) return@withContext defaultModels
+        try {
+            val req = Request.Builder()
+                .url("https://integrate.api.nvidia.com/v1/models")
+                .addHeader("Authorization", "Bearer $apiKey")
+                .get()
+                .build()
+            RetrofitClient.okHttpClient.newCall(req).execute().use { resp ->
+                if (resp.isSuccessful) {
+                    val bodyStr = resp.body?.string() ?: ""
+                    val json = JSONObject(bodyStr)
+                    val data = json.optJSONArray("data")
+                    if (data != null && data.length() > 0) {
+                        val fetched = mutableListOf<String>()
+                        for (i in 0 until data.length()) {
+                            val id = data.getJSONObject(i).optString("id", "")
+                            if (id.isNotBlank()) {
+                                fetched.add(id)
+                            }
+                        }
+                        if (fetched.isNotEmpty()) return@withContext fetched.distinct()
+                    }
+                }
             }
-        }
-        ovhCooldownUntilTimestamp = System.currentTimeMillis() + 300_000L
-        return@withContext ProviderTestResult(
-            isSuccess = true,
-            supportsFunctionCalling = false,
-            errorMessage = "⚠️ Art arda 3 istek gönderildi. Rate limit kuralına uygun olarak OVH 5 dakika süreyle otomatik geçici devre dışı bırakıldı (cooldown aktif)."
-        )
+        } catch (_: Exception) {}
+        return@withContext defaultModels
     }
 
     suspend fun testOpenRouterConnection(apiKey: String, modelName: String = "deepseek/deepseek-chat"): ProviderTestResult {
@@ -5574,20 +5749,14 @@ Tebrikler! Bölüm 3'ü başarıyla tamamladın."""
         )
     }
 
-    suspend fun testNvidiaConnection(apiKey: String, modelName: String = "deepseek-ai/deepseek-v4-flash"): ProviderTestResult {
+    suspend fun testNvidiaConnection(apiKey: String, modelName: String = ""): ProviderTestResult {
+        val targetModel = modelName.ifBlank {
+            fetchNvidiaModels(apiKey).firstOrNull() ?: "meta/llama-3.3-70b-instruct"
+        }
         return testCustomProviderConnection(
             baseUrl = "https://integrate.api.nvidia.com/v1",
             apiKey = apiKey,
-            modelName = modelName.ifBlank { "deepseek-ai/deepseek-v4-flash" },
-            apiFormat = "openai"
-        )
-    }
-
-    suspend fun testGithubModelsConnection(apiKey: String, modelName: String = "openai/gpt-4o"): ProviderTestResult {
-        return testCustomProviderConnection(
-            baseUrl = "https://models.github.ai/inference",
-            apiKey = apiKey,
-            modelName = modelName.ifBlank { "openai/gpt-4o" },
+            modelName = targetModel,
             apiFormat = "openai"
         )
     }

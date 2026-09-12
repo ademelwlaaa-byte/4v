@@ -77,19 +77,11 @@ class EmochiViewModel(application: Application) : AndroidViewModel(application) 
         return repository.fetchOpencodeZenFreeModels()
     }
 
-    suspend fun testOvhConnection(modelName: String = "meta-llama/Meta-Llama-3-70B-Instruct"): EmochiRepository.ProviderTestResult {
-        return repository.testOvhConnection(modelName)
+    suspend fun fetchNvidiaModels(apiKey: String): List<String> {
+        return repository.fetchNvidiaModels(apiKey)
     }
 
-    suspend fun simulateOvhRateLimitTest(): EmochiRepository.ProviderTestResult {
-        return repository.simulateOvhRateLimitTest()
-    }
-
-    suspend fun testGithubModelsConnection(apiKey: String, modelName: String = "openai/gpt-4o"): EmochiRepository.ProviderTestResult {
-        return repository.testGithubModelsConnection(apiKey, modelName)
-    }
-
-    suspend fun simulateNvidiaRateLimitTest(apiKey: String, modelName: String = "deepseek-ai/deepseek-v4-flash"): EmochiRepository.ProviderTestResult {
+    suspend fun simulateNvidiaRateLimitTest(apiKey: String, modelName: String = ""): EmochiRepository.ProviderTestResult {
         return repository.simulateNvidiaRateLimitTest(apiKey, modelName)
     }
 
@@ -856,8 +848,6 @@ class EmochiViewModel(application: Application) : AndroidViewModel(application) 
                 openRouterModel = settings.openRouterModel.trim(),
                 nvidiaApiKey = settings.nvidiaApiKey.trim(),
                 nvidiaModel = settings.nvidiaModel.trim(),
-                githubPatToken = settings.githubPatToken.trim(),
-                githubModel = settings.githubModel.trim(),
                 mistralApiKey = settings.mistralApiKey.trim(),
                 mistralModel = settings.mistralModel.trim(),
                 backupApiKey = settings.backupApiKey.trim(),
@@ -869,19 +859,15 @@ class EmochiViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     suspend fun testOpenRouterConnection(apiKey: String, modelName: String = "deepseek/deepseek-chat"): EmochiRepository.ProviderTestResult {
-        return repository.testCustomProviderConnection("https://openrouter.ai/api/v1", apiKey, modelName, "openai")
+        return repository.testOpenRouterConnection(apiKey, modelName)
     }
 
-    suspend fun testNvidiaConnection(apiKey: String, modelName: String = "deepseek-ai/deepseek-v4-flash"): EmochiRepository.ProviderTestResult {
-        return repository.testCustomProviderConnection("https://integrate.api.nvidia.com/v1", apiKey, modelName, "openai")
-    }
-
-    suspend fun testGithubConnection(apiKey: String, modelName: String = "openai/gpt-4o"): EmochiRepository.ProviderTestResult {
-        return repository.testGithubModelsConnection(apiKey, modelName)
+    suspend fun testNvidiaConnection(apiKey: String, modelName: String = ""): EmochiRepository.ProviderTestResult {
+        return repository.testNvidiaConnection(apiKey, modelName)
     }
 
     suspend fun testMistralConnection(apiKey: String, modelName: String = "mistral-large-latest"): EmochiRepository.ProviderTestResult {
-        return repository.testCustomProviderConnection("https://api.mistral.ai/v1", apiKey, modelName, "openai")
+        return repository.testMistralConnection(apiKey, modelName)
     }
 
     suspend fun exportBackupJson(): String {

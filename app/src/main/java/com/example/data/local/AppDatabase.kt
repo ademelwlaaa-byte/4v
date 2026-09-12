@@ -260,9 +260,10 @@ val MIGRATION_27_28 = object : Migration(27, 28) {
         ActiveMemoryCallLogEntity::class,
         TimePerceptionMismatchLogEntity::class,
         CustomProviderEntity::class,
-        EmptyResponseLogEntity::class
+        EmptyResponseLogEntity::class,
+        MalformedOutputLogEntity::class
     ],
-    version = 30,
+    version = 32,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -288,6 +289,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun timePerceptionMismatchLogDao(): TimePerceptionMismatchLogDao
     abstract fun customProviderDao(): CustomProviderDao
     abstract fun emptyResponseLogDao(): EmptyResponseLogDao
+    abstract fun malformedOutputLogDao(): MalformedOutputLogDao
 
     companion object {
         val MIGRATION_28_29 = object : Migration(28, 29) {
@@ -306,6 +308,111 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE user_settings ADD COLUMN githubModel TEXT NOT NULL DEFAULT 'openai/gpt-4o'")
                 db.execSQL("ALTER TABLE user_settings ADD COLUMN mistralApiKey TEXT NOT NULL DEFAULT ''")
                 db.execSQL("ALTER TABLE user_settings ADD COLUMN mistralModel TEXT NOT NULL DEFAULT 'mistral-large-latest'")
+            }
+        }
+
+        val MIGRATION_30_31 = object : Migration(30, 31) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `malformed_output_logs` (" +
+                        "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`botId` TEXT NOT NULL, " +
+                        "`provider` TEXT NOT NULL, " +
+                        "`model` TEXT NOT NULL, " +
+                        "`rawOutput` TEXT NOT NULL, " +
+                        "`errorMessage` TEXT NOT NULL, " +
+                        "`timestamp` INTEGER NOT NULL" +
+                        ")"
+                )
+                db.execSQL("ALTER TABLE user_settings ADD COLUMN opencodeZenApiKey TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE user_settings ADD COLUMN geminiModel TEXT NOT NULL DEFAULT 'gemini-2.5-flash'")
+                db.execSQL("ALTER TABLE user_settings ADD COLUMN claudeModel TEXT NOT NULL DEFAULT 'claude-3-5-sonnet-20241022'")
+                db.execSQL("ALTER TABLE user_settings ADD COLUMN groqModel TEXT NOT NULL DEFAULT 'llama-3.3-70b-versatile'")
+                db.execSQL("ALTER TABLE user_settings ADD COLUMN openaiModel TEXT NOT NULL DEFAULT 'gpt-4o'")
+            }
+        }
+
+        val MIGRATION_31_32 = object : Migration(31, 32) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `user_settings_new` (" +
+                        "`id` INTEGER PRIMARY KEY NOT NULL, " +
+                        "`customApiKey` TEXT NOT NULL DEFAULT '', " +
+                        "`groqApiKey` TEXT NOT NULL DEFAULT '', " +
+                        "`claudeApiKey` TEXT NOT NULL DEFAULT '', " +
+                        "`openaiApiKey` TEXT NOT NULL DEFAULT '', " +
+                        "`backupApiKey` TEXT NOT NULL DEFAULT '', " +
+                        "`selectedProvider` TEXT NOT NULL DEFAULT 'gemini', " +
+                        "`selectedModel` TEXT NOT NULL DEFAULT 'gemini-2.5-flash', " +
+                        "`fallbackModel` TEXT NOT NULL DEFAULT 'gemini-2.5-flash', " +
+                        "`responseLength` TEXT NOT NULL DEFAULT 'standard', " +
+                        "`enableNsfw` INTEGER NOT NULL DEFAULT 1, " +
+                        "`enableOoc` INTEGER NOT NULL DEFAULT 1, " +
+                        "`enableFlirty` INTEGER NOT NULL DEFAULT 1, " +
+                        "`enableHardcore` INTEGER NOT NULL DEFAULT 1, " +
+                        "`enableFetish` INTEGER NOT NULL DEFAULT 0, " +
+                        "`enableDarkRp` INTEGER NOT NULL DEFAULT 0, " +
+                        "`enableSweet` INTEGER NOT NULL DEFAULT 0, " +
+                        "`enablePrimal` INTEGER NOT NULL DEFAULT 0, " +
+                        "`enableAutoFallback` INTEGER NOT NULL DEFAULT 1, " +
+                        "`enableTts` INTEGER NOT NULL DEFAULT 1, " +
+                        "`ttsSpeed` REAL NOT NULL DEFAULT 1.0, " +
+                        "`ttsPitch` REAL NOT NULL DEFAULT 1.0, " +
+                        "`selectedVoiceName` TEXT NOT NULL DEFAULT '', " +
+                        "`appLanguage` TEXT NOT NULL DEFAULT 'tr', " +
+                        "`totalPromptTokens` INTEGER NOT NULL DEFAULT 0, " +
+                        "`totalCandidateTokens` INTEGER NOT NULL DEFAULT 0, " +
+                        "`enableLlm7` INTEGER NOT NULL DEFAULT 0, " +
+                        "`enablePollinations` INTEGER NOT NULL DEFAULT 1, " +
+                        "`enableOpencodeZen` INTEGER NOT NULL DEFAULT 1, " +
+                        "`pollinationsModel` TEXT NOT NULL DEFAULT 'openai', " +
+                        "`opencodeZenApiKey` TEXT NOT NULL DEFAULT '', " +
+                        "`opencodeZenModel` TEXT NOT NULL DEFAULT 'deepseek-v4-flash-free', " +
+                        "`fallbackChainOrder` TEXT NOT NULL DEFAULT '', " +
+                        "`openRouterApiKey` TEXT NOT NULL DEFAULT '', " +
+                        "`openRouterModel` TEXT NOT NULL DEFAULT 'deepseek/deepseek-chat', " +
+                        "`nvidiaApiKey` TEXT NOT NULL DEFAULT '', " +
+                        "`nvidiaModel` TEXT NOT NULL DEFAULT 'deepseek-ai/deepseek-v4-flash', " +
+                        "`mistralApiKey` TEXT NOT NULL DEFAULT '', " +
+                        "`mistralModel` TEXT NOT NULL DEFAULT 'mistral-large-latest', " +
+                        "`geminiModel` TEXT NOT NULL DEFAULT 'gemini-2.5-flash', " +
+                        "`claudeModel` TEXT NOT NULL DEFAULT 'claude-3-5-sonnet-20241022', " +
+                        "`groqModel` TEXT NOT NULL DEFAULT 'llama-3.3-70b-versatile', " +
+                        "`openaiModel` TEXT NOT NULL DEFAULT 'gpt-4o'" +
+                        ")"
+                )
+
+                db.execSQL(
+                    "INSERT INTO `user_settings_new` (" +
+                        "id, customApiKey, groqApiKey, claudeApiKey, openaiApiKey, backupApiKey, " +
+                        "selectedProvider, selectedModel, fallbackModel, responseLength, " +
+                        "enableNsfw, enableOoc, enableFlirty, enableHardcore, enableFetish, " +
+                        "enableDarkRp, enableSweet, enablePrimal, enableAutoFallback, " +
+                        "enableTts, ttsSpeed, ttsPitch, selectedVoiceName, appLanguage, " +
+                        "totalPromptTokens, totalCandidateTokens, enableLlm7, enablePollinations, " +
+                        "enableOpencodeZen, pollinationsModel, opencodeZenApiKey, opencodeZenModel, " +
+                        "fallbackChainOrder, openRouterApiKey, openRouterModel, nvidiaApiKey, " +
+                        "nvidiaModel, mistralApiKey, mistralModel, geminiModel, claudeModel, " +
+                        "groqModel, openaiModel" +
+                        ") SELECT " +
+                        "id, customApiKey, groqApiKey, claudeApiKey, openaiApiKey, backupApiKey, " +
+                        "selectedProvider, selectedModel, fallbackModel, responseLength, " +
+                        "enableNsfw, enableOoc, enableFlirty, enableHardcore, enableFetish, " +
+                        "enableDarkRp, enableSweet, enablePrimal, enableAutoFallback, " +
+                        "enableTts, ttsSpeed, ttsPitch, selectedVoiceName, appLanguage, " +
+                        "totalPromptTokens, totalCandidateTokens, enableLlm7, enablePollinations, " +
+                        "enableOpencodeZen, pollinationsModel, " +
+                        "COALESCE(opencodeZenApiKey, ''), COALESCE(opencodeZenModel, 'deepseek-v4-flash-free'), " +
+                        "COALESCE(fallbackChainOrder, ''), COALESCE(openRouterApiKey, ''), COALESCE(openRouterModel, 'deepseek/deepseek-chat'), " +
+                        "COALESCE(nvidiaApiKey, ''), COALESCE(nvidiaModel, 'deepseek-ai/deepseek-v4-flash'), " +
+                        "COALESCE(mistralApiKey, ''), COALESCE(mistralModel, 'mistral-large-latest'), " +
+                        "COALESCE(geminiModel, 'gemini-2.5-flash'), COALESCE(claudeModel, 'claude-3-5-sonnet-20241022'), " +
+                        "COALESCE(groqModel, 'llama-3.3-70b-versatile'), COALESCE(openaiModel, 'gpt-4o') " +
+                        "FROM `user_settings`"
+                )
+
+                db.execSQL("DROP TABLE `user_settings`")
+                db.execSQL("ALTER TABLE `user_settings_new` RENAME TO `user_settings`")
             }
         }
 
@@ -340,7 +447,9 @@ abstract class AppDatabase : RoomDatabase() {
                         MIGRATION_26_27,
                         MIGRATION_27_28,
                         MIGRATION_28_29,
-                        MIGRATION_29_30
+                        MIGRATION_29_30,
+                        MIGRATION_30_31,
+                        MIGRATION_31_32
                     )
                     .fallbackToDestructiveMigration(dropAllTables = true)
                     .build()

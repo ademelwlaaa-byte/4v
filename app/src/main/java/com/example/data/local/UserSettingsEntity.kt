@@ -34,18 +34,19 @@ data class UserSettingsEntity(
     val enableLlm7: Boolean = false,
     val enablePollinations: Boolean = true,
     val enableOpencodeZen: Boolean = true,
-    val enableOvh: Boolean = false, // Varsayılan kapalı!
     val pollinationsModel: String = "openai",
+    val opencodeZenApiKey: String = "",
     val opencodeZenModel: String = "deepseek-v4-flash-free",
-    val ovhModel: String = "meta-llama/Meta-Llama-3-70B-Instruct",
     val fallbackChainOrder: String = "",
     val openRouterApiKey: String = "",
     val openRouterModel: String = "deepseek/deepseek-chat",
     val nvidiaApiKey: String = "",
     val nvidiaModel: String = "deepseek-ai/deepseek-v4-flash",
-    val githubPatToken: String = "",
-    val githubModel: String = "openai/gpt-4o",
     val mistralApiKey: String = "",
-    val mistralModel: String = "mistral-large-latest"
+    val mistralModel: String = "mistral-large-latest",
+    val geminiModel: String = "gemini-2.5-flash",
+    val claudeModel: String = "claude-3-5-sonnet-20241022",
+    val groqModel: String = "llama-3.3-70b-versatile",
+    val openaiModel: String = "gpt-4o"
 )
 

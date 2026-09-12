@@ -21,8 +21,14 @@ data class LLMResponse(
     val usedProvider: String
 )
 
+enum class ReliabilityTier {
+    PRIMARY,
+    SECONDARY
+}
+
 interface LLMProviderAdapter {
     val providerName: String
+    val reliabilityTier: ReliabilityTier get() = ReliabilityTier.PRIMARY
     fun supportsFunctionCalling(): Boolean
     fun supportsStreaming(): Boolean
     suspend fun sendMessage(
@@ -46,7 +52,8 @@ class GenericOpenAICompatibleAdapter(
     private val apiKey: String,
     private val model: String,
     override val providerName: String,
-    private val supportsFC: Boolean = true
+    private val supportsFC: Boolean = true,
+    override val reliabilityTier: ReliabilityTier = ReliabilityTier.PRIMARY
 ) : LLMProviderAdapter {
 
     override fun supportsFunctionCalling(): Boolean = supportsFC
@@ -100,14 +107,16 @@ class GenericOpenAICompatibleAdapter(
             if (!response.isSuccessful) {
                 val code = response.code
                 if (endpointUrl.contains("nvidia.com") || providerName.contains("nvidia")) {
-                    if (code == 402 || bodyStr.contains("quota", ignoreCase = true) || bodyStr.contains("credit", ignoreCase = true) || bodyStr.contains("insufficient", ignoreCase = true) || bodyStr.contains("balance", ignoreCase = true)) {
+                    if (code == 410 || code == 404 || bodyStr.contains("gone", ignoreCase = true) || bodyStr.contains("not found", ignoreCase = true)) {
+                        throw IllegalStateException("Bu model artık kullanılamıyor, güncel model listesini görmek için 'Modelleri Yenile'ye bas.")
+                    } else if (code == 402 || bodyStr.contains("quota", ignoreCase = true) || bodyStr.contains("credit", ignoreCase = true) || bodyStr.contains("insufficient", ignoreCase = true) || bodyStr.contains("balance", ignoreCase = true)) {
                         throw IllegalStateException("NVIDIA ücretsiz krediniz tükenmiş olabilir (HTTP $code). Lütfen build.nvidia.com adresinden yeni bir API Key alın.")
                     } else if (code == 429) {
                         throw IllegalStateException("NVIDIA 429 Rate Limit sınırı aşıldı (Dakikada 40 istek sınırı).")
                     }
-                } else if (endpointUrl.contains("github.ai") || providerName.contains("github")) {
-                    if (code == 401 || bodyStr.contains("bad credentials", ignoreCase = true) || bodyStr.contains("expired", ignoreCase = true) || bodyStr.contains("unauthorized", ignoreCase = true)) {
-                        throw IllegalStateException("GitHub token'ınızın süresi dolmuş veya geçersiz olabilir (HTTP 401). Yeni bir Personal Access Token (PAT) oluşturun.")
+                } else if (endpointUrl.contains("opencode.ai") || providerName.contains("opencode_zen")) {
+                    if (code == 401 || bodyStr.contains("user not found", ignoreCase = true) || bodyStr.contains("unauthorized", ignoreCase = true) || bodyStr.contains("invalid key", ignoreCase = true)) {
+                        throw IllegalStateException("API key geçersiz veya hesap silinmiş, yeni bir key oluşturun (opencode.ai/auth).")
                     }
                 }
                 throw IllegalStateException("OpenAI Compatible API Hatası ($code): $bodyStr")
@@ -328,7 +337,8 @@ object LLMAdapterFactory {
                     apiKey = "unused",
                     model = "default",
                     providerName = "llm7",
-                    supportsFC = true
+                    supportsFC = false,
+                    reliabilityTier = ReliabilityTier.SECONDARY
                 )
             }
             providerKey == "pollinations" -> {
@@ -337,25 +347,20 @@ object LLMAdapterFactory {
                     apiKey = "unused",
                     model = modelName.ifBlank { "openai" },
                     providerName = "pollinations",
-                    supportsFC = false
+                    supportsFC = false,
+                    reliabilityTier = ReliabilityTier.SECONDARY
                 )
             }
             providerKey == "opencode_zen" -> {
+                val apiKey = settings.opencodeZenApiKey
+                if (apiKey.isBlank()) throw IllegalStateException("OpenCode Zen API Key eksik. Lütfen opencode.ai/auth adresinden ücretsiz bir key alın.")
                 GenericOpenAICompatibleAdapter(
                     endpointUrl = "https://opencode.ai/zen/v1/chat/completions",
-                    apiKey = "unused",
+                    apiKey = apiKey,
                     model = modelName.ifBlank { "deepseek-v4-flash-free" },
                     providerName = "opencode_zen",
-                    supportsFC = true
-                )
-            }
-            providerKey == "ovh" -> {
-                GenericOpenAICompatibleAdapter(
-                    endpointUrl = "https://oai.endpoints.kepler.ai.cloud.ovh.net/v1/chat/completions",
-                    apiKey = "unused",
-                    model = modelName.ifBlank { "meta-llama/Meta-Llama-3-70B-Instruct" },
-                    providerName = "ovh",
-                    supportsFC = false
+                    supportsFC = true,
+                    reliabilityTier = ReliabilityTier.SECONDARY
                 )
             }
             providerKey == "openrouter" -> {
@@ -367,31 +372,21 @@ object LLMAdapterFactory {
                     apiKey = apiKey,
                     model = mName,
                     providerName = "openrouter",
-                    supportsFC = true
+                    supportsFC = true,
+                    reliabilityTier = ReliabilityTier.SECONDARY
                 )
             }
             providerKey == "nvidia" -> {
                 val apiKey = settings.nvidiaApiKey
                 if (apiKey.isBlank()) throw IllegalStateException("NVIDIA NIM API Key eksik.")
-                val mName = modelName.ifBlank { settings.nvidiaModel.ifBlank { "deepseek-ai/deepseek-v4-flash" } }
+                val mName = modelName.ifBlank { settings.nvidiaModel }
                 GenericOpenAICompatibleAdapter(
                     endpointUrl = "https://integrate.api.nvidia.com/v1/chat/completions",
                     apiKey = apiKey,
                     model = mName,
                     providerName = "nvidia",
-                    supportsFC = true
-                )
-            }
-            providerKey == "github" -> {
-                val apiKey = settings.githubPatToken
-                if (apiKey.isBlank()) throw IllegalStateException("GitHub Personal Access Token (PAT) eksik.")
-                val mName = modelName.ifBlank { settings.githubModel.ifBlank { "openai/gpt-4o" } }
-                GenericOpenAICompatibleAdapter(
-                    endpointUrl = "https://models.inference.ai.azure.com/chat/completions",
-                    apiKey = apiKey,
-                    model = mName,
-                    providerName = "github",
-                    supportsFC = true
+                    supportsFC = true,
+                    reliabilityTier = ReliabilityTier.SECONDARY
                 )
             }
             providerKey == "mistral" -> {
@@ -403,7 +398,8 @@ object LLMAdapterFactory {
                     apiKey = apiKey,
                     model = mName,
                     providerName = "mistral",
-                    supportsFC = true
+                    supportsFC = true,
+                    reliabilityTier = ReliabilityTier.SECONDARY
                 )
             }
             providerKey.startsWith("custom_") -> {
