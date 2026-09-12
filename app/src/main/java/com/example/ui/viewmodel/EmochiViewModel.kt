@@ -59,6 +59,40 @@ class EmochiViewModel(application: Application) : AndroidViewModel(application) 
             initialValue = null
         )
 
+    val providerFallbackLog = repository.providerFallbackLog
+
+    suspend fun testLlm7Connection(): EmochiRepository.ProviderTestResult {
+        return repository.testLlm7Connection()
+    }
+
+    suspend fun testPollinationsConnection(modelName: String = "openai"): EmochiRepository.ProviderTestResult {
+        return repository.testPollinationsConnection(modelName)
+    }
+
+    suspend fun testOpencodeZenConnection(modelName: String = "deepseek-v4-flash-free"): EmochiRepository.ProviderTestResult {
+        return repository.testOpencodeZenConnection(modelName)
+    }
+
+    suspend fun fetchOpencodeZenFreeModels(): List<String> {
+        return repository.fetchOpencodeZenFreeModels()
+    }
+
+    suspend fun testOvhConnection(modelName: String = "meta-llama/Meta-Llama-3-70B-Instruct"): EmochiRepository.ProviderTestResult {
+        return repository.testOvhConnection(modelName)
+    }
+
+    suspend fun simulateOvhRateLimitTest(): EmochiRepository.ProviderTestResult {
+        return repository.simulateOvhRateLimitTest()
+    }
+
+    suspend fun testGithubModelsConnection(apiKey: String, modelName: String = "openai/gpt-4o"): EmochiRepository.ProviderTestResult {
+        return repository.testGithubModelsConnection(apiKey, modelName)
+    }
+
+    suspend fun simulateNvidiaRateLimitTest(apiKey: String, modelName: String = "deepseek-ai/deepseek-v4-flash"): EmochiRepository.ProviderTestResult {
+        return repository.simulateNvidiaRateLimitTest(apiKey, modelName)
+    }
+
     private val _activeBotId = MutableStateFlow<String?>(null)
     val activeBotId: StateFlow<String?> = _activeBotId.asStateFlow()
 
@@ -419,9 +453,10 @@ class EmochiViewModel(application: Application) : AndroidViewModel(application) 
 
                 val currentMsgs = repository.getMessageListForBot(botId)
 
-                var replyText = repository.generateAiReply(currentBot, currentMsgs)
+                val replyResult = repository.generateAiReply(currentBot, currentMsgs)
+                val replyText = replyResult.replyText
                 if (replyText.isBlank()) {
-                    replyText = "*${currentBot.aiName} gülümsedi ve seni dinlemeye devam etti.*"
+                    throw IllegalStateException("Model boş yanıt döndürdü.")
                 }
 
                 val aiMsg = MessageEntity(
@@ -429,7 +464,8 @@ class EmochiViewModel(application: Application) : AndroidViewModel(application) 
                     botId = botId,
                     role = "assistant",
                     text = replyText,
-                    timestamp = (now + 10L).coerceAtLeast(System.currentTimeMillis())
+                    timestamp = (now + 10L).coerceAtLeast(System.currentTimeMillis()),
+                    provider = replyResult.usedProvider
                 )
                 repository.saveMessage(aiMsg)
 
@@ -482,9 +518,10 @@ class EmochiViewModel(application: Application) : AndroidViewModel(application) 
                 repository.deleteMessage(msgId)
 
                 val currentMsgs = repository.getMessageListForBot(botId)
-                var replyText = repository.generateAiReply(currentBot, currentMsgs)
+                val replyResult = repository.generateAiReply(currentBot, currentMsgs)
+                val replyText = replyResult.replyText
                 if (replyText.isBlank()) {
-                    replyText = "*${currentBot.aiName} gülümsedi ve yanıt verdi.*"
+                    throw IllegalStateException("Model boş yanıt döndürdü.")
                 }
 
                 val now = System.currentTimeMillis()
@@ -494,7 +531,8 @@ class EmochiViewModel(application: Application) : AndroidViewModel(application) 
                     role = "assistant",
                     text = replyText,
                     timestamp = now,
-                    status = "success"
+                    status = "success",
+                    provider = replyResult.usedProvider
                 )
                 repository.saveMessage(aiMsg)
                 repository.saveBot(currentBot.copy(updatedAt = now))
@@ -565,9 +603,10 @@ class EmochiViewModel(application: Application) : AndroidViewModel(application) 
 
                 // Generate first before deleting targetMsg to prevent wiping message on network error
                 repository.incrementRegenerateCount(botId)
-                var replyText = repository.generateAiReply(botToUse, remainingMsgs)
+                val replyResult = repository.generateAiReply(botToUse, remainingMsgs)
+                val replyText = replyResult.replyText
                 if (replyText.isBlank()) {
-                    replyText = "*${botToUse.aiName} gülümsedi ve gözlerinin içine baktı.*"
+                    throw IllegalStateException("Model boş yanıt döndürdü.")
                 }
 
                 if (targetMsg != null) {
@@ -579,7 +618,8 @@ class EmochiViewModel(application: Application) : AndroidViewModel(application) 
                     botId = botId,
                     role = "assistant",
                     text = replyText,
-                    timestamp = System.currentTimeMillis()
+                    timestamp = System.currentTimeMillis(),
+                    provider = replyResult.usedProvider
                 )
                 repository.saveMessage(newAiMsg)
             } catch (e: Exception) {
@@ -626,9 +666,10 @@ class EmochiViewModel(application: Application) : AndroidViewModel(application) 
                     } else currentBot
 
                     val truncatedList = msgs.subList(0, idx) + editedMsg
-                    var replyText = repository.generateAiReply(botToUse, truncatedList)
+                    val replyResult = repository.generateAiReply(botToUse, truncatedList)
+                    val replyText = replyResult.replyText
                     if (replyText.isBlank()) {
-                        replyText = "*${botToUse.aiName} gülümsedi ve yanıtını tazeledi.*"
+                        throw IllegalStateException("Model boş yanıt döndürdü.")
                     }
 
                     // Delete old trailing messages ONLY after generation succeeds
@@ -642,7 +683,8 @@ class EmochiViewModel(application: Application) : AndroidViewModel(application) 
                         botId = botId,
                         role = "assistant",
                         text = replyText,
-                        timestamp = (editedMsg.timestamp + 10L).coerceAtLeast(System.currentTimeMillis())
+                        timestamp = (editedMsg.timestamp + 10L).coerceAtLeast(System.currentTimeMillis()),
+                        provider = replyResult.usedProvider
                     )
                     repository.saveMessage(newAiMsg)
                 } else {
@@ -703,6 +745,79 @@ class EmochiViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    suspend fun getContentFilterCountForBot(botId: String): Int {
+        return repository.getContentFilterCountForBot(botId)
+    }
+
+    fun retryWithSoftenedPrompt(botId: String) {
+        if (_isSending.value) return
+        _isSending.value = true
+
+        viewModelScope.launch {
+            if (!sendMutex.tryLock()) {
+                _isSending.value = false
+                return@launch
+            }
+            val currentBot = activeBot.value ?: repository.getBot(botId) ?: run {
+                sendMutex.unlock()
+                _isSending.value = false
+                return@launch
+            }
+            try {
+                _errorMessage.value = null
+                val msgs = repository.getMessageListForBot(botId)
+                if (msgs.isEmpty()) return@launch
+
+                if (msgs.last().role == "assistant" && msgs.last().status == "failed") {
+                    repository.deleteMessage(msgs.last().id)
+                }
+
+                val currentMsgs = repository.getMessageListForBot(botId)
+                if (currentMsgs.isEmpty() || currentMsgs.last().role != "user") return@launch
+
+                val replyResult = repository.generateAiReply(
+                    currentBot,
+                    currentMsgs
+                )
+                val replyText = replyResult.replyText
+                if (replyText.isBlank()) {
+                    throw IllegalStateException("Model boş yanıt döndürdü.")
+                }
+
+                val now = System.currentTimeMillis()
+                val aiMsg = MessageEntity(
+                    id = UUID.randomUUID().toString(),
+                    botId = botId,
+                    role = "assistant",
+                    text = replyText,
+                    timestamp = now,
+                    status = "success",
+                    provider = replyResult.usedProvider
+                )
+                repository.saveMessage(aiMsg)
+                repository.saveBot(currentBot.copy(updatedAt = now))
+            } catch (e: Exception) {
+                val now = System.currentTimeMillis()
+                val friendlyMsg = extractUserFriendlyErrorMessage(e)
+                val failedAiMsg = MessageEntity(
+                    id = UUID.randomUUID().toString(),
+                    botId = botId,
+                    role = "assistant",
+                    text = "⚠️ $friendlyMsg",
+                    timestamp = now,
+                    status = "failed"
+                )
+                repository.saveMessage(failedAiMsg)
+                _errorMessage.value = friendlyMsg
+            } finally {
+                if (sendMutex.isLocked) {
+                    sendMutex.unlock()
+                }
+                _isSending.value = false
+            }
+        }
+    }
+
     fun createPresetBot(preset: BotEntity) {
         viewModelScope.launch {
             val botToSave = preset.copy(
@@ -737,12 +852,36 @@ class EmochiViewModel(application: Application) : AndroidViewModel(application) 
                 groqApiKey = settings.groqApiKey.trim(),
                 claudeApiKey = settings.claudeApiKey.trim(),
                 openaiApiKey = settings.openaiApiKey.trim(),
+                openRouterApiKey = settings.openRouterApiKey.trim(),
+                openRouterModel = settings.openRouterModel.trim(),
+                nvidiaApiKey = settings.nvidiaApiKey.trim(),
+                nvidiaModel = settings.nvidiaModel.trim(),
+                githubPatToken = settings.githubPatToken.trim(),
+                githubModel = settings.githubModel.trim(),
+                mistralApiKey = settings.mistralApiKey.trim(),
+                mistralModel = settings.mistralModel.trim(),
                 backupApiKey = settings.backupApiKey.trim(),
                 ttsSpeed = settings.ttsSpeed.coerceIn(0.5f, 2.0f),
                 ttsPitch = settings.ttsPitch.coerceIn(0.5f, 2.0f)
             )
             repository.updateUserSettings(sanitized)
         }
+    }
+
+    suspend fun testOpenRouterConnection(apiKey: String, modelName: String = "deepseek/deepseek-chat"): EmochiRepository.ProviderTestResult {
+        return repository.testCustomProviderConnection("https://openrouter.ai/api/v1", apiKey, modelName, "openai")
+    }
+
+    suspend fun testNvidiaConnection(apiKey: String, modelName: String = "deepseek-ai/deepseek-v4-flash"): EmochiRepository.ProviderTestResult {
+        return repository.testCustomProviderConnection("https://integrate.api.nvidia.com/v1", apiKey, modelName, "openai")
+    }
+
+    suspend fun testGithubConnection(apiKey: String, modelName: String = "openai/gpt-4o"): EmochiRepository.ProviderTestResult {
+        return repository.testGithubModelsConnection(apiKey, modelName)
+    }
+
+    suspend fun testMistralConnection(apiKey: String, modelName: String = "mistral-large-latest"): EmochiRepository.ProviderTestResult {
+        return repository.testCustomProviderConnection("https://api.mistral.ai/v1", apiKey, modelName, "openai")
     }
 
     suspend fun exportBackupJson(): String {

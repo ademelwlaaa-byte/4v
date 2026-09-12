@@ -261,6 +261,8 @@ fun ChatScreen(
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
     val clipboardManager = LocalClipboardManager.current
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val viewModel: com.example.ui.viewmodel.EmochiViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
 
     // Stop speaking immediately when exiting chat
     DisposableEffect(Unit) {
@@ -1227,6 +1229,31 @@ fun ChatScreen(
                                                             fontWeight = FontWeight.Medium
                                                         )
                                                     }
+                                                    if (!msg.provider.isNullOrBlank()) {
+                                                        Spacer(modifier = Modifier.width(6.dp))
+                                                        val providerBadge = when {
+                                                            msg.provider == "llm7" -> "⚡ LLM7"
+                                                            msg.provider == "gemini" -> "✨ Gemini"
+                                                            msg.provider == "groq" -> "🚀 Groq"
+                                                            msg.provider == "claude" -> "🧠 Claude"
+                                                            msg.provider == "openai" -> "🟢 OpenAI"
+                                                            msg.provider.startsWith("custom_") -> "🌐 Custom"
+                                                            else -> msg.provider
+                                                        }
+                                                        Surface(
+                                                            color = if (msg.provider == "llm7") Color(0x3000E676) else Color(0x25A78BFA),
+                                                            shape = RoundedCornerShape(4.dp),
+                                                            border = BorderStroke(0.5.dp, if (msg.provider == "llm7") Color(0xFF00E676) else Color(0x60A78BFA))
+                                                        ) {
+                                                            Text(
+                                                                text = providerBadge,
+                                                                color = if (msg.provider == "llm7") Color(0xFF69F0AE) else Color(0xFFD8B4FE),
+                                                                fontSize = 9.5.sp,
+                                                                fontWeight = FontWeight.Bold,
+                                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                                            )
+                                                        }
+                                                    }
                                                     Spacer(modifier = Modifier.width(6.dp))
                                                     Text(
                                                         text = "||ı||",
@@ -1236,7 +1263,13 @@ fun ChatScreen(
                                                     )
                                                 }
 
-                                                if (msg.status == "failed") {
+                                                val isFilterError = msg.text.contains("içerik kısıtlaması", ignoreCase = true) ||
+                                                        msg.text.contains("içerik filtresi", ignoreCase = true) ||
+                                                        msg.text.contains("content_filter", ignoreCase = true) ||
+                                                        msg.text.contains("politikası", ignoreCase = true) ||
+                                                        msg.text.contains("refusal", ignoreCase = true)
+
+                                                if (msg.status == "failed" || msg.text.startsWith("⚠️")) {
                                                     Spacer(modifier = Modifier.height(10.dp))
                                                     Surface(
                                                         color = Color(0x30EF4444),
@@ -1248,14 +1281,26 @@ fun ChatScreen(
                                                             verticalAlignment = Alignment.CenterVertically,
                                                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                                                         ) {
-                                                            Text("⚠️ Mesaj iletilemedi", color = Color(0xFFFCA5A5), fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold)
-                                                            Button(
-                                                                onClick = { onRetryMessage?.invoke(msg.id) },
-                                                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFDC2626)),
-                                                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
-                                                                modifier = Modifier.height(26.dp)
-                                                            ) {
-                                                                Text("🔄 Tekrar Dene", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                                            if (isFilterError) {
+                                                                Text("⚠️ İçerik filtresi nedeniyle yanıt engellendi", color = Color(0xFFFCA5A5), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                                                Button(
+                                                                    onClick = { viewModel.retryWithSoftenedPrompt(bot.id) },
+                                                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF9333EA)),
+                                                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                                                                    modifier = Modifier.height(26.dp)
+                                                                ) {
+                                                                    Text("🛡️ Farklı Şekilde Dene", color = Color.White, fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
+                                                                }
+                                                            } else {
+                                                                Text("⚠️ Mesaj iletilemedi", color = Color(0xFFFCA5A5), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                                                Button(
+                                                                    onClick = { onRetryMessage?.invoke(msg.id) },
+                                                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFDC2626)),
+                                                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                                                                    modifier = Modifier.height(26.dp)
+                                                                ) {
+                                                                    Text("🔄 Tekrar Dene", color = Color.White, fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
+                                                                }
                                                             }
                                                         }
                                                     }
@@ -1346,7 +1391,11 @@ fun ChatScreen(
                                                     .clip(RoundedCornerShape(14.dp))
                                                     .background(pillBg)
                                                     .border(pillBorder, RoundedCornerShape(14.dp))
-                                                    .clickable { clipboardManager.setText(AnnotatedString(msg.text)) }
+                                                    .clickable {
+                                                        val cleanText = cleanCopyText(msg.text)
+                                                        clipboardManager.setText(AnnotatedString(cleanText))
+                                                        android.widget.Toast.makeText(context, "Kopyalandı", android.widget.Toast.LENGTH_SHORT).show()
+                                                    }
                                                     .padding(horizontal = 11.dp, vertical = 6.dp)
                                             ) {
                                                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -3800,4 +3849,14 @@ fun BookReaderView(
             }
         }
     }
+}
+
+fun cleanCopyText(rawText: String): String {
+    return rawText
+        .replace(Regex("""(?is)\[\[STATE_JSON\s*\{.*?\}\s*\]\]"""), "")
+        .replace(Regex("""(?is)\[\[STATE\s+affectionScore=.*?\]\]"""), "")
+        .replace(Regex("""(?is)\[\[STATE.*?\]\]"""), "")
+        .replace(Regex("""(?is)\[\[MEMORY_SAVE.*?\]\]"""), "")
+        .replace(Regex("""(?is)```(?:json)?\s*\{.*?"primary_emotions".*?\}\s*```"""), "")
+        .trim()
 }

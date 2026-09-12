@@ -25,7 +25,8 @@ data class ModelResponseResult(
     val text: String,
     val toolCalls: List<ParsedMemoryToolCall> = emptyList(),
     val promptTokens: Long = 0L,
-    val candidateTokens: Long = 0L
+    val candidateTokens: Long = 0L,
+    val usedProvider: String = ""
 )
 
 object MemoryToolRegistry {

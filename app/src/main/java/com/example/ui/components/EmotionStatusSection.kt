@@ -50,6 +50,7 @@ fun EmotionStatusSection(
     bot: BotEntity,
     characterEmotions: List<CharacterEmotionEntity> = emptyList(),
     affectionEvents: List<AffectionEventEntity> = emptyList(),
+    filterCount: Int = 0,
     modifier: Modifier = Modifier
 ) {
     val emotion = remember(bot.emotionState) { EmotionState.fromJson(bot.emotionState) }
@@ -92,6 +93,35 @@ fun EmotionStatusSection(
                     Text(
                         text = "${emotion.getMoodEmoji()} ${emotion.mood.replaceFirstChar { it.uppercase() }}",
                         color = EmochiTextPrimary,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+
+            // İçerik Filtresi İstatistiği Rozeti
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 10.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color(0xFF1E1726))
+                    .border(1.dp, Color(0x408B5CF6), RoundedCornerShape(8.dp))
+                    .padding(horizontal = 10.dp, vertical = 6.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("🛡️", fontSize = 12.sp)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("İçerik Filtresi İstatistiği", color = Color(0xFFD8B4FE), fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                    Text(
+                        text = "Son 100 mesajda $filterCount filtre tetiklendi",
+                        color = if (filterCount > 0) Color(0xFFFCA5A5) else Color(0xFF86EFAC),
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold
                     )

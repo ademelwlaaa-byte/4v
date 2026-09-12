@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -269,7 +270,27 @@ fun GlobalSettingsModal(
     var groqApiKey by remember { mutableStateOf(settings.groqApiKey) }
     var claudeApiKey by remember { mutableStateOf(settings.claudeApiKey) }
     var openaiApiKey by remember { mutableStateOf(settings.openaiApiKey) }
+    var openRouterApiKey by remember { mutableStateOf(settings.openRouterApiKey) }
+    var openRouterModel by remember { mutableStateOf(settings.openRouterModel.ifBlank { "deepseek/deepseek-chat" }) }
+    var nvidiaApiKey by remember { mutableStateOf(settings.nvidiaApiKey) }
+    var nvidiaModel by remember { mutableStateOf(settings.nvidiaModel.ifBlank { "deepseek-ai/deepseek-v4-flash" }) }
+    var githubApiKey by remember { mutableStateOf(settings.githubPatToken) }
+    var githubModel by remember { mutableStateOf(settings.githubModel.ifBlank { "openai/gpt-4o" }) }
+    var mistralApiKey by remember { mutableStateOf(settings.mistralApiKey) }
+    var mistralModel by remember { mutableStateOf(settings.mistralModel.ifBlank { "mistral-large-latest" }) }
     var backupApiKey by remember { mutableStateOf(settings.backupApiKey) }
+
+    var openRouterTestResult by remember { mutableStateOf<String?>(null) }
+    var isTestingOpenRouter by remember { mutableStateOf(false) }
+
+    var nvidiaTestResult by remember { mutableStateOf<String?>(null) }
+    var isTestingNvidia by remember { mutableStateOf(false) }
+
+    var githubTestResult by remember { mutableStateOf<String?>(null) }
+    var isTestingGithub by remember { mutableStateOf(false) }
+
+    var mistralTestResult by remember { mutableStateOf<String?>(null) }
+    var isTestingMistral by remember { mutableStateOf(false) }
 
     var selectedProvider by remember { mutableStateOf(settings.selectedProvider.ifBlank { "gemini" }) }
     var selectedModel by remember { mutableStateOf(settings.selectedModel) }
@@ -283,6 +304,29 @@ fun GlobalSettingsModal(
     var enableSweet by remember { mutableStateOf(settings.enableSweet) }
     var enablePrimal by remember { mutableStateOf(settings.enablePrimal) }
     var enableAutoFallback by remember { mutableStateOf(settings.enableAutoFallback) }
+    var enableLlm7 by remember { mutableStateOf(settings.enableLlm7) }
+    var enablePollinations by remember { mutableStateOf(settings.enablePollinations) }
+    var enableOpencodeZen by remember { mutableStateOf(settings.enableOpencodeZen) }
+    var enableOvh by remember { mutableStateOf(settings.enableOvh) }
+    var pollinationsModel by remember { mutableStateOf(settings.pollinationsModel.ifBlank { "openai" }) }
+    var opencodeZenModel by remember { mutableStateOf(settings.opencodeZenModel.ifBlank { "deepseek-v4-flash-free" }) }
+    var ovhModel by remember { mutableStateOf(settings.ovhModel.ifBlank { "meta-llama/Meta-Llama-3-70B-Instruct" }) }
+
+    var llm7TestResult by remember { mutableStateOf<String?>(null) }
+    var isTestingLlm7 by remember { mutableStateOf(false) }
+
+    var pollinationsTestResult by remember { mutableStateOf<String?>(null) }
+    var isTestingPollinations by remember { mutableStateOf(false) }
+
+    var opencodeZenTestResult by remember { mutableStateOf<String?>(null) }
+    var isTestingOpencodeZen by remember { mutableStateOf(false) }
+    var availableOpencodeZenModels by remember { mutableStateOf(listOf("deepseek-v4-flash-free", "big-pickle", "nemotron-3-ultra-free", "mimo-v2.5-free", "hy3-free")) }
+    var isLoadingOpencodeZenModels by remember { mutableStateOf(false) }
+
+    var ovhTestResult by remember { mutableStateOf<String?>(null) }
+    var isTestingOvh by remember { mutableStateOf(false) }
+
+    var showFallbackLogModal by remember { mutableStateOf(false) }
     var enableTts by remember { mutableStateOf(settings.enableTts) }
     var ttsSpeed by remember { mutableStateOf(settings.ttsSpeed) }
     var ttsPitch by remember { mutableStateOf(settings.ttsPitch) }
@@ -291,6 +335,7 @@ fun GlobalSettingsModal(
 
     var showKeys by remember { mutableStateOf(false) }
     var expandedSection by remember { mutableStateOf<String?>("models") }
+    var fallbackChainOrder by remember { mutableStateOf(settings.fallbackChainOrder) }
 
     var exportJson by remember { mutableStateOf("") }
     var importJson by remember { mutableStateOf("") }
@@ -350,6 +395,14 @@ fun GlobalSettingsModal(
     }
 
     val modelsList = listOf(
+        ModelSpec(
+            key = "default",
+            name = "LLM7 Default (Ücretsiz)",
+            provider = "LLM7 (api.llm7.io)",
+            tokenCostRate = "🆓 ÜCRETSİZ (API Key Gerekmez)",
+            badgeColor = Color(0xFF00E676),
+            description = "API Key gerektirmeyen tamamen ücretsiz OpenAI uyumlu servis. Öncelik modunda varsayılan olarak denenir."
+        ),
         ModelSpec(
             key = "gemini-2.5-flash",
             name = "Gemini 2.5 Flash",
@@ -540,21 +593,25 @@ fun GlobalSettingsModal(
                     Text("Ana Sağlayıcı Seçin:", color = EmochiTextPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     Spacer(modifier = Modifier.height(4.dp))
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         val providers = listOf(
+                            "llm7" to "⚡ LLM7",
                             "gemini" to "Gemini",
                             "groq" to "Groq",
                             "claude" to "Claude",
                             "openai" to "OpenAI",
+                            "openrouter" to "OpenRouter",
+                            "nvidia" to "NVIDIA NIM",
+                            "github" to "GitHub Models",
+                            "mistral" to "Mistral AI",
                             "custom" to "🌐 Özel API"
                         )
                         providers.forEach { (pKey, pLabel) ->
                             val isSel = if (pKey == "custom") selectedProvider.startsWith("custom") else selectedProvider == pKey
                             Box(
                                 modifier = Modifier
-                                    .weight(1f)
                                     .clip(RoundedCornerShape(10.dp))
                                     .background(if (isSel) EmochiPrimary.copy(alpha = 0.25f) else EmochiCard)
                                     .border(
@@ -563,40 +620,527 @@ fun GlobalSettingsModal(
                                         shape = RoundedCornerShape(10.dp)
                                     )
                                     .clickable {
-                                        if (pKey == "custom") {
-                                            if (customProviders.isNotEmpty()) {
-                                                selectedProvider = "custom_${customProviders.first().id}"
-                                                selectedModel = customProviders.first().modelName
-                                            } else {
-                                                selectedProvider = "custom"
-                                                showAddCustomModal = true
+                                        when (pKey) {
+                                            "openrouter" -> {
+                                                selectedProvider = "openrouter"
+                                                selectedModel = openRouterModel.ifBlank { "deepseek/deepseek-chat" }
                                             }
-                                        } else {
-                                            selectedProvider = pKey
-                                            val providerModels = modelsList.filter {
-                                                when (pKey) {
-                                                    "gemini" -> it.provider == "Google Gemini"
-                                                    "groq" -> it.provider == "Groq API"
-                                                    "claude" -> it.provider == "Anthropic"
-                                                    "openai" -> it.provider == "OpenAI" || it.provider == "DeepSeek"
-                                                    else -> false
+                                            "nvidia" -> {
+                                                selectedProvider = "nvidia"
+                                                selectedModel = nvidiaModel.ifBlank { "deepseek-ai/deepseek-v4-flash" }
+                                            }
+                                            "github" -> {
+                                                selectedProvider = "github"
+                                                selectedModel = githubModel.ifBlank { "openai/gpt-4o" }
+                                            }
+                                            "mistral" -> {
+                                                selectedProvider = "mistral"
+                                                selectedModel = mistralModel.ifBlank { "mistral-large-latest" }
+                                            }
+                                            "custom" -> {
+                                                if (customProviders.isNotEmpty()) {
+                                                    selectedProvider = "custom_${customProviders.first().id}"
+                                                    selectedModel = customProviders.first().modelName
+                                                } else {
+                                                    selectedProvider = "custom"
+                                                    showAddCustomModal = true
                                                 }
                                             }
-                                            if (providerModels.none { it.key == selectedModel } && providerModels.isNotEmpty()) {
-                                                selectedModel = providerModels.first().key
+                                            else -> {
+                                                selectedProvider = pKey
+                                                val providerModels = modelsList.filter {
+                                                    when (pKey) {
+                                                        "llm7" -> it.provider == "LLM7 (api.llm7.io)"
+                                                        "gemini" -> it.provider == "Google Gemini"
+                                                        "groq" -> it.provider == "Groq API"
+                                                        "claude" -> it.provider == "Anthropic"
+                                                        "openai" -> it.provider == "OpenAI" || it.provider == "DeepSeek"
+                                                        else -> false
+                                                    }
+                                                }
+                                                if (providerModels.none { it.key == selectedModel } && providerModels.isNotEmpty()) {
+                                                    selectedModel = providerModels.first().key
+                                                }
                                             }
                                         }
                                     }
-                                    .padding(vertical = 8.dp, horizontal = 1.dp),
+                                    .padding(vertical = 8.dp, horizontal = 10.dp),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text(
                                     text = pLabel,
                                     color = if (isSel) Color.White else EmochiTextSecondary,
-                                    fontSize = 10.sp,
+                                    fontSize = 10.5.sp,
                                     fontWeight = if (isSel) FontWeight.Bold else FontWeight.Medium,
                                     textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                                     maxLines = 1
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Provider Card 0: LLM7 (Fixed / Free Provider)
+                    val isLlm7Active = selectedProvider == "llm7" || enableLlm7
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = EmochiCard),
+                        shape = RoundedCornerShape(14.dp),
+                        border = androidx.compose.foundation.BorderStroke(if (isLlm7Active) 2.dp else 1.dp, if (isLlm7Active) Color(0xFF00E676) else EmochiBorder),
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.FlashOn, contentDescription = null, tint = Color(0xFF00E676), modifier = Modifier.size(18.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("0. LLM7 (Ücretsiz Sabit Servis)", color = EmochiTextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                }
+                                if (enableLlm7) {
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .background(Color(0xFF00E676).copy(alpha = 0.2f))
+                                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                                    ) {
+                                        Text("ÖNCELİKLİ (STEP 1)", color = Color(0xFF00E676), fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = "API Key gerektirmeyen ücretsiz servis (https://api.llm7.io/v1). Model: default | Key: unused",
+                                color = EmochiTextSecondary,
+                                fontSize = 11.sp
+                            )
+
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text("LLM7'yi Öncelikli Kullan (Fallback Chain)", color = Color.White, fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold)
+                                    Text("Açıkken her istek ilk olarak LLM7'ye gönderilir. Başarısız olursa sıradaki sağlayıcı denenir.", color = EmochiTextMuted, fontSize = 10.sp)
+                                }
+                                Switch(
+                                    checked = enableLlm7,
+                                    onCheckedChange = { enableLlm7 = it },
+                                    colors = SwitchDefaults.colors(
+                                        checkedThumbColor = Color.White,
+                                        checkedTrackColor = Color(0xFF00E676)
+                                    )
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Button(
+                                    onClick = {
+                                        scope.launch {
+                                            isTestingLlm7 = true
+                                            llm7TestResult = "Bağlantı test ediliyor..."
+                                            val res = viewModel.testLlm7Connection()
+                                            isTestingLlm7 = false
+                                            if (res.isSuccess) {
+                                                val fcText = if (res.supportsFunctionCalling) "Function calling (gelişmiş hafıza) destekleniyor." else "Metin-tabanlı hafıza modu ([[MEMORY_SAVE]]) aktif."
+                                                llm7TestResult = "✅ Bağlantı başarılı! $fcText"
+                                            } else {
+                                                llm7TestResult = "❌ Bağlantı hatası: ${res.errorMessage}"
+                                            }
+                                        }
+                                    },
+                                    enabled = !isTestingLlm7,
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                    modifier = Modifier.height(30.dp)
+                                ) {
+                                    Text(if (isTestingLlm7) "Test ediliyor..." else "⚡ LLM7 Test Et", color = Color(0xFF00E676), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                }
+
+                                Button(
+                                    onClick = { showFallbackLogModal = true },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                    modifier = Modifier.height(30.dp)
+                                ) {
+                                    Text("📋 Fallback Logları", color = Color(0xFFA78BFA), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+
+                            if (!llm7TestResult.isNullOrBlank()) {
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(
+                                    text = llm7TestResult!!,
+                                    color = if (llm7TestResult!!.contains("✅")) Color(0xFF69F0AE) else Color(0xFFFCA5A5),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Provider Card 0B: Pollinations.ai (Free Provider)
+                    val isPollinationsActive = selectedProvider == "pollinations" || enablePollinations
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = EmochiCard),
+                        shape = RoundedCornerShape(14.dp),
+                        border = androidx.compose.foundation.BorderStroke(if (isPollinationsActive) 2.dp else 1.dp, if (isPollinationsActive) Color(0xFF00E676) else EmochiBorder),
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.FlashOn, contentDescription = null, tint = Color(0xFF00E676), modifier = Modifier.size(18.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("0B. Pollinations (Limitsiz Ücretsiz)", color = EmochiTextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                }
+                                if (enablePollinations) {
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .background(Color(0xFF00E676).copy(alpha = 0.2f))
+                                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                                    ) {
+                                        Text("STEP 2 FALLBACK", color = Color(0xFF00E676), fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = "API Key gerektirmez (https://text.pollinations.ai/openai). Model: $pollinationsModel | Key: unused",
+                                color = EmochiTextSecondary,
+                                fontSize = 11.sp
+                            )
+
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text("Pollinations'ı Fallback Chain'e Ekle", color = Color.White, fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold)
+                                    Text("LLM7 başarısız olursa otomatik olarak Pollinations denenir.", color = EmochiTextMuted, fontSize = 10.sp)
+                                }
+                                Switch(
+                                    checked = enablePollinations,
+                                    onCheckedChange = { enablePollinations = it },
+                                    colors = SwitchDefaults.colors(
+                                        checkedThumbColor = Color.White,
+                                        checkedTrackColor = Color(0xFF00E676)
+                                    )
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Button(
+                                onClick = {
+                                    scope.launch {
+                                        isTestingPollinations = true
+                                        pollinationsTestResult = "Bağlantı test ediliyor..."
+                                        val res = viewModel.testPollinationsConnection(pollinationsModel)
+                                        isTestingPollinations = false
+                                        if (res.isSuccess) {
+                                            pollinationsTestResult = "✅ Pollinations bağlantısı başarılı! (Model: $pollinationsModel)"
+                                        } else {
+                                            pollinationsTestResult = "❌ Bağlantı hatası: ${res.errorMessage}"
+                                        }
+                                    }
+                                },
+                                enabled = !isTestingPollinations,
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                modifier = Modifier.height(30.dp)
+                            ) {
+                                Text(if (isTestingPollinations) "Test ediliyor..." else "⚡ Pollinations Test Et", color = Color(0xFF00E676), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+
+                            if (!pollinationsTestResult.isNullOrBlank()) {
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(
+                                    text = pollinationsTestResult!!,
+                                    color = if (pollinationsTestResult!!.contains("✅")) Color(0xFF69F0AE) else Color(0xFFFCA5A5),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Provider Card 0C: OpenCode Zen (Free Provider)
+                    val isOpencodeZenActive = selectedProvider == "opencode_zen" || enableOpencodeZen
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = EmochiCard),
+                        shape = RoundedCornerShape(14.dp),
+                        border = androidx.compose.foundation.BorderStroke(if (isOpencodeZenActive) 2.dp else 1.dp, if (isOpencodeZenActive) Color(0xFF00E676) else EmochiBorder),
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.FlashOn, contentDescription = null, tint = Color(0xFF00E676), modifier = Modifier.size(18.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("0C. OpenCode Zen (Anonim Ücretsiz)", color = EmochiTextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                }
+                                if (enableOpencodeZen) {
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .background(Color(0xFF00E676).copy(alpha = 0.2f))
+                                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                                    ) {
+                                        Text("STEP 3 FALLBACK", color = Color(0xFF00E676), fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = "API Key gerektirmez (https://opencode.ai/zen/v1). Yalnızca '-free' modelli anonim şerit gösterilir.",
+                                color = EmochiTextSecondary,
+                                fontSize = 11.sp
+                            )
+
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text("Aktif OpenCode Zen Modeli:", color = EmochiTextPrimary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                availableOpencodeZenModels.forEach { m ->
+                                    val isSelected = m == opencodeZenModel
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(if (isSelected) Color(0xFF00E676).copy(alpha = 0.25f) else EmochiCard)
+                                            .border(1.dp, if (isSelected) Color(0xFF00E676) else EmochiBorder, RoundedCornerShape(8.dp))
+                                            .clickable { opencodeZenModel = m }
+                                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                                    ) {
+                                        Text(m, color = if (isSelected) Color.White else EmochiTextSecondary, fontSize = 10.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal)
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text("OpenCode Zen'i Fallback Chain'e Ekle", color = Color.White, fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold)
+                                    Text("Pollinations başarısız olursa otomatik olarak OpenCode Zen denenir.", color = EmochiTextMuted, fontSize = 10.sp)
+                                }
+                                Switch(
+                                    checked = enableOpencodeZen,
+                                    onCheckedChange = { enableOpencodeZen = it },
+                                    colors = SwitchDefaults.colors(
+                                        checkedThumbColor = Color.White,
+                                        checkedTrackColor = Color(0xFF00E676)
+                                    )
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Button(
+                                    onClick = {
+                                        scope.launch {
+                                            isTestingOpencodeZen = true
+                                            opencodeZenTestResult = "Bağlantı test ediliyor..."
+                                            val res = viewModel.testOpencodeZenConnection(opencodeZenModel)
+                                            isTestingOpencodeZen = false
+                                            if (res.isSuccess) {
+                                                opencodeZenTestResult = "✅ OpenCode Zen bağlantısı başarılı! (Model: $opencodeZenModel)"
+                                            } else {
+                                                opencodeZenTestResult = "❌ Bağlantı hatası: ${res.errorMessage}"
+                                            }
+                                        }
+                                    },
+                                    enabled = !isTestingOpencodeZen,
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                    modifier = Modifier.height(30.dp)
+                                ) {
+                                    Text(if (isTestingOpencodeZen) "Test ediliyor..." else "⚡ OpenCode Zen Test Et", color = Color(0xFF00E676), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                }
+
+                                Button(
+                                    onClick = {
+                                        scope.launch {
+                                            isLoadingOpencodeZenModels = true
+                                            val models = viewModel.fetchOpencodeZenFreeModels()
+                                            availableOpencodeZenModels = models
+                                            isLoadingOpencodeZenModels = false
+                                        }
+                                    },
+                                    enabled = !isLoadingOpencodeZenModels,
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                    modifier = Modifier.height(30.dp)
+                                ) {
+                                    Text(if (isLoadingOpencodeZenModels) "Yükleniyor..." else "🔄 Modelleri Yenile", color = Color(0xFFA78BFA), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+
+                            if (!opencodeZenTestResult.isNullOrBlank()) {
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(
+                                    text = opencodeZenTestResult!!,
+                                    color = if (opencodeZenTestResult!!.contains("✅")) Color(0xFF69F0AE) else Color(0xFFFCA5A5),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Provider Card 0D: OVH AI Endpoints (Opt-in Provider)
+                    val isOvhActive = selectedProvider == "ovh" || enableOvh
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = EmochiCard),
+                        shape = RoundedCornerShape(14.dp),
+                        border = androidx.compose.foundation.BorderStroke(if (isOvhActive) 2.dp else 1.dp, if (isOvhActive) Color(0xFFFF9800) else EmochiBorder),
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.Warning, contentDescription = null, tint = Color(0xFFFF9800), modifier = Modifier.size(18.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("0D. OVH AI Endpoints (Düşük İstek Sınırlı)", color = EmochiTextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                }
+                                if (enableOvh) {
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .background(Color(0xFFFF9800).copy(alpha = 0.2f))
+                                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                                    ) {
+                                        Text("DÜŞÜK İSTEK SINIRI (OPT-IN)", color = Color(0xFFFF9800), fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(Color(0xFF332300))
+                                    .border(1.dp, Color(0xFFFF9800), RoundedCornerShape(8.dp))
+                                    .padding(8.dp)
+                            ) {
+                                Text(
+                                    text = "⚠️ UYARI: OVH dakikada çok düşük istek sınırına sahiptir (yaklaşık 2 RPM). Dakikada 2 isteği aşarsanız 429 hatası alınır ve sistem 5 dakika otomatik geçici bekleme moduna geçer.",
+                                    color = Color(0xFFFFD54F),
+                                    fontSize = 10.5.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text("OVH AI'yı Devreye Al (Opsiyonel)", color = Color.White, fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold)
+                                    Text("Varsayılan olarak KAPALIDIR. Yalnızca diğer tüm sağlayıcılar çöktüğünde son çare denenir.", color = EmochiTextMuted, fontSize = 10.sp)
+                                }
+                                Switch(
+                                    checked = enableOvh,
+                                    onCheckedChange = { enableOvh = it },
+                                    colors = SwitchDefaults.colors(
+                                        checkedThumbColor = Color.White,
+                                        checkedTrackColor = Color(0xFFFF9800)
+                                    )
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Button(
+                                    onClick = {
+                                        scope.launch {
+                                            isTestingOvh = true
+                                            ovhTestResult = "OVH bağlantısı test ediliyor..."
+                                            val res = viewModel.testOvhConnection(ovhModel)
+                                            isTestingOvh = false
+                                            if (res.isSuccess) {
+                                                ovhTestResult = "✅ OVH bağlantısı başarılı! ($ovhModel)"
+                                            } else {
+                                                ovhTestResult = "❌ ${res.errorMessage}"
+                                            }
+                                        }
+                                    },
+                                    enabled = !isTestingOvh,
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                    modifier = Modifier.height(30.dp)
+                                ) {
+                                    Text(if (isTestingOvh) "Test ediliyor..." else "⚡ OVH Test Et", color = Color(0xFFFF9800), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                }
+
+                                Button(
+                                    onClick = {
+                                        scope.launch {
+                                            isTestingOvh = true
+                                            ovhTestResult = "Art arda 3 hızlı istek gönderilerek 429 rate limit simüle ediliyor..."
+                                            val res = viewModel.simulateOvhRateLimitTest()
+                                            isTestingOvh = false
+                                            ovhTestResult = res.errorMessage
+                                        }
+                                    },
+                                    enabled = !isTestingOvh,
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                    modifier = Modifier.height(30.dp)
+                                ) {
+                                    Text("🧪 429 Simülasyon Testi", color = Color(0xFFFCA5A5), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+
+                            if (!ovhTestResult.isNullOrBlank()) {
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(
+                                    text = ovhTestResult!!,
+                                    color = if (ovhTestResult!!.contains("✅")) Color(0xFF69F0AE) else Color(0xFFFFB74D),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Medium
                                 )
                             }
                         }
@@ -900,7 +1444,493 @@ fun GlobalSettingsModal(
                         }
                     }
 
-                    // Provider Card 5: Özel API / OpenRouter / Proxy (HER ZAMAN GÖRÜNÜR & BELİRGİN)
+                    // Provider Card 5: OpenRouter API
+                    val isOpenRouterActive = selectedProvider == "openrouter"
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = EmochiCard),
+                        shape = RoundedCornerShape(14.dp),
+                        border = androidx.compose.foundation.BorderStroke(if (isOpenRouterActive) 2.dp else 1.dp, if (isOpenRouterActive) Color(0xFF38BDF8) else EmochiBorder),
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.Language, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("5. OpenRouter API", color = EmochiTextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                }
+                                if (isOpenRouterActive) {
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .background(Color(0xFF38BDF8).copy(alpha = 0.2f))
+                                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                                    ) {
+                                        Text("AKTİF SAĞLAYICI", color = Color(0xFF38BDF8), fontSize = 9.5.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B)),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF38BDF8).copy(alpha = 0.5f)),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(8.dp)) {
+                                    Text("🔑 OpenRouter Key Al: openrouter.ai/keys", color = Color(0xFF38BDF8), fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
+                                    Text("• Ücretsiz kullanım için model adının sonuna ':free' ekleyebilir veya 'deepseek/deepseek-chat' kullanabilirsiniz.", color = Color.White, fontSize = 9.5.sp)
+                                    Text("• Oran Sınırı: Ücretsiz katmanda günde ~50 istek.", color = EmochiTextSecondary, fontSize = 9.5.sp)
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(6.dp))
+                            OutlinedTextField(
+                                value = openRouterApiKey,
+                                onValueChange = { openRouterApiKey = it },
+                                placeholder = { Text("sk-or-v1-...", fontSize = 11.5.sp, color = EmochiTextMuted) },
+                                visualTransformation = if (showKeys) VisualTransformation.None else PasswordVisualTransformation(),
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true,
+                                colors = customTextFieldColors()
+                            )
+
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text("Model Kodu / Adı:", color = EmochiTextSecondary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                            OutlinedTextField(
+                                value = openRouterModel,
+                                onValueChange = {
+                                    openRouterModel = it
+                                    if (isOpenRouterActive) selectedModel = it
+                                },
+                                placeholder = { Text("deepseek/deepseek-chat", fontSize = 11.5.sp, color = EmochiTextMuted) },
+                                modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
+                                singleLine = true,
+                                colors = customTextFieldColors()
+                            )
+
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text("Model Kısayolları:", color = EmochiTextMuted, fontSize = 10.sp)
+                            Row(
+                                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                listOf(
+                                    "DeepSeek Chat" to "deepseek/deepseek-chat",
+                                    "DeepSeek R1 (Free)" to "deepseek/deepseek-r1:free",
+                                    "Llama 3.3 70B (Free)" to "meta-llama/llama-3.3-70b-instruct:free",
+                                    "Qwen 2.5 72B" to "qwen/qwen-2.5-72b-instruct"
+                                ).forEach { (lbl, code) ->
+                                    OutlinedButton(
+                                        onClick = {
+                                            openRouterModel = code
+                                            selectedProvider = "openrouter"
+                                            selectedModel = code
+                                        },
+                                        shape = RoundedCornerShape(8.dp),
+                                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                                        modifier = Modifier.height(28.dp)
+                                    ) {
+                                        Text(lbl, fontSize = 9.5.sp)
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Button(
+                                onClick = {
+                                    scope.launch {
+                                        isTestingOpenRouter = true
+                                        openRouterTestResult = "Test ediliyor..."
+                                        val res = viewModel.testOpenRouterConnection(openRouterApiKey, openRouterModel)
+                                        isTestingOpenRouter = false
+                                        openRouterTestResult = if (res.isSuccess) "✅ OpenRouter bağlantısı başarılı!" else "❌ Hata: ${res.errorMessage}"
+                                    }
+                                },
+                                enabled = !isTestingOpenRouter && openRouterApiKey.isNotBlank(),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                modifier = Modifier.height(30.dp)
+                            ) {
+                                Text(if (isTestingOpenRouter) "Test ediliyor..." else "⚡ OpenRouter Test Et", color = Color(0xFF38BDF8), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+
+                            openRouterTestResult?.let { msg ->
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(msg, color = if (msg.contains("✅")) Color(0xFF69F0AE) else Color(0xFFFCA5A5), fontSize = 11.sp)
+                            }
+                        }
+                    }
+
+                    // Provider Card 6: NVIDIA NIM API
+                    val isNvidiaActive = selectedProvider == "nvidia"
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = EmochiCard),
+                        shape = RoundedCornerShape(14.dp),
+                        border = androidx.compose.foundation.BorderStroke(if (isNvidiaActive) 2.dp else 1.dp, if (isNvidiaActive) Color(0xFF76B900) else EmochiBorder),
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.Memory, contentDescription = null, tint = Color(0xFF76B900), modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("6. NVIDIA NIM API", color = EmochiTextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                }
+                                if (isNvidiaActive) {
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .background(Color(0xFF76B900).copy(alpha = 0.2f))
+                                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                                    ) {
+                                        Text("AKTİF SAĞLAYICI", color = Color(0xFF76B900), fontSize = 9.5.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFF1C2819)),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF76B900).copy(alpha = 0.5f)),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(8.dp)) {
+                                    Text("🔑 NVIDIA NIM Key Al: build.nvidia.com", color = Color(0xFF76B900), fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
+                                    Text("• Model formatı: sağlayıcı/model (ör. deepseek-ai/deepseek-v4-flash, mistralai/mistral-nemotron).", color = Color.White, fontSize = 9.5.sp)
+                                    Text("⚠️ Limit: Dakikada 40 istek (40 RPM) tüm modeller toplamında geçerlidir. Kredi biterse HTTP 402 verir.", color = Color(0xFFFFCC00), fontSize = 9.5.sp)
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(6.dp))
+                            OutlinedTextField(
+                                value = nvidiaApiKey,
+                                onValueChange = { nvidiaApiKey = it },
+                                placeholder = { Text("nvapi-...", fontSize = 11.5.sp, color = EmochiTextMuted) },
+                                visualTransformation = if (showKeys) VisualTransformation.None else PasswordVisualTransformation(),
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true,
+                                colors = customTextFieldColors()
+                            )
+
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text("Model Kodu / Adı:", color = EmochiTextSecondary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                            OutlinedTextField(
+                                value = nvidiaModel,
+                                onValueChange = {
+                                    nvidiaModel = it
+                                    if (isNvidiaActive) selectedModel = it
+                                },
+                                placeholder = { Text("deepseek-ai/deepseek-v4-flash", fontSize = 11.5.sp, color = EmochiTextMuted) },
+                                modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
+                                singleLine = true,
+                                colors = customTextFieldColors()
+                            )
+
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text("Model Kısayolları:", color = EmochiTextMuted, fontSize = 10.sp)
+                            Row(
+                                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                listOf(
+                                    "DeepSeek V4 Flash" to "deepseek-ai/deepseek-v4-flash",
+                                    "Mistral Nemotron" to "mistralai/mistral-nemotron",
+                                    "Llama 3.3 70B" to "meta-llama/llama-3.3-70b-instruct"
+                                ).forEach { (lbl, code) ->
+                                    OutlinedButton(
+                                        onClick = {
+                                            nvidiaModel = code
+                                            selectedProvider = "nvidia"
+                                            selectedModel = code
+                                        },
+                                        shape = RoundedCornerShape(8.dp),
+                                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                                        modifier = Modifier.height(28.dp)
+                                    ) {
+                                        Text(lbl, fontSize = 9.5.sp)
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Button(
+                                onClick = {
+                                    scope.launch {
+                                        isTestingNvidia = true
+                                        nvidiaTestResult = "Test ediliyor..."
+                                        val res = viewModel.testNvidiaConnection(nvidiaApiKey, nvidiaModel)
+                                        isTestingNvidia = false
+                                        nvidiaTestResult = if (res.isSuccess) "✅ NVIDIA NIM bağlantısı başarılı!" else "❌ Hata: ${res.errorMessage}"
+                                    }
+                                },
+                                enabled = !isTestingNvidia && nvidiaApiKey.isNotBlank(),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                modifier = Modifier.height(30.dp)
+                            ) {
+                                Text(if (isTestingNvidia) "Test ediliyor..." else "⚡ NVIDIA NIM Test Et", color = Color(0xFF76B900), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+
+                            nvidiaTestResult?.let { msg ->
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(msg, color = if (msg.contains("✅")) Color(0xFF69F0AE) else Color(0xFFFCA5A5), fontSize = 11.sp)
+                            }
+                        }
+                    }
+
+                    // Provider Card 7: GitHub Models API
+                    val isGithubActive = selectedProvider == "github"
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = EmochiCard),
+                        shape = RoundedCornerShape(14.dp),
+                        border = androidx.compose.foundation.BorderStroke(if (isGithubActive) 2.dp else 1.dp, if (isGithubActive) Color(0xFF9E9E9E) else EmochiBorder),
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.Key, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("7. GitHub Models API", color = EmochiTextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                }
+                                if (isGithubActive) {
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .background(Color.White.copy(alpha = 0.2f))
+                                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                                    ) {
+                                        Text("AKTİF SAĞLAYICI", color = Color.White, fontSize = 9.5.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFF24292E)),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF9E9E9E).copy(alpha = 0.5f)),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(8.dp)) {
+                                    Text("🔑 GitHub Personal Access Token (PAT) Al: github.com/settings/tokens", color = Color.White, fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
+                                    Text("• Token yetkisi: Fine-grained token seçin ve 'models:read' yetkisi verin.", color = Color.White, fontSize = 9.5.sp)
+                                    Text("⚠️ Token süresi dolarsa HTTP 401 hatası alırsınız, yeni bir PAT üretip buraya yapıştırın.", color = Color(0xFFFFB74D), fontSize = 9.5.sp)
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(6.dp))
+                            OutlinedTextField(
+                                value = githubApiKey,
+                                onValueChange = { githubApiKey = it },
+                                placeholder = { Text("ghp_... veya gpat_...", fontSize = 11.5.sp, color = EmochiTextMuted) },
+                                visualTransformation = if (showKeys) VisualTransformation.None else PasswordVisualTransformation(),
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true,
+                                colors = customTextFieldColors()
+                            )
+
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text("Model Kodu / Adı:", color = EmochiTextSecondary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                            OutlinedTextField(
+                                value = githubModel,
+                                onValueChange = {
+                                    githubModel = it
+                                    if (isGithubActive) selectedModel = it
+                                },
+                                placeholder = { Text("openai/gpt-4o", fontSize = 11.5.sp, color = EmochiTextMuted) },
+                                modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
+                                singleLine = true,
+                                colors = customTextFieldColors()
+                            )
+
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text("Model Kısayolları:", color = EmochiTextMuted, fontSize = 10.sp)
+                            Row(
+                                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                listOf(
+                                    "GPT-4o" to "openai/gpt-4o",
+                                    "GPT-4o Mini" to "openai/gpt-4o-mini",
+                                    "Phi 3.5 Mini" to "microsoft/phi-3.5-mini-instruct",
+                                    "Llama 3.3 70B" to "meta-llama/llama-3.3-70b-instruct"
+                                ).forEach { (lbl, code) ->
+                                    OutlinedButton(
+                                        onClick = {
+                                            githubModel = code
+                                            selectedProvider = "github"
+                                            selectedModel = code
+                                        },
+                                        shape = RoundedCornerShape(8.dp),
+                                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                                        modifier = Modifier.height(28.dp)
+                                    ) {
+                                        Text(lbl, fontSize = 9.5.sp)
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Button(
+                                onClick = {
+                                    scope.launch {
+                                        isTestingGithub = true
+                                        githubTestResult = "Test ediliyor..."
+                                        val res = viewModel.testGithubConnection(githubApiKey, githubModel)
+                                        isTestingGithub = false
+                                        githubTestResult = if (res.isSuccess) "✅ GitHub Models bağlantısı başarılı!" else "❌ Hata: ${res.errorMessage}"
+                                    }
+                                },
+                                enabled = !isTestingGithub && githubApiKey.isNotBlank(),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                modifier = Modifier.height(30.dp)
+                            ) {
+                                Text(if (isTestingGithub) "Test ediliyor..." else "⚡ GitHub Models Test Et", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+
+                            githubTestResult?.let { msg ->
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(msg, color = if (msg.contains("✅")) Color(0xFF69F0AE) else Color(0xFFFCA5A5), fontSize = 11.sp)
+                            }
+                        }
+                    }
+
+                    // Provider Card 8: Mistral AI API
+                    val isMistralActive = selectedProvider == "mistral"
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = EmochiCard),
+                        shape = RoundedCornerShape(14.dp),
+                        border = androidx.compose.foundation.BorderStroke(if (isMistralActive) 2.dp else 1.dp, if (isMistralActive) Color(0xFFFF9800) else EmochiBorder),
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = Color(0xFFFF9800), modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("8. Mistral AI API", color = EmochiTextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                }
+                                if (isMistralActive) {
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .background(Color(0xFFFF9800).copy(alpha = 0.2f))
+                                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                                    ) {
+                                        Text("AKTİF SAĞLAYICI", color = Color(0xFFFF9800), fontSize = 9.5.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFF331F00)),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFF9800).copy(alpha = 0.5f)),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(8.dp)) {
+                                    Text("🔑 Mistral Key Al: console.mistral.ai", color = Color(0xFFFF9800), fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
+                                    Text("• Model adı: mistral-large-latest, open-mistral-nemo, codestral-latest", color = Color.White, fontSize = 9.5.sp)
+                                    Text("⚠️ GİZLİLİK UYARISI: Bu ücretsiz katmanda verilerinizin Mistral tarafından model eğitiminde kullanılmasına izin vermiş olursunuz.", color = Color(0xFFFFD54F), fontSize = 9.5.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(6.dp))
+                            OutlinedTextField(
+                                value = mistralApiKey,
+                                onValueChange = { mistralApiKey = it },
+                                placeholder = { Text("Mistral API Key...", fontSize = 11.5.sp, color = EmochiTextMuted) },
+                                visualTransformation = if (showKeys) VisualTransformation.None else PasswordVisualTransformation(),
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true,
+                                colors = customTextFieldColors()
+                            )
+
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text("Model Kodu / Adı:", color = EmochiTextSecondary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                            OutlinedTextField(
+                                value = mistralModel,
+                                onValueChange = {
+                                    mistralModel = it
+                                    if (isMistralActive) selectedModel = it
+                                },
+                                placeholder = { Text("mistral-large-latest", fontSize = 11.5.sp, color = EmochiTextMuted) },
+                                modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
+                                singleLine = true,
+                                colors = customTextFieldColors()
+                            )
+
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text("Model Kısayolları:", color = EmochiTextMuted, fontSize = 10.sp)
+                            Row(
+                                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                listOf(
+                                    "Mistral Large" to "mistral-large-latest",
+                                    "Mistral Nemo" to "open-mistral-nemo",
+                                    "Codestral" to "codestral-latest"
+                                ).forEach { (lbl, code) ->
+                                    OutlinedButton(
+                                        onClick = {
+                                            mistralModel = code
+                                            selectedProvider = "mistral"
+                                            selectedModel = code
+                                        },
+                                        shape = RoundedCornerShape(8.dp),
+                                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                                        modifier = Modifier.height(28.dp)
+                                    ) {
+                                        Text(lbl, fontSize = 9.5.sp)
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Button(
+                                onClick = {
+                                    scope.launch {
+                                        isTestingMistral = true
+                                        mistralTestResult = "Test ediliyor..."
+                                        val res = viewModel.testMistralConnection(mistralApiKey, mistralModel)
+                                        isTestingMistral = false
+                                        mistralTestResult = if (res.isSuccess) "✅ Mistral AI bağlantısı başarılı!" else "❌ Hata: ${res.errorMessage}"
+                                    }
+                                },
+                                enabled = !isTestingMistral && mistralApiKey.isNotBlank(),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                modifier = Modifier.height(30.dp)
+                            ) {
+                                Text(if (isTestingMistral) "Test ediliyor..." else "⚡ Mistral AI Test Et", color = Color(0xFFFF9800), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+
+                            mistralTestResult?.let { msg ->
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(msg, color = if (msg.contains("✅")) Color(0xFF69F0AE) else Color(0xFFFCA5A5), fontSize = 11.sp)
+                            }
+                        }
+                    }
+
+                    // Provider Card 9: Özel API / Proxy (HER ZAMAN GÖRÜNÜR & BELİRGİN)
                     val isCustomActive = selectedProvider.startsWith("custom")
                     Card(
                         colors = CardDefaults.cardColors(containerColor = EmochiCard),
@@ -1224,12 +2254,12 @@ fun GlobalSettingsModal(
                                     modifier = Modifier.padding(16.dp).verticalScroll(rememberScrollState()),
                                     verticalArrangement = Arrangement.spacedBy(10.dp)
                                 ) {
-                                    Text("🌐 Yeni Özel API & Model Ekle", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                                     Text("🌐 Yeni Özel API & Model Ekle", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
 
                                     OutlinedTextField(
                                         value = cLabel,
                                         onValueChange = { cLabel = it; testRes = null },
-                                        label = { Text("Sağlayıcı Etiketi (ör. OpenRouter, LM Studio)", fontSize = 11.sp) },
+                                        label = { Text("Sağlayıcı Etiketi (ör. OpenRouter, NVIDIA NIM)", fontSize = 11.sp) },
                                         modifier = Modifier.fillMaxWidth(),
                                         singleLine = true,
                                         colors = customTextFieldColors()
@@ -1802,7 +2832,7 @@ fun GlobalSettingsModal(
                                 Divider(color = Color(0xFF2B2142))
                                 Spacer(modifier = Modifier.height(10.dp))
 
-                                Text(
+                                 Text(
                                     "Yedek Model (Hata / Kota Aşımında Kullanılır):",
                                     color = EmochiTextSecondary,
                                     fontSize = 11.sp,
@@ -1842,6 +2872,107 @@ fun GlobalSettingsModal(
                                             )
                                         }
                                     }
+                                }
+
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Divider(color = Color(0xFF2B2142))
+                                Spacer(modifier = Modifier.height(8.dp))
+
+                                // FALLBACK CHAIN REORDERING UI
+                                Text("🔀 Fallback Sıralaması ve Öncelik Zinciri:", color = EmochiPrimary, fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                                Text("Sağlayıcılar yukarıdan aşağıya doğru sırayla denenir. Ok butonları ile öncelik sırasını değiştirebilirsiniz.", color = EmochiTextMuted, fontSize = 10.sp)
+
+                                val customListForChain by viewModel.customProviders.collectAsState()
+                                val customMapForChain = customListForChain.associateBy { "custom_${it.id}" }
+
+                                val currentItems = if (fallbackChainOrder.isNotBlank()) {
+                                    fallbackChainOrder.split(",").map { it.trim() }.filter { it.isNotBlank() }
+                                } else {
+                                    val def = mutableListOf("llm7", "pollinations", "opencode_zen", "main")
+                                    customListForChain.forEach { cp -> def.add("custom_${cp.id}") }
+                                    def.add("autofallback")
+                                    def.add("ovh")
+                                    def
+                                }
+
+                                Column(verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxWidth()) {
+                                    currentItems.forEachIndexed { index, itemKey ->
+                                        val displayLabel = when {
+                                            itemKey == "llm7" -> "1. LLM7 (Ücretsiz Servis)"
+                                            itemKey == "pollinations" -> "2. Pollinations (${pollinationsModel.ifBlank { "openai" }})"
+                                            itemKey == "opencode_zen" -> "3. OpenCode Zen (${opencodeZenModel.ifBlank { "deepseek-v4-flash-free" }})"
+                                            itemKey == "main" -> "4. Ana Seçili Sağlayıcı ($selectedProvider)"
+                                            itemKey == "autofallback" -> "5. Otomatik Gemini Fallback ($fallbackModel)"
+                                            itemKey == "ovh" -> "6. OVH AI Endpoints (${ovhModel.ifBlank { "meta-llama/Meta-Llama-3-70B-Instruct" }})"
+                                            itemKey.startsWith("custom_") -> {
+                                                val cp = customMapForChain[itemKey]
+                                                if (cp != null) "Özel: ${cp.label} (${cp.modelName})" else "Özel Sağlayıcı ($itemKey)"
+                                            }
+                                            else -> itemKey
+                                        }
+
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .background(Color(0xFF1E1638))
+                                                .border(1.dp, Color(0xFF382C5E), RoundedCornerShape(8.dp))
+                                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                text = "${index + 1}. $displayLabel",
+                                                color = Color.White,
+                                                fontSize = 10.5.sp,
+                                                fontWeight = FontWeight.Medium,
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                            Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                                                IconButton(
+                                                    onClick = {
+                                                        if (index > 0) {
+                                                            val mutable = currentItems.toMutableList()
+                                                            val tmp = mutable[index]
+                                                            mutable[index] = mutable[index - 1]
+                                                            mutable[index - 1] = tmp
+                                                            fallbackChainOrder = mutable.joinToString(",")
+                                                        }
+                                                    },
+                                                    enabled = index > 0,
+                                                    modifier = Modifier.size(24.dp)
+                                                ) {
+                                                    Text("▲", color = if (index > 0) EmochiPrimary else Color.Gray, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                                }
+                                                IconButton(
+                                                    onClick = {
+                                                        if (index < currentItems.size - 1) {
+                                                            val mutable = currentItems.toMutableList()
+                                                            val tmp = mutable[index]
+                                                            mutable[index] = mutable[index + 1]
+                                                            mutable[index + 1] = tmp
+                                                            fallbackChainOrder = mutable.joinToString(",")
+                                                        }
+                                                    },
+                                                    enabled = index < currentItems.size - 1,
+                                                    modifier = Modifier.size(24.dp)
+                                                ) {
+                                                    Text("▼", color = if (index < currentItems.size - 1) EmochiPrimary else Color.Gray, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                OutlinedButton(
+                                    onClick = {
+                                        fallbackChainOrder = ""
+                                    },
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                    modifier = Modifier.height(26.dp).align(Alignment.End)
+                                ) {
+                                    Text("Varsayılan Sıraya Sıfırla", fontSize = 9.5.sp, color = EmochiTextMuted)
                                 }
                             }
                         }
@@ -2227,6 +3358,14 @@ fun GlobalSettingsModal(
                                         groqApiKey = groqApiKey.trim(),
                                         claudeApiKey = claudeApiKey.trim(),
                                         openaiApiKey = openaiApiKey.trim(),
+                                        openRouterApiKey = openRouterApiKey.trim(),
+                                        openRouterModel = openRouterModel.trim(),
+                                        nvidiaApiKey = nvidiaApiKey.trim(),
+                                        nvidiaModel = nvidiaModel.trim(),
+                                        githubPatToken = githubApiKey.trim(),
+                                        githubModel = githubModel.trim(),
+                                        mistralApiKey = mistralApiKey.trim(),
+                                        mistralModel = mistralModel.trim(),
                                         backupApiKey = backupApiKey.trim(),
                                         selectedProvider = selectedProvider,
                                         selectedModel = selectedModel,
@@ -2240,6 +3379,14 @@ fun GlobalSettingsModal(
                                         enableSweet = enableSweet,
                                         enablePrimal = enablePrimal,
                                         enableAutoFallback = enableAutoFallback,
+                                        fallbackChainOrder = fallbackChainOrder,
+                                        enableLlm7 = enableLlm7,
+                                        enablePollinations = enablePollinations,
+                                        enableOpencodeZen = enableOpencodeZen,
+                                        enableOvh = enableOvh,
+                                        pollinationsModel = pollinationsModel,
+                                        opencodeZenModel = opencodeZenModel,
+                                        ovhModel = ovhModel,
                                         enableTts = enableTts,
                                         ttsSpeed = ttsSpeed,
                                         ttsPitch = ttsPitch,
@@ -2267,6 +3414,120 @@ fun GlobalSettingsModal(
 
     if (showUpdateModal) {
         UpdateCheckerModal(onDismiss = { showUpdateModal = false })
+    }
+
+    if (showFallbackLogModal) {
+        val logs = viewModel.providerFallbackLog.collectAsState().value
+        FallbackLogModal(logs = logs, onDismiss = { showFallbackLogModal = false })
+    }
+}
+
+@Composable
+fun FallbackLogModal(
+    logs: List<com.example.data.repository.ProviderFallbackLogEntry>,
+    onDismiss: () -> Unit
+) {
+    androidx.compose.ui.window.Dialog(
+        onDismissRequest = onDismiss,
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth(0.92f)
+                .fillMaxHeight(0.75f)
+                .clip(RoundedCornerShape(20.dp)),
+            color = Color(0xFF130E26),
+            border = androidx.compose.foundation.BorderStroke(1.dp, EmochiBorder)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "📋 Sağlayıcı Deneme Logları (Fallback Chain)",
+                        color = Color.White,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Default.Close, contentDescription = "Kapat", tint = Color.White)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                if (logs.isEmpty()) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "Henüz kayıtlı bir fallback logu yok.",
+                            color = Color(0xFF94A3B8),
+                            fontSize = 13.sp
+                        )
+                    }
+                } else {
+                    androidx.compose.foundation.lazy.LazyColumn(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(logs) { entry ->
+                            val statusColor = when (entry.status) {
+                                "SUCCESS" -> Color(0xFF4CAF50)
+                                "FAILED" -> Color(0xFFEF4444)
+                                else -> Color(0xFFFFB74D)
+                            }
+                            val statusIcon = when (entry.status) {
+                                "SUCCESS" -> "✅"
+                                "FAILED" -> "❌"
+                                else -> "⏳"
+                            }
+                            Surface(
+                                color = Color(0xFF1A1333),
+                                shape = RoundedCornerShape(10.dp),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, statusColor.copy(alpha = 0.5f))
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "$statusIcon ${entry.providerName}",
+                                            color = Color.White,
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Text(
+                                            text = entry.status,
+                                            color = statusColor,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                    if (!entry.errorMessage.isNullOrBlank()) {
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text(
+                                            text = "Hata: ${entry.errorMessage}",
+                                            color = Color(0xFFFCA5A5),
+                                            fontSize = 11.sp
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -2305,6 +3566,13 @@ fun BotSettingsModal(
     var confirmDeleteBot by remember { mutableStateOf(false) }
     var showNeuralVault by remember { mutableStateOf(false) }
     var expandedBotSection by remember { mutableStateOf<String?>(null) }
+
+    val viewModel: com.example.ui.viewmodel.EmochiViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
+    var filterCount by remember { mutableStateOf(0) }
+
+    LaunchedEffect(bot.id) {
+        filterCount = viewModel.getContentFilterCountForBot(bot.id)
+    }
 
     val context = androidx.compose.ui.platform.LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -2362,7 +3630,7 @@ fun BotSettingsModal(
                 Spacer(modifier = Modifier.height(10.dp))
 
                 // Emotion Bar
-                EmotionStatusSection(bot = bot, characterEmotions = characterEmotions, affectionEvents = affectionEvents)
+                EmotionStatusSection(bot = bot, characterEmotions = characterEmotions, affectionEvents = affectionEvents, filterCount = filterCount)
 
                 Spacer(modifier = Modifier.height(14.dp))
 

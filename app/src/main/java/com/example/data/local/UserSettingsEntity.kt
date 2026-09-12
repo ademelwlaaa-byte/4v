@@ -30,6 +30,22 @@ data class UserSettingsEntity(
     val selectedVoiceName: String = "",
     val appLanguage: String = "tr", // "tr" (Türkçe), "en" (English)
     val totalPromptTokens: Long = 0L,
-    val totalCandidateTokens: Long = 0L
+    val totalCandidateTokens: Long = 0L,
+    val enableLlm7: Boolean = false,
+    val enablePollinations: Boolean = true,
+    val enableOpencodeZen: Boolean = true,
+    val enableOvh: Boolean = false, // Varsayılan kapalı!
+    val pollinationsModel: String = "openai",
+    val opencodeZenModel: String = "deepseek-v4-flash-free",
+    val ovhModel: String = "meta-llama/Meta-Llama-3-70B-Instruct",
+    val fallbackChainOrder: String = "",
+    val openRouterApiKey: String = "",
+    val openRouterModel: String = "deepseek/deepseek-chat",
+    val nvidiaApiKey: String = "",
+    val nvidiaModel: String = "deepseek-ai/deepseek-v4-flash",
+    val githubPatToken: String = "",
+    val githubModel: String = "openai/gpt-4o",
+    val mistralApiKey: String = "",
+    val mistralModel: String = "mistral-large-latest"
 )
 

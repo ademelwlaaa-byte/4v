@@ -201,6 +201,41 @@ val MIGRATION_24_25 = object : Migration(24, 25) {
     }
 }
 
+val MIGRATION_25_26 = object : Migration(25, 26) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE user_settings ADD COLUMN enableLlm7 INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE messages ADD COLUMN provider TEXT NOT NULL DEFAULT ''")
+    }
+}
+
+val MIGRATION_26_27 = object : Migration(26, 27) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `empty_response_logs` (" +
+                "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                "`botId` TEXT NOT NULL, " +
+                "`provider` TEXT NOT NULL, " +
+                "`model` TEXT NOT NULL, " +
+                "`finishReason` TEXT NOT NULL, " +
+                "`rawLength` INTEGER NOT NULL, " +
+                "`errorMessage` TEXT NOT NULL, " +
+                "`timestamp` INTEGER NOT NULL" +
+                ")"
+        )
+    }
+}
+
+val MIGRATION_27_28 = object : Migration(27, 28) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE user_settings ADD COLUMN enablePollinations INTEGER NOT NULL DEFAULT 1")
+        db.execSQL("ALTER TABLE user_settings ADD COLUMN enableOpencodeZen INTEGER NOT NULL DEFAULT 1")
+        db.execSQL("ALTER TABLE user_settings ADD COLUMN enableOvh INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE user_settings ADD COLUMN pollinationsModel TEXT NOT NULL DEFAULT 'openai'")
+        db.execSQL("ALTER TABLE user_settings ADD COLUMN opencodeZenModel TEXT NOT NULL DEFAULT 'deepseek-v4-flash-free'")
+        db.execSQL("ALTER TABLE user_settings ADD COLUMN ovhModel TEXT NOT NULL DEFAULT 'meta-llama/Meta-Llama-3-70B-Instruct'")
+    }
+}
+
 @Database(
     entities = [
         BotEntity::class,
@@ -224,9 +259,10 @@ val MIGRATION_24_25 = object : Migration(24, 25) {
         PendingReappraisalEntity::class,
         ActiveMemoryCallLogEntity::class,
         TimePerceptionMismatchLogEntity::class,
-        CustomProviderEntity::class
+        CustomProviderEntity::class,
+        EmptyResponseLogEntity::class
     ],
-    version = 25,
+    version = 30,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -251,8 +287,28 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun activeMemoryCallLogDao(): ActiveMemoryCallLogDao
     abstract fun timePerceptionMismatchLogDao(): TimePerceptionMismatchLogDao
     abstract fun customProviderDao(): CustomProviderDao
+    abstract fun emptyResponseLogDao(): EmptyResponseLogDao
 
     companion object {
+        val MIGRATION_28_29 = object : Migration(28, 29) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE user_settings ADD COLUMN fallbackChainOrder TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
+        val MIGRATION_29_30 = object : Migration(29, 30) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE user_settings ADD COLUMN openRouterApiKey TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE user_settings ADD COLUMN openRouterModel TEXT NOT NULL DEFAULT 'deepseek/deepseek-chat'")
+                db.execSQL("ALTER TABLE user_settings ADD COLUMN nvidiaApiKey TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE user_settings ADD COLUMN nvidiaModel TEXT NOT NULL DEFAULT 'deepseek-ai/deepseek-v4-flash'")
+                db.execSQL("ALTER TABLE user_settings ADD COLUMN githubPatToken TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE user_settings ADD COLUMN githubModel TEXT NOT NULL DEFAULT 'openai/gpt-4o'")
+                db.execSQL("ALTER TABLE user_settings ADD COLUMN mistralApiKey TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE user_settings ADD COLUMN mistralModel TEXT NOT NULL DEFAULT 'mistral-large-latest'")
+            }
+        }
+
         @Volatile
         private var INSTANCE: AppDatabase? = null
 
@@ -279,7 +335,12 @@ abstract class AppDatabase : RoomDatabase() {
                         MIGRATION_21_22,
                         MIGRATION_22_23,
                         MIGRATION_23_24,
-                        MIGRATION_24_25
+                        MIGRATION_24_25,
+                        MIGRATION_25_26,
+                        MIGRATION_26_27,
+                        MIGRATION_27_28,
+                        MIGRATION_28_29,
+                        MIGRATION_29_30
                     )
                     .fallbackToDestructiveMigration(dropAllTables = true)
                     .build()
