@@ -301,20 +301,15 @@ fun GlobalSettingsModal(
     var enableAutoFallback by remember { mutableStateOf(settings.enableAutoFallback) }
     var enableLlm7 by remember { mutableStateOf(settings.enableLlm7) }
     var enablePollinations by remember { mutableStateOf(settings.enablePollinations) }
-    var enableOpencodeZen by remember { mutableStateOf(settings.enableOpencodeZen) }
+    var enableOvh by remember { mutableStateOf(settings.enableOvh) }
     var pollinationsModel by remember { mutableStateOf(settings.pollinationsModel.ifBlank { "openai" }) }
-    var opencodeZenModel by remember { mutableStateOf(settings.opencodeZenModel.ifBlank { "deepseek-v4-flash-free" }) }
+    var ovhModel by remember { mutableStateOf(settings.ovhModel.ifBlank { "meta-llama/Meta-Llama-3-70B-Instruct" }) }
 
     var llm7TestResult by remember { mutableStateOf<String?>(null) }
     var isTestingLlm7 by remember { mutableStateOf(false) }
 
     var pollinationsTestResult by remember { mutableStateOf<String?>(null) }
     var isTestingPollinations by remember { mutableStateOf(false) }
-
-    var opencodeZenTestResult by remember { mutableStateOf<String?>(null) }
-    var isTestingOpencodeZen by remember { mutableStateOf(false) }
-    var availableOpencodeZenModels by remember { mutableStateOf(listOf("deepseek-v4-flash-free", "big-pickle", "nemotron-3-ultra-free", "mimo-v2.5-free", "hy3-free")) }
-    var isLoadingOpencodeZenModels by remember { mutableStateOf(false) }
 
     var showFallbackLogModal by remember { mutableStateOf(false) }
     var enableTts by remember { mutableStateOf(settings.enableTts) }
@@ -671,6 +666,58 @@ fun GlobalSettingsModal(
 
                     Spacer(modifier = Modifier.height(10.dp))
 
+                    // Active Custom Provider Header Banner (Katman 0 Indicator)
+                    val activeCustomProviderAtTop = customProviders.find { "custom_${it.id}" == selectedProvider }
+                    if (activeCustomProviderAtTop != null) {
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1B4B)),
+                            shape = RoundedCornerShape(14.dp),
+                            border = androidx.compose.foundation.BorderStroke(2.dp, Color(0xFFA855F7)),
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = Color(0xFFA855F7), modifier = Modifier.size(18.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            "Şu an aktif: ${activeCustomProviderAtTop.label} (Özel API)",
+                                            color = Color.White,
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .background(Color(0xFFA855F7).copy(alpha = 0.3f))
+                                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                                    ) {
+                                        Text("KATMAN 0 (İLK SIRADA)", color = Color(0xFFE9D5FF), fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(
+                                    text = "Model: ${activeCustomProviderAtTop.modelName} | URL: ${activeCustomProviderAtTop.baseUrl}",
+                                    color = Color(0xFFC084FC),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "⚡ İstekler önce bu Özel API'ye (Katman 0) gönderilir. Başarısızlık durumunda otomatik Katman 1'e (LLM7/Pollinations/OVH) düşer.",
+                                    color = EmochiTextSecondary,
+                                    fontSize = 10.5.sp
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
+
                     // Provider Card 0: LLM7 (Fixed / Free Provider)
                     val isLlm7Active = selectedProvider == "llm7" || enableLlm7
                     Card(
@@ -841,10 +888,33 @@ fun GlobalSettingsModal(
 
                             Spacer(modifier = Modifier.height(6.dp))
                             Text(
-                                text = "API Key gerektirmez (https://text.pollinations.ai/openai). Model: $pollinationsModel | Key: unused",
+                                text = "API Key gerektirmez (https://text.pollinations.ai/openai). Key: unused",
                                 color = EmochiTextSecondary,
                                 fontSize = 11.sp
                             )
+
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text("Aktif Pollinations Modeli: $pollinationsModel", color = EmochiTextPrimary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                listOf("openai", "mistral", "qwen", "llama").forEach { m ->
+                                    val isSelected = m == pollinationsModel
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(if (isSelected) Color(0xFF00E676).copy(alpha = 0.25f) else EmochiCard)
+                                            .border(1.dp, if (isSelected) Color(0xFF00E676) else EmochiBorder, RoundedCornerShape(8.dp))
+                                            .clickable { pollinationsModel = m }
+                                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                                    ) {
+                                        Text(m, color = if (isSelected) Color.White else EmochiTextSecondary, fontSize = 10.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal)
+                                    }
+                                }
+                            }
 
                             Spacer(modifier = Modifier.height(8.dp))
                             Row(
@@ -903,12 +973,12 @@ fun GlobalSettingsModal(
 
                     Spacer(modifier = Modifier.height(10.dp))
 
-                    // Provider Card 0C: OpenCode Zen (Free Provider)
-                    val isOpencodeZenActive = selectedProvider == "opencode_zen" || enableOpencodeZen
+                    // Provider Card 0C: OVH AI Free
+                    val isOvhActive = selectedProvider == "ovh" || enableOvh
                     Card(
                         colors = CardDefaults.cardColors(containerColor = EmochiCard),
                         shape = RoundedCornerShape(14.dp),
-                        border = androidx.compose.foundation.BorderStroke(if (isOpencodeZenActive) 2.dp else 1.dp, if (isOpencodeZenActive) Color(0xFF00E676) else EmochiBorder),
+                        border = androidx.compose.foundation.BorderStroke(if (isOvhActive) 2.dp else 1.dp, if (isOvhActive) Color(0xFF00E676) else EmochiBorder),
                         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
                     ) {
                         Column(modifier = Modifier.padding(12.dp)) {
@@ -918,51 +988,28 @@ fun GlobalSettingsModal(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(Icons.Default.FlashOn, contentDescription = null, tint = Color(0xFF00E676), modifier = Modifier.size(18.dp))
+                                    Icon(Icons.Default.Memory, contentDescription = null, tint = Color(0xFF00E676), modifier = Modifier.size(18.dp))
                                     Spacer(modifier = Modifier.width(6.dp))
-                                    Text("0C. OpenCode Zen (Anonim Ücretsiz)", color = EmochiTextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                    Text("0C. OVH AI (Anahtarsız Ücretsiz)", color = EmochiTextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                                 }
-                                if (enableOpencodeZen) {
+                                if (enableOvh) {
                                     Box(
                                         modifier = Modifier
                                             .clip(RoundedCornerShape(6.dp))
                                             .background(Color(0xFF00E676).copy(alpha = 0.2f))
                                             .padding(horizontal = 6.dp, vertical = 2.dp)
                                     ) {
-                                        Text("STEP 3 FALLBACK", color = Color(0xFF00E676), fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                        Text("KATMAN 1 FALLBACK", color = Color(0xFF00E676), fontSize = 9.sp, fontWeight = FontWeight.Bold)
                                     }
                                 }
                             }
 
                             Spacer(modifier = Modifier.height(6.dp))
                             Text(
-                                text = "API Key gerektirmez (https://opencode.ai/zen/v1). Yalnızca '-free' modelli anonim şerit gösterilir.",
+                                text = "API Key gerektirmez. Model: Meta-Llama-3-70B-Instruct (Varsayılan Kapalı).",
                                 color = EmochiTextSecondary,
                                 fontSize = 11.sp
                             )
-
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text("Aktif OpenCode Zen Modeli:", color = EmochiTextPrimary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                availableOpencodeZenModels.forEach { m ->
-                                    val isSelected = m == opencodeZenModel
-                                    Box(
-                                        modifier = Modifier
-                                            .clip(RoundedCornerShape(8.dp))
-                                            .background(if (isSelected) Color(0xFF00E676).copy(alpha = 0.25f) else EmochiCard)
-                                            .border(1.dp, if (isSelected) Color(0xFF00E676) else EmochiBorder, RoundedCornerShape(8.dp))
-                                            .clickable { opencodeZenModel = m }
-                                            .padding(horizontal = 8.dp, vertical = 4.dp)
-                                    ) {
-                                        Text(m, color = if (isSelected) Color.White else EmochiTextSecondary, fontSize = 10.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal)
-                                    }
-                                }
-                            }
 
                             Spacer(modifier = Modifier.height(8.dp))
                             Row(
@@ -971,68 +1018,16 @@ fun GlobalSettingsModal(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
-                                    Text("OpenCode Zen'i Fallback Chain'e Ekle", color = Color.White, fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold)
-                                    Text("Pollinations başarısız olursa otomatik olarak OpenCode Zen denenir.", color = EmochiTextMuted, fontSize = 10.sp)
+                                    Text("OVH AI'yi Fallback Chain'e Ekle (Katman 1)", color = Color.White, fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold)
+                                    Text("LLM7 ve Pollinations başarısız olursa otomatik denenir.", color = EmochiTextMuted, fontSize = 10.sp)
                                 }
                                 Switch(
-                                    checked = enableOpencodeZen,
-                                    onCheckedChange = { enableOpencodeZen = it },
+                                    checked = enableOvh,
+                                    onCheckedChange = { enableOvh = it },
                                     colors = SwitchDefaults.colors(
                                         checkedThumbColor = Color.White,
                                         checkedTrackColor = Color(0xFF00E676)
                                     )
-                                )
-                            }
-
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Button(
-                                    onClick = {
-                                        scope.launch {
-                                            isTestingOpencodeZen = true
-                                            opencodeZenTestResult = "Bağlantı test ediliyor..."
-                                            val res = viewModel.testOpencodeZenConnection(opencodeZenModel)
-                                            isTestingOpencodeZen = false
-                                            if (res.isSuccess) {
-                                                opencodeZenTestResult = "✅ OpenCode Zen bağlantısı başarılı! (Model: $opencodeZenModel)"
-                                            } else {
-                                                opencodeZenTestResult = "❌ Bağlantı hatası: ${res.errorMessage}"
-                                            }
-                                        }
-                                    },
-                                    enabled = !isTestingOpencodeZen,
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
-                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                                    modifier = Modifier.height(30.dp)
-                                ) {
-                                    Text(if (isTestingOpencodeZen) "Test ediliyor..." else "⚡ OpenCode Zen Test Et", color = Color(0xFF00E676), fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                }
-
-                                Button(
-                                    onClick = {
-                                        scope.launch {
-                                            isLoadingOpencodeZenModels = true
-                                            val models = viewModel.fetchOpencodeZenFreeModels()
-                                            availableOpencodeZenModels = models
-                                            isLoadingOpencodeZenModels = false
-                                        }
-                                    },
-                                    enabled = !isLoadingOpencodeZenModels,
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
-                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                                    modifier = Modifier.height(30.dp)
-                                ) {
-                                    Text(if (isLoadingOpencodeZenModels) "Yükleniyor..." else "🔄 Modelleri Yenile", color = Color(0xFFA78BFA), fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                }
-                            }
-
-                            if (!opencodeZenTestResult.isNullOrBlank()) {
-                                Spacer(modifier = Modifier.height(6.dp))
-                                Text(
-                                    text = opencodeZenTestResult!!,
-                                    color = if (opencodeZenTestResult!!.contains("✅")) Color(0xFF69F0AE) else Color(0xFFFCA5A5),
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Medium
                                 )
                             }
                         }
@@ -1824,9 +1819,9 @@ fun GlobalSettingsModal(
                                 customProviders.forEach { cp ->
                                     val isThisSelected = selectedProvider == "custom_${cp.id}"
                                     Card(
-                                        colors = CardDefaults.cardColors(containerColor = if (isThisSelected) EmochiPrimary.copy(alpha = 0.15f) else EmochiSurface),
+                                        colors = CardDefaults.cardColors(containerColor = if (isThisSelected) Color(0xFF2E1065).copy(alpha = 0.4f) else EmochiSurface),
                                         shape = RoundedCornerShape(10.dp),
-                                        border = androidx.compose.foundation.BorderStroke(1.dp, if (isThisSelected) EmochiPrimary else EmochiBorder),
+                                        border = androidx.compose.foundation.BorderStroke(1.5.dp, if (isThisSelected) Color(0xFFA855F7) else EmochiBorder),
                                         modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)
                                     ) {
                                         Column(modifier = Modifier.padding(10.dp)) {
@@ -1860,25 +1855,46 @@ fun GlobalSettingsModal(
                                                     Box(
                                                         modifier = Modifier
                                                             .clip(RoundedCornerShape(6.dp))
-                                                            .background(EmochiPrimary.copy(alpha = 0.3f))
+                                                            .background(Color(0xFFA855F7).copy(alpha = 0.3f))
                                                             .padding(horizontal = 6.dp, vertical = 3.dp)
                                                     ) {
-                                                        Text("SEÇİLİ", color = EmochiPrimary, fontSize = 9.sp, fontWeight = FontWeight.Bold)
-                                                    }
-                                                } else {
-                                                    Button(
-                                                        onClick = {
-                                                            selectedProvider = "custom_${cp.id}"
-                                                            selectedModel = cp.modelName
-                                                        },
-                                                        colors = ButtonDefaults.buttonColors(containerColor = EmochiPrimary),
-                                                        shape = RoundedCornerShape(6.dp),
-                                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                                                        modifier = Modifier.height(28.dp)
-                                                    ) {
-                                                        Text("Seç", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                                        Text("KATMAN 0 AKTİF", color = Color(0xFFE9D5FF), fontSize = 9.sp, fontWeight = FontWeight.Bold)
                                                     }
                                                 }
+                                            }
+
+                                            Spacer(modifier = Modifier.height(6.dp))
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .clip(RoundedCornerShape(6.dp))
+                                                    .background(if (isThisSelected) Color(0xFFA855F7).copy(alpha = 0.15f) else EmochiCard)
+                                                    .clickable {
+                                                        selectedProvider = "custom_${cp.id}"
+                                                        selectedModel = cp.modelName
+                                                    }
+                                                    .padding(horizontal = 6.dp, vertical = 4.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                RadioButton(
+                                                    selected = isThisSelected,
+                                                    onClick = {
+                                                        selectedProvider = "custom_${cp.id}"
+                                                        selectedModel = cp.modelName
+                                                    },
+                                                    colors = RadioButtonDefaults.colors(
+                                                        selectedColor = Color(0xFFA855F7),
+                                                        unselectedColor = EmochiTextMuted
+                                                    ),
+                                                    modifier = Modifier.size(20.dp)
+                                                )
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Text(
+                                                    text = if (isThisSelected) "Aktif Sağlayıcı (Katman 0 — Öncelikli)" else "Aktif Sağlayıcı Olarak Kullan",
+                                                    color = if (isThisSelected) Color(0xFFE9D5FF) else EmochiTextSecondary,
+                                                    fontSize = 11.sp,
+                                                    fontWeight = if (isThisSelected) FontWeight.Bold else FontWeight.Medium
+                                                )
                                             }
 
                                             Spacer(modifier = Modifier.height(6.dp))
@@ -2658,7 +2674,7 @@ fun GlobalSettingsModal(
                                 val currentItems = if (fallbackChainOrder.isNotBlank()) {
                                     fallbackChainOrder.split(",").map { it.trim() }.filter { it.isNotBlank() }
                                 } else {
-                                    val def = mutableListOf("llm7", "pollinations", "opencode_zen", "main")
+                                    val def = mutableListOf("llm7", "pollinations", "ovh", "main")
                                     customListForChain.forEach { cp -> def.add("custom_${cp.id}") }
                                     def.add("autofallback")
                                     def
@@ -2669,7 +2685,7 @@ fun GlobalSettingsModal(
                                         val displayLabel = when {
                                             itemKey == "llm7" -> "1. LLM7 (Ücretsiz Servis)"
                                             itemKey == "pollinations" -> "2. Pollinations (${pollinationsModel.ifBlank { "openai" }})"
-                                            itemKey == "opencode_zen" -> "3. OpenCode Zen (${opencodeZenModel.ifBlank { "deepseek-v4-flash-free" }})"
+                                            itemKey == "ovh" -> "3. OVH AI (${ovhModel})"
                                             itemKey == "main" -> "4. Ana Seçili Sağlayıcı ($selectedProvider)"
                                             itemKey == "autofallback" -> "5. Otomatik Gemini Fallback ($fallbackModel)"
                                             itemKey.startsWith("custom_") -> {
@@ -3148,9 +3164,9 @@ fun GlobalSettingsModal(
                                         fallbackChainOrder = fallbackChainOrder,
                                         enableLlm7 = enableLlm7,
                                         enablePollinations = enablePollinations,
-                                        enableOpencodeZen = enableOpencodeZen,
+                                        enableOvh = enableOvh,
                                         pollinationsModel = pollinationsModel,
-                                        opencodeZenModel = opencodeZenModel,
+                                        ovhModel = ovhModel,
                                         enableTts = enableTts,
                                         ttsSpeed = ttsSpeed,
                                         ttsPitch = ttsPitch,
@@ -3265,7 +3281,7 @@ fun FallbackLogModal(
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         Text(
-                                            text = "$statusIcon ${entry.providerName}",
+                                            text = "$statusIcon [Katman ${entry.layer}] ${entry.providerName}",
                                             color = Color.White,
                                             fontSize = 13.sp,
                                             fontWeight = FontWeight.Bold

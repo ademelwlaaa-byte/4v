@@ -63,7 +63,7 @@ object ProviderRateLimitTracker {
     private val providerConfigs = mapOf(
         "llm7" to ProviderLimitConfig(maxReqPerSec = 1, maxReqPerMin = 10, maxReqPerHour = 60, maxTokens24h = 500_000L),
         "pollinations" to ProviderLimitConfig(maxReqPerSec = 2, maxReqPerMin = 20, maxReqPerHour = 120, maxTokens24h = 500_000L),
-        "opencode_zen" to ProviderLimitConfig(maxReqPerSec = 2, maxReqPerMin = 20, maxReqPerHour = 120, maxTokens24h = 500_000L),
+        "ovh" to ProviderLimitConfig(maxReqPerSec = 2, maxReqPerMin = 20, maxReqPerHour = 120, maxTokens24h = 500_000L),
         "openrouter" to ProviderLimitConfig(maxReqPerSec = 2, maxReqPerMin = 30, maxReqPerHour = 200, maxTokens24h = 300_000L),
         "nvidia" to ProviderLimitConfig(maxReqPerSec = 2, maxReqPerMin = 40, maxReqPerHour = 300, maxTokens24h = 1_000_000L, quotaType = QuotaType.EXHAUSTIBLE, totalCreditsMax = 1000L),
         "mistral" to ProviderLimitConfig(maxReqPerSec = 3, maxReqPerMin = 30, maxReqPerHour = 300, maxTokens24h = 1_000_000L)
@@ -157,7 +157,7 @@ object ProviderRateLimitTracker {
         return when (providerKey) {
             "llm7" -> "LLM7 (Ücretsiz)"
             "pollinations" -> "Pollinations AI"
-            "opencode_zen" -> "OpenCode Zen"
+            "ovh" -> "OVH AI Free"
             "openrouter" -> "OpenRouter Free"
             "nvidia" -> "NVIDIA NIM"
             "mistral" -> "Mistral AI Free"
@@ -196,7 +196,7 @@ object ProviderRateLimitTracker {
     }
 
     fun getAllSecondaryStats(): List<ProviderUsageStats> {
-        val secondaryKeys = listOf("llm7", "pollinations", "opencode_zen", "openrouter", "nvidia", "mistral")
+        val secondaryKeys = listOf("llm7", "pollinations", "ovh", "openrouter", "nvidia", "mistral")
         return secondaryKeys.map { getUsageStats(it) }
     }
 }

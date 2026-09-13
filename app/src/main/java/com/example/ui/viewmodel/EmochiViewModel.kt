@@ -69,14 +69,6 @@ class EmochiViewModel(application: Application) : AndroidViewModel(application) 
         return repository.testPollinationsConnection(modelName)
     }
 
-    suspend fun testOpencodeZenConnection(modelName: String = "deepseek-v4-flash-free"): EmochiRepository.ProviderTestResult {
-        return repository.testOpencodeZenConnection(modelName)
-    }
-
-    suspend fun fetchOpencodeZenFreeModels(): List<String> {
-        return repository.fetchOpencodeZenFreeModels()
-    }
-
     suspend fun fetchNvidiaModels(apiKey: String): List<String> {
         return repository.fetchNvidiaModels(apiKey)
     }

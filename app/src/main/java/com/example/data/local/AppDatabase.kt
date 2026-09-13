@@ -263,7 +263,7 @@ val MIGRATION_27_28 = object : Migration(27, 28) {
         EmptyResponseLogEntity::class,
         MalformedOutputLogEntity::class
     ],
-    version = 32,
+    version = 34,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -416,6 +416,152 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_32_33 = object : Migration(32, 33) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("UPDATE user_settings SET selectedProvider = 'gemini' WHERE selectedProvider = 'opencode_zen'")
+                db.execSQL("UPDATE user_settings SET fallbackChainOrder = REPLACE(fallbackChainOrder, 'opencode_zen', '') WHERE fallbackChainOrder LIKE '%opencode_zen%'")
+            }
+        }
+
+        val MIGRATION_33_34 = object : Migration(33, 34) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                val existingColumns = mutableSetOf<String>()
+                db.query("PRAGMA table_info(`user_settings`)").use { cursor ->
+                    val nameIdx = cursor.getColumnIndex("name")
+                    if (nameIdx != -1) {
+                        while (cursor.moveToNext()) {
+                            existingColumns.add(cursor.getString(nameIdx))
+                        }
+                    }
+                }
+
+                fun colExpr(col: String, defaultSql: String): String {
+                    return if (existingColumns.contains(col)) "`$col`" else "$defaultSql AS `$col`"
+                }
+
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `user_settings_v34` (" +
+                        "`id` INTEGER PRIMARY KEY NOT NULL, " +
+                        "`customApiKey` TEXT NOT NULL DEFAULT '', " +
+                        "`groqApiKey` TEXT NOT NULL DEFAULT '', " +
+                        "`claudeApiKey` TEXT NOT NULL DEFAULT '', " +
+                        "`openaiApiKey` TEXT NOT NULL DEFAULT '', " +
+                        "`backupApiKey` TEXT NOT NULL DEFAULT '', " +
+                        "`selectedProvider` TEXT NOT NULL DEFAULT 'gemini', " +
+                        "`selectedModel` TEXT NOT NULL DEFAULT 'gemini-2.5-flash', " +
+                        "`fallbackModel` TEXT NOT NULL DEFAULT 'gemini-2.5-flash', " +
+                        "`responseLength` TEXT NOT NULL DEFAULT 'standard', " +
+                        "`enableNsfw` INTEGER NOT NULL DEFAULT 1, " +
+                        "`enableOoc` INTEGER NOT NULL DEFAULT 1, " +
+                        "`enableFlirty` INTEGER NOT NULL DEFAULT 1, " +
+                        "`enableHardcore` INTEGER NOT NULL DEFAULT 1, " +
+                        "`enableFetish` INTEGER NOT NULL DEFAULT 0, " +
+                        "`enableDarkRp` INTEGER NOT NULL DEFAULT 0, " +
+                        "`enableSweet` INTEGER NOT NULL DEFAULT 0, " +
+                        "`enablePrimal` INTEGER NOT NULL DEFAULT 0, " +
+                        "`enableAutoFallback` INTEGER NOT NULL DEFAULT 1, " +
+                        "`enableTts` INTEGER NOT NULL DEFAULT 1, " +
+                        "`ttsSpeed` REAL NOT NULL DEFAULT 1.0, " +
+                        "`ttsPitch` REAL NOT NULL DEFAULT 1.0, " +
+                        "`selectedVoiceName` TEXT NOT NULL DEFAULT '', " +
+                        "`appLanguage` TEXT NOT NULL DEFAULT 'tr', " +
+                        "`totalPromptTokens` INTEGER NOT NULL DEFAULT 0, " +
+                        "`totalCandidateTokens` INTEGER NOT NULL DEFAULT 0, " +
+                        "`enableLlm7` INTEGER NOT NULL DEFAULT 0, " +
+                        "`enablePollinations` INTEGER NOT NULL DEFAULT 1, " +
+                        "`enableOvh` INTEGER NOT NULL DEFAULT 0, " +
+                        "`pollinationsModel` TEXT NOT NULL DEFAULT 'openai', " +
+                        "`ovhModel` TEXT NOT NULL DEFAULT 'meta-llama/Meta-Llama-3-70B-Instruct', " +
+                        "`fallbackChainOrder` TEXT NOT NULL DEFAULT '', " +
+                        "`openRouterApiKey` TEXT NOT NULL DEFAULT '', " +
+                        "`openRouterModel` TEXT NOT NULL DEFAULT 'deepseek/deepseek-chat', " +
+                        "`nvidiaApiKey` TEXT NOT NULL DEFAULT '', " +
+                        "`nvidiaModel` TEXT NOT NULL DEFAULT 'deepseek-ai/deepseek-v4-flash', " +
+                        "`mistralApiKey` TEXT NOT NULL DEFAULT '', " +
+                        "`mistralModel` TEXT NOT NULL DEFAULT 'mistral-large-latest', " +
+                        "`geminiModel` TEXT NOT NULL DEFAULT 'gemini-2.5-flash', " +
+                        "`claudeModel` TEXT NOT NULL DEFAULT 'claude-3-5-sonnet-20241022', " +
+                        "`groqModel` TEXT NOT NULL DEFAULT 'llama-3.3-70b-versatile', " +
+                        "`openaiModel` TEXT NOT NULL DEFAULT 'gpt-4o'" +
+                        ")"
+                )
+
+                val idSel = colExpr("id", "1")
+                val customApiKeySel = colExpr("customApiKey", "''")
+                val groqApiKeySel = colExpr("groqApiKey", "''")
+                val claudeApiKeySel = colExpr("claudeApiKey", "''")
+                val openaiApiKeySel = colExpr("openaiApiKey", "''")
+                val backupApiKeySel = colExpr("backupApiKey", "''")
+                val selectedProviderSel = colExpr("selectedProvider", "'gemini'")
+                val selectedModelSel = colExpr("selectedModel", "'gemini-2.5-flash'")
+                val fallbackModelSel = colExpr("fallbackModel", "'gemini-2.5-flash'")
+                val responseLengthSel = colExpr("responseLength", "'standard'")
+                val enableNsfwSel = colExpr("enableNsfw", "1")
+                val enableOocSel = colExpr("enableOoc", "1")
+                val enableFlirtySel = colExpr("enableFlirty", "1")
+                val enableHardcoreSel = colExpr("enableHardcore", "1")
+                val enableFetishSel = colExpr("enableFetish", "0")
+                val enableDarkRpSel = colExpr("enableDarkRp", "0")
+                val enableSweetSel = colExpr("enableSweet", "0")
+                val enablePrimalSel = colExpr("enablePrimal", "0")
+                val enableAutoFallbackSel = colExpr("enableAutoFallback", "1")
+                val enableTtsSel = colExpr("enableTts", "1")
+                val ttsSpeedSel = colExpr("ttsSpeed", "1.0")
+                val ttsPitchSel = colExpr("ttsPitch", "1.0")
+                val selectedVoiceNameSel = colExpr("selectedVoiceName", "''")
+                val appLanguageSel = colExpr("appLanguage", "'tr'")
+                val totalPromptTokensSel = colExpr("totalPromptTokens", "0")
+                val totalCandidateTokensSel = colExpr("totalCandidateTokens", "0")
+                val enableLlm7Sel = colExpr("enableLlm7", "0")
+                val enablePollinationsSel = colExpr("enablePollinations", "1")
+                val enableOvhSel = colExpr("enableOvh", "0")
+                val pollinationsModelSel = colExpr("pollinationsModel", "'openai'")
+                val ovhModelSel = colExpr("ovhModel", "'meta-llama/Meta-Llama-3-70B-Instruct'")
+                val fallbackChainOrderSel = colExpr("fallbackChainOrder", "''")
+                val openRouterApiKeySel = colExpr("openRouterApiKey", "''")
+                val openRouterModelSel = colExpr("openRouterModel", "'deepseek/deepseek-chat'")
+                val nvidiaApiKeySel = colExpr("nvidiaApiKey", "''")
+                val nvidiaModelSel = colExpr("nvidiaModel", "'deepseek-ai/deepseek-v4-flash'")
+                val mistralApiKeySel = colExpr("mistralApiKey", "''")
+                val mistralModelSel = colExpr("mistralModel", "'mistral-large-latest'")
+                val geminiModelSel = colExpr("geminiModel", "'gemini-2.5-flash'")
+                val claudeModelSel = colExpr("claudeModel", "'claude-3-5-sonnet-20241022'")
+                val groqModelSel = colExpr("groqModel", "'llama-3.3-70b-versatile'")
+                val openaiModelSel = colExpr("openaiModel", "'gpt-4o'")
+
+                db.execSQL(
+                    "INSERT INTO `user_settings_v34` (" +
+                        "id, customApiKey, groqApiKey, claudeApiKey, openaiApiKey, backupApiKey, " +
+                        "selectedProvider, selectedModel, fallbackModel, responseLength, " +
+                        "enableNsfw, enableOoc, enableFlirty, enableHardcore, enableFetish, " +
+                        "enableDarkRp, enableSweet, enablePrimal, enableAutoFallback, " +
+                        "enableTts, ttsSpeed, ttsPitch, selectedVoiceName, appLanguage, " +
+                        "totalPromptTokens, totalCandidateTokens, enableLlm7, enablePollinations, " +
+                        "enableOvh, pollinationsModel, ovhModel, " +
+                        "fallbackChainOrder, openRouterApiKey, openRouterModel, nvidiaApiKey, " +
+                        "nvidiaModel, mistralApiKey, mistralModel, geminiModel, claudeModel, " +
+                        "groqModel, openaiModel" +
+                        ") SELECT " +
+                        "$idSel, $customApiKeySel, $groqApiKeySel, $claudeApiKeySel, $openaiApiKeySel, $backupApiKeySel, " +
+                        "$selectedProviderSel, $selectedModelSel, $fallbackModelSel, $responseLengthSel, " +
+                        "$enableNsfwSel, $enableOocSel, $enableFlirtySel, $enableHardcoreSel, $enableFetishSel, " +
+                        "$enableDarkRpSel, $enableSweetSel, $enablePrimalSel, $enableAutoFallbackSel, " +
+                        "$enableTtsSel, $ttsSpeedSel, $ttsPitchSel, $selectedVoiceNameSel, $appLanguageSel, " +
+                        "$totalPromptTokensSel, $totalCandidateTokensSel, $enableLlm7Sel, $enablePollinationsSel, " +
+                        "$enableOvhSel, $pollinationsModelSel, $ovhModelSel, " +
+                        "$fallbackChainOrderSel, $openRouterApiKeySel, $openRouterModelSel, $nvidiaApiKeySel, " +
+                        "$nvidiaModelSel, $mistralApiKeySel, $mistralModelSel, $geminiModelSel, $claudeModelSel, " +
+                        "$groqModelSel, $openaiModelSel " +
+                        "FROM `user_settings`"
+                )
+
+                db.execSQL("DROP TABLE `user_settings`")
+                db.execSQL("ALTER TABLE `user_settings_v34` RENAME TO `user_settings`")
+                db.execSQL("UPDATE user_settings SET selectedProvider = 'gemini' WHERE selectedProvider = 'opencode_zen'")
+                db.execSQL("UPDATE user_settings SET fallbackChainOrder = REPLACE(fallbackChainOrder, 'opencode_zen', '') WHERE fallbackChainOrder LIKE '%opencode_zen%'")
+            }
+        }
+
         @Volatile
         private var INSTANCE: AppDatabase? = null
 
@@ -449,7 +595,9 @@ abstract class AppDatabase : RoomDatabase() {
                         MIGRATION_28_29,
                         MIGRATION_29_30,
                         MIGRATION_30_31,
-                        MIGRATION_31_32
+                        MIGRATION_31_32,
+                        MIGRATION_32_33,
+                        MIGRATION_33_34
                     )
                     .fallbackToDestructiveMigration(dropAllTables = true)
                     .build()

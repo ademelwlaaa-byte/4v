@@ -114,10 +114,8 @@ class GenericOpenAICompatibleAdapter(
                     } else if (code == 429) {
                         throw IllegalStateException("NVIDIA 429 Rate Limit sınırı aşıldı (Dakikada 40 istek sınırı).")
                     }
-                } else if (endpointUrl.contains("opencode.ai") || providerName.contains("opencode_zen")) {
-                    if (code == 401 || bodyStr.contains("user not found", ignoreCase = true) || bodyStr.contains("unauthorized", ignoreCase = true) || bodyStr.contains("invalid key", ignoreCase = true)) {
-                        throw IllegalStateException("API key geçersiz veya hesap silinmiş, yeni bir key oluşturun (opencode.ai/auth).")
-                    }
+                } else if (endpointUrl.contains("pollinations") || providerName.contains("pollinations")) {
+                    throw IllegalStateException("Pollinations API Hatası (HTTP $code): ${bodyStr.take(250)}")
                 }
                 throw IllegalStateException("OpenAI Compatible API Hatası ($code): $bodyStr")
             }
@@ -139,6 +137,18 @@ class GenericOpenAICompatibleAdapter(
             }
 
             val (text, parsedTools) = MemoryToolRegistry.parseOpenAiToolCalls(messageObj)
+
+            if (providerName == "pollinations" || endpointUrl.contains("pollinations")) {
+                if (text.contains("budget", ignoreCase = true) ||
+                    text.contains("queue full", ignoreCase = true) ||
+                    text.contains("rate limit", ignoreCase = true) ||
+                    text.contains("unauthorized", ignoreCase = true) ||
+                    text.contains("get unlimited access", ignoreCase = true) ||
+                    text.contains("reached its budget", ignoreCase = true)
+                ) {
+                    throw IllegalStateException("Pollinations Bütçe/Sıra Sınırı Hatası: ${text.take(200)}")
+                }
+            }
 
             val usageObj = respJson.optJSONObject("usage")
             val pTokens = usageObj?.optLong("prompt_tokens", 0L) ?: 0L
@@ -351,15 +361,13 @@ object LLMAdapterFactory {
                     reliabilityTier = ReliabilityTier.SECONDARY
                 )
             }
-            providerKey == "opencode_zen" -> {
-                val apiKey = settings.opencodeZenApiKey
-                if (apiKey.isBlank()) throw IllegalStateException("OpenCode Zen API Key eksik. Lütfen opencode.ai/auth adresinden ücretsiz bir key alın.")
+            providerKey == "ovh" -> {
                 GenericOpenAICompatibleAdapter(
-                    endpointUrl = "https://opencode.ai/zen/v1/chat/completions",
-                    apiKey = apiKey,
-                    model = modelName.ifBlank { "deepseek-v4-flash-free" },
-                    providerName = "opencode_zen",
-                    supportsFC = true,
+                    endpointUrl = "https://llama-3-70b-instruct.endpoints.kepler.ai.cloud.ovh.net/v1/chat/completions",
+                    apiKey = "unused",
+                    model = modelName.ifBlank { "meta-llama/Meta-Llama-3-70B-Instruct" },
+                    providerName = "ovh",
+                    supportsFC = false,
                     reliabilityTier = ReliabilityTier.SECONDARY
                 )
             }
@@ -405,19 +413,24 @@ object LLMAdapterFactory {
             providerKey.startsWith("custom_") -> {
                 if (customProvider != null) {
                     val apiKey = com.example.util.KeystoreEncryptionManager.decrypt(customProvider.apiKeyEncrypted)
+                    val rawUrl = customProvider.baseUrl.trim()
+                    val baseUrlWithScheme = when {
+                        rawUrl.startsWith("http://") || rawUrl.startsWith("https://") -> rawUrl
+                        else -> "https://$rawUrl"
+                    }
                     if (customProvider.apiFormat == "anthropic") {
                         GenericAnthropicCompatibleAdapter(
                             apiKey = apiKey,
                             model = customProvider.modelName,
                             providerName = "custom_${customProvider.id}",
-                            baseUrl = customProvider.baseUrl,
+                            baseUrl = baseUrlWithScheme,
                             supportsFC = customProvider.supportsFunctionCalling
                         )
                     } else {
                         val endpointUrl = when {
-                            customProvider.baseUrl.endsWith("/chat/completions") -> customProvider.baseUrl
-                            customProvider.baseUrl.endsWith("/") -> "${customProvider.baseUrl}chat/completions"
-                            else -> "${customProvider.baseUrl}/chat/completions"
+                            baseUrlWithScheme.endsWith("/chat/completions") -> baseUrlWithScheme
+                            baseUrlWithScheme.endsWith("/") -> "${baseUrlWithScheme}chat/completions"
+                            else -> "${baseUrlWithScheme}/chat/completions"
                         }
                         GenericOpenAICompatibleAdapter(
                             endpointUrl = endpointUrl,

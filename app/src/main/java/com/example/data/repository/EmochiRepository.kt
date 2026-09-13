@@ -80,7 +80,8 @@ data class ProviderFallbackLogEntry(
     val providerName: String,
     val status: String, // "TRYING", "SUCCESS", "FAILED"
     val statusCode: Int? = null,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val layer: Int = 1
 )
 
 data class AiReplyResult(
@@ -1513,7 +1514,7 @@ class EmochiRepository(
         castMembers: List<CastMemberEntity> = emptyList(),
         lastMessageTimestamp: Long = 0L,
         totalMessageCount: Int = 0,
-        compactMode: Boolean = listOf("llm7", "pollinations", "opencode_zen", "openrouter", "nvidia", "mistral").contains(settings.selectedProvider)
+        compactMode: Boolean = listOf("llm7", "pollinations", "ovh", "openrouter", "nvidia", "mistral").contains(settings.selectedProvider)
     ): String {
         val now = System.currentTimeMillis()
         val emotionStateObj = EmotionState.fromJson(bot.emotionState)
@@ -1523,6 +1524,7 @@ class EmochiRepository(
             val factsStr = if (relevantFacts.isNotEmpty()) "\n- Hafıza Gerçekleri: " + relevantFacts.joinToString("; ") { "${it.key}: ${it.value}" } else ""
             val eventsStr = if (relevantEvents.isNotEmpty()) "\n- Geçmiş Olaylar: " + relevantEvents.joinToString("; ") { it.description } else ""
             val castStr = if (castMembers.isNotEmpty()) "\n- Çevredekiler: " + castMembers.joinToString(", ") { "${it.name} (${it.role})" } else ""
+            val grammarInst = com.example.util.OutputQualityValidator.buildSystemPromptGrammarInstruction()
 
             return """
                 [KARAKTER KARTI (COMPACT MODE)]
@@ -1536,7 +1538,7 @@ class EmochiRepository(
                 • ${bot.aiName} rolünden çıkma, doğal, tutarlı ve samimi Türkçe yanıt ver.
                 • Basit maddeler halinde düşün; yapay/klişe ifadeleri ("gülümsedi", "gözlerinin içine baktı") tekrar etme.
                 • Yanıtının EN SONUNA şu durum bloğunu ekle: [[STATE affectionScore=${emotionStateObj.affection} delta=0 reason="normal sohbet"]]
-                • Önemli yeni bir bilgi öğrendiğinde yanıt sonuna ekle: [[MEMORY_SAVE action="save" content="öğrenilen bilgi" category="fact" importance="5"]]
+                • Önemli yeni bir bilgi öğrendiğinde yanıt sonuna ekle: [[MEMORY_SAVE action="save" content="öğrenilen bilgi" category="fact" importance="5"]]$grammarInst
             """.trimIndent()
         }
 
@@ -4453,33 +4455,46 @@ Tebrikler! Bölüm 3'ü başarıyla tamamladın."""
         systemPrompt: String,
         messages: List<MessageEntity>,
         botId: String?,
-        customProvidersMap: Map<Long, com.example.data.local.CustomProviderEntity>
+        customProvidersMap: Map<Long, com.example.data.local.CustomProviderEntity>,
+        layer: Int
     ): com.example.data.api.ModelResponseResult? {
         when {
             key == "main" -> {
-                val label = "Ana Seçim (${settings.selectedProvider})"
-                logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "TRYING"))
+                val isCustom = settings.selectedProvider.startsWith("custom_")
+                val label = if (isCustom) {
+                    val customId = settings.selectedProvider.removePrefix("custom_").toLongOrNull()
+                    val cp = if (customId != null) customProvidersMap[customId] else null
+                    "Özel Sağlayıcı (Katman 0): ${cp?.label ?: settings.selectedProvider} (${cp?.modelName ?: model})"
+                } else {
+                    "Ana Seçim (${settings.selectedProvider})"
+                }
+                val currentLayer = if (isCustom) 0 else 1
+                logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "TRYING", layer = currentLayer))
                 try {
                     val result = executeSingleModelRequest(model, settings, systemPrompt, messages, botId)
-                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "SUCCESS"))
+                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "SUCCESS", layer = currentLayer))
                     return result
                 } catch (e: Exception) {
-                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "FAILED", errorMessage = e.message ?: e.toString()))
+                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "FAILED", errorMessage = e.message ?: e.toString(), layer = currentLayer))
                 }
             }
             key == "llm7" -> {
                 if (!settings.enableLlm7 || settings.selectedProvider == "llm7") return null
+                val label = "LLM7 (Ücretsiz Servis)"
                 val (canSend, rateReason) = com.example.util.ProviderRateLimitTracker.canSendRequest("llm7")
                 if (!canSend) {
                     com.example.util.ProviderRateLimitTracker.recordFallbackTrigger("llm7")
-                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = "LLM7 (Ücretsiz Servis)", status = "FAILED", errorMessage = "Önceden Engellendi (Rate Limit): $rateReason"))
+                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "FAILED", errorMessage = "Önceden Engellendi (Rate Limit): $rateReason", layer = layer))
                     return null
                 }
 
-                logFallbackAttempt(ProviderFallbackLogEntry(providerName = "LLM7 (Ücretsiz Servis)", status = "TRYING"))
+                logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "TRYING", layer = layer))
                 try {
                     val adapter = com.example.data.api.LLMAdapterFactory.createAdapter("llm7", "default", settings)
-                    var llm7Prompt = systemPrompt
+                    var llm7Prompt = if (botId != null) {
+                        db.botDao().getBotById(botId)?.let { buildSystemPrompt(it, settings, compactMode = true) } ?: systemPrompt.take(1200)
+                    } else systemPrompt.take(1200)
+
                     if (com.example.util.OutputQualityValidator.checkForRecentCliches(messages)) {
                         llm7Prompt += com.example.util.OutputQualityValidator.buildClichePromptInstruction()
                     }
@@ -4491,15 +4506,29 @@ Tebrikler! Bölüm 3'ü başarıyla tamamladın."""
                         resp = adapter.sendMessage(llm7Prompt, messages, null)
                     }
 
+                    var textResult = resp.text
+                    if (com.example.util.OutputQualityValidator.hasRepetitiveLoops(textResult)) {
+                        logFallbackAttempt(ProviderFallbackLogEntry(providerName = "$label (Tekrar Tespit)", status = "TRYING", errorMessage = "Tekrar döngüsü yakalandı, retry atılıyor.", layer = layer))
+                        val retryPrompt = llm7Prompt + com.example.util.OutputQualityValidator.buildRepetitionRetryInstruction()
+                        val retryResp = adapter.sendMessage(retryPrompt, messages, null)
+                        if (com.example.util.OutputQualityValidator.hasRepetitiveLoops(retryResp.text)) {
+                            textResult = com.example.util.OutputQualityValidator.truncateAtRepetition(retryResp.text)
+                        } else {
+                            textResult = retryResp.text
+                        }
+                    }
+
+                    textResult = com.example.util.OutputQualityValidator.enforceLengthLimits(textResult, settings.responseLength)
+
                     val duration = System.currentTimeMillis() - startTime
                     val totalTokens = (resp.usage?.promptTokens ?: 0L) + (resp.usage?.candidateTokens ?: 0L)
                     com.example.util.ProviderRateLimitTracker.recordRequest("llm7", tokensUsed = totalTokens, responseTimeMs = duration)
 
-                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = "LLM7 (Ücretsiz Servis)", status = "SUCCESS"))
-                    return com.example.data.api.ModelResponseResult(resp.text, resp.toolCalls ?: emptyList(), resp.usage?.promptTokens ?: 0L, resp.usage?.candidateTokens ?: 0L, resp.usedProvider)
+                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "SUCCESS", layer = layer))
+                    return com.example.data.api.ModelResponseResult(textResult, resp.toolCalls ?: emptyList(), resp.usage?.promptTokens ?: 0L, resp.usage?.candidateTokens ?: 0L, resp.usedProvider)
                 } catch (e: Exception) {
                     com.example.util.ProviderRateLimitTracker.recordFallbackTrigger("llm7")
-                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = "LLM7 (Ücretsiz Servis)", status = "FAILED", errorMessage = e.message ?: e.toString()))
+                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "FAILED", errorMessage = e.message ?: e.toString(), layer = layer))
                 }
             }
             key == "pollinations" -> {
@@ -4509,55 +4538,88 @@ Tebrikler! Bölüm 3'ü başarıyla tamamladın."""
                 val (canSend, rateReason) = com.example.util.ProviderRateLimitTracker.canSendRequest("pollinations")
                 if (!canSend) {
                     com.example.util.ProviderRateLimitTracker.recordFallbackTrigger("pollinations")
-                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "FAILED", errorMessage = "Önceden Engellendi (Rate Limit): $rateReason"))
+                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "FAILED", errorMessage = "Önceden Engellendi (Rate Limit): $rateReason", layer = layer))
                     return null
                 }
-                logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "TRYING"))
+                logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "TRYING", layer = layer))
                 try {
                     val adapter = com.example.data.api.LLMAdapterFactory.createAdapter("pollinations", pModel, settings)
-                    var prompt = systemPrompt
+                    var prompt = if (botId != null) {
+                        db.botDao().getBotById(botId)?.let { buildSystemPrompt(it, settings, compactMode = true) } ?: systemPrompt.take(1200)
+                    } else systemPrompt.take(1200)
+
                     if (com.example.util.OutputQualityValidator.checkForRecentCliches(messages)) {
                         prompt += com.example.util.OutputQualityValidator.buildClichePromptInstruction()
                     }
                     val startTime = System.currentTimeMillis()
                     var resp = adapter.sendMessage(prompt, messages, null)
+
+                    var textResult = resp.text
+                    if (com.example.util.OutputQualityValidator.hasRepetitiveLoops(textResult)) {
+                        logFallbackAttempt(ProviderFallbackLogEntry(providerName = "$label (Tekrar Tespit)", status = "TRYING", errorMessage = "Tekrar döngüsü yakalandı, retry atılıyor.", layer = layer))
+                        val retryPrompt = prompt + com.example.util.OutputQualityValidator.buildRepetitionRetryInstruction()
+                        val retryResp = adapter.sendMessage(retryPrompt, messages, null)
+                        if (com.example.util.OutputQualityValidator.hasRepetitiveLoops(retryResp.text)) {
+                            textResult = com.example.util.OutputQualityValidator.truncateAtRepetition(retryResp.text)
+                        } else {
+                            textResult = retryResp.text
+                        }
+                    }
+
+                    textResult = com.example.util.OutputQualityValidator.enforceLengthLimits(textResult, settings.responseLength)
+
                     val duration = System.currentTimeMillis() - startTime
                     val totalTokens = (resp.usage?.promptTokens ?: 0L) + (resp.usage?.candidateTokens ?: 0L)
                     com.example.util.ProviderRateLimitTracker.recordRequest("pollinations", tokensUsed = totalTokens, responseTimeMs = duration)
-                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "SUCCESS"))
-                    return com.example.data.api.ModelResponseResult(resp.text, resp.toolCalls ?: emptyList(), resp.usage?.promptTokens ?: 0L, resp.usage?.candidateTokens ?: 0L, resp.usedProvider)
+                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "SUCCESS", layer = layer))
+                    return com.example.data.api.ModelResponseResult(textResult, resp.toolCalls ?: emptyList(), resp.usage?.promptTokens ?: 0L, resp.usage?.candidateTokens ?: 0L, resp.usedProvider)
                 } catch (e: Exception) {
                     com.example.util.ProviderRateLimitTracker.recordFallbackTrigger("pollinations")
-                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "FAILED", errorMessage = e.message ?: e.toString()))
+                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "FAILED", errorMessage = e.message ?: e.toString(), layer = layer))
                 }
             }
-            key == "opencode_zen" -> {
-                if (!settings.enableOpencodeZen || settings.selectedProvider == "opencode_zen" || settings.opencodeZenApiKey.isBlank()) return null
-                val zenModel = settings.opencodeZenModel.ifBlank { "deepseek-v4-flash-free" }
-                val label = "OpenCode Zen ($zenModel)"
-                val (canSend, rateReason) = com.example.util.ProviderRateLimitTracker.canSendRequest("opencode_zen")
+            key == "ovh" -> {
+                if (!settings.enableOvh || settings.selectedProvider == "ovh") return null
+                val oModel = settings.ovhModel.ifBlank { "meta-llama/Meta-Llama-3-70B-Instruct" }
+                val label = "OVH AI ($oModel)"
+                val (canSend, rateReason) = com.example.util.ProviderRateLimitTracker.canSendRequest("ovh")
                 if (!canSend) {
-                    com.example.util.ProviderRateLimitTracker.recordFallbackTrigger("opencode_zen")
-                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "FAILED", errorMessage = "Önceden Engellendi (Rate Limit): $rateReason"))
+                    com.example.util.ProviderRateLimitTracker.recordFallbackTrigger("ovh")
+                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "FAILED", errorMessage = "Önceden Engellendi (Rate Limit): $rateReason", layer = layer))
                     return null
                 }
-                logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "TRYING"))
+                logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "TRYING", layer = layer))
                 try {
-                    val adapter = com.example.data.api.LLMAdapterFactory.createAdapter("opencode_zen", zenModel, settings)
-                    var prompt = systemPrompt
-                    if (com.example.util.OutputQualityValidator.checkForRecentCliches(messages)) {
-                        prompt += com.example.util.OutputQualityValidator.buildClichePromptInstruction()
-                    }
+                    val adapter = com.example.data.api.LLMAdapterFactory.createAdapter("ovh", oModel, settings)
+                    var prompt = if (botId != null) {
+                        db.botDao().getBotById(botId)?.let { buildSystemPrompt(it, settings, compactMode = true) } ?: systemPrompt.take(1200)
+                    } else systemPrompt.take(1200)
+
                     val startTime = System.currentTimeMillis()
-                    val resp = adapter.sendMessage(prompt, messages, if (adapter.supportsFunctionCalling()) com.example.data.api.MemoryToolRegistry.CENTRAL_TOOLS else null)
+                    var resp = adapter.sendMessage(prompt, messages, null)
+
+                    var textResult = resp.text
+                    if (com.example.util.OutputQualityValidator.hasRepetitiveLoops(textResult)) {
+                        logFallbackAttempt(ProviderFallbackLogEntry(providerName = "$label (Tekrar Tespit)", status = "TRYING", errorMessage = "Tekrar döngüsü yakalandı, retry atılıyor.", layer = layer))
+                        val retryPrompt = prompt + com.example.util.OutputQualityValidator.buildRepetitionRetryInstruction()
+                        val retryResp = adapter.sendMessage(retryPrompt, messages, null)
+                        if (com.example.util.OutputQualityValidator.hasRepetitiveLoops(retryResp.text)) {
+                            textResult = com.example.util.OutputQualityValidator.truncateAtRepetition(retryResp.text)
+                        } else {
+                            textResult = retryResp.text
+                        }
+                    }
+
+                    textResult = com.example.util.OutputQualityValidator.enforceLengthLimits(textResult, settings.responseLength)
+
                     val duration = System.currentTimeMillis() - startTime
                     val totalTokens = (resp.usage?.promptTokens ?: 0L) + (resp.usage?.candidateTokens ?: 0L)
-                    com.example.util.ProviderRateLimitTracker.recordRequest("opencode_zen", tokensUsed = totalTokens, responseTimeMs = duration)
-                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "SUCCESS"))
-                    return com.example.data.api.ModelResponseResult(resp.text, resp.toolCalls ?: emptyList(), resp.usage?.promptTokens ?: 0L, resp.usage?.candidateTokens ?: 0L, resp.usedProvider)
+                    com.example.util.ProviderRateLimitTracker.recordRequest("ovh", tokensUsed = totalTokens, responseTimeMs = duration)
+                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "SUCCESS", layer = layer))
+                    return com.example.data.api.ModelResponseResult(textResult, resp.toolCalls ?: emptyList(), resp.usage?.promptTokens ?: 0L, resp.usage?.candidateTokens ?: 0L, resp.usedProvider)
                 } catch (e: Exception) {
-                    com.example.util.ProviderRateLimitTracker.recordFallbackTrigger("opencode_zen")
-                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "FAILED", errorMessage = e.message ?: e.toString()))
+                    com.example.util.ProviderRateLimitTracker.recordFallbackTrigger("ovh")
+                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "FAILED", errorMessage = e.message ?: e.toString(), layer = layer))
                 }
             }
             key == "gemini" -> {
@@ -4566,56 +4628,56 @@ Tebrikler! Bölüm 3'ü başarıyla tamamladın."""
                 if (gemKey.isBlank()) return null
                 val gModel = settings.geminiModel.ifBlank { "gemini-2.5-flash" }
                 val label = "Gemini AI ($gModel)"
-                logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "TRYING"))
+                logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "TRYING", layer = layer))
                 try {
                     val adapter = com.example.data.api.LLMAdapterFactory.createAdapter("gemini", gModel, settings, buildConfigGeminiKey = gemKey)
                     val resp = adapter.sendMessage(systemPrompt, messages, com.example.data.api.MemoryToolRegistry.CENTRAL_TOOLS)
-                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "SUCCESS"))
+                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "SUCCESS", layer = layer))
                     return com.example.data.api.ModelResponseResult(resp.text, resp.toolCalls ?: emptyList(), resp.usage?.promptTokens ?: 0L, resp.usage?.candidateTokens ?: 0L, resp.usedProvider)
                 } catch (e: Exception) {
-                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "FAILED", errorMessage = e.message ?: e.toString()))
+                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "FAILED", errorMessage = e.message ?: e.toString(), layer = layer))
                 }
             }
             key == "claude" -> {
                 if (settings.selectedProvider == "claude" || settings.claudeApiKey.isBlank()) return null
                 val cModel = settings.claudeModel.ifBlank { "claude-3-5-sonnet-20241022" }
                 val label = "Claude AI ($cModel)"
-                logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "TRYING"))
+                logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "TRYING", layer = layer))
                 try {
                     val adapter = com.example.data.api.LLMAdapterFactory.createAdapter("claude", cModel, settings)
                     val resp = adapter.sendMessage(systemPrompt, messages, com.example.data.api.MemoryToolRegistry.CENTRAL_TOOLS)
-                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "SUCCESS"))
+                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "SUCCESS", layer = layer))
                     return com.example.data.api.ModelResponseResult(resp.text, resp.toolCalls ?: emptyList(), resp.usage?.promptTokens ?: 0L, resp.usage?.candidateTokens ?: 0L, resp.usedProvider)
                 } catch (e: Exception) {
-                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "FAILED", errorMessage = e.message ?: e.toString()))
+                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "FAILED", errorMessage = e.message ?: e.toString(), layer = layer))
                 }
             }
             key == "groq" -> {
                 if (settings.selectedProvider == "groq" || settings.groqApiKey.isBlank()) return null
                 val gModel = settings.groqModel.ifBlank { "llama-3.3-70b-versatile" }
                 val label = "Groq ($gModel)"
-                logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "TRYING"))
+                logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "TRYING", layer = layer))
                 try {
                     val adapter = com.example.data.api.LLMAdapterFactory.createAdapter("groq", gModel, settings)
                     val resp = adapter.sendMessage(systemPrompt, messages, com.example.data.api.MemoryToolRegistry.CENTRAL_TOOLS)
-                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "SUCCESS"))
+                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "SUCCESS", layer = layer))
                     return com.example.data.api.ModelResponseResult(resp.text, resp.toolCalls ?: emptyList(), resp.usage?.promptTokens ?: 0L, resp.usage?.candidateTokens ?: 0L, resp.usedProvider)
                 } catch (e: Exception) {
-                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "FAILED", errorMessage = e.message ?: e.toString()))
+                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "FAILED", errorMessage = e.message ?: e.toString(), layer = layer))
                 }
             }
             key == "openai" -> {
                 if (settings.selectedProvider == "openai" || settings.openaiApiKey.isBlank()) return null
                 val oModel = settings.openaiModel.ifBlank { "gpt-4o" }
                 val label = "OpenAI ($oModel)"
-                logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "TRYING"))
+                logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "TRYING", layer = layer))
                 try {
                     val adapter = com.example.data.api.LLMAdapterFactory.createAdapter("openai", oModel, settings)
                     val resp = adapter.sendMessage(systemPrompt, messages, com.example.data.api.MemoryToolRegistry.CENTRAL_TOOLS)
-                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "SUCCESS"))
+                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "SUCCESS", layer = layer))
                     return com.example.data.api.ModelResponseResult(resp.text, resp.toolCalls ?: emptyList(), resp.usage?.promptTokens ?: 0L, resp.usage?.candidateTokens ?: 0L, resp.usedProvider)
                 } catch (e: Exception) {
-                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "FAILED", errorMessage = e.message ?: e.toString()))
+                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "FAILED", errorMessage = e.message ?: e.toString(), layer = layer))
                 }
             }
             key == "openrouter" -> {
@@ -4625,10 +4687,10 @@ Tebrikler! Bölüm 3'ü başarıyla tamamladın."""
                 val (canSend, rateReason) = com.example.util.ProviderRateLimitTracker.canSendRequest("openrouter")
                 if (!canSend) {
                     com.example.util.ProviderRateLimitTracker.recordFallbackTrigger("openrouter")
-                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "FAILED", errorMessage = "Önceden Engellendi (Rate Limit): $rateReason"))
+                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "FAILED", errorMessage = "Önceden Engellendi (Rate Limit): $rateReason", layer = layer))
                     return null
                 }
-                logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "TRYING"))
+                logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "TRYING", layer = layer))
                 try {
                     val adapter = com.example.data.api.LLMAdapterFactory.createAdapter("openrouter", mName, settings)
                     var prompt = systemPrompt
@@ -4637,14 +4699,29 @@ Tebrikler! Bölüm 3'ü başarıyla tamamladın."""
                     }
                     val startTime = System.currentTimeMillis()
                     val resp = adapter.sendMessage(prompt, messages, com.example.data.api.MemoryToolRegistry.CENTRAL_TOOLS)
+
+                    var textResult = resp.text
+                    if (com.example.util.OutputQualityValidator.hasRepetitiveLoops(textResult)) {
+                        logFallbackAttempt(ProviderFallbackLogEntry(providerName = "$label (Tekrar Tespit)", status = "TRYING", errorMessage = "Tekrar döngüsü yakalandı, retry atılıyor.", layer = layer))
+                        val retryPrompt = prompt + com.example.util.OutputQualityValidator.buildRepetitionRetryInstruction()
+                        val retryResp = adapter.sendMessage(retryPrompt, messages, com.example.data.api.MemoryToolRegistry.CENTRAL_TOOLS)
+                        if (com.example.util.OutputQualityValidator.hasRepetitiveLoops(retryResp.text)) {
+                            textResult = com.example.util.OutputQualityValidator.truncateAtRepetition(retryResp.text)
+                        } else {
+                            textResult = retryResp.text
+                        }
+                    }
+
+                    textResult = com.example.util.OutputQualityValidator.enforceLengthLimits(textResult, settings.responseLength)
+
                     val duration = System.currentTimeMillis() - startTime
                     val totalTokens = (resp.usage?.promptTokens ?: 0L) + (resp.usage?.candidateTokens ?: 0L)
                     com.example.util.ProviderRateLimitTracker.recordRequest("openrouter", tokensUsed = totalTokens, responseTimeMs = duration)
-                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "SUCCESS"))
-                    return com.example.data.api.ModelResponseResult(resp.text, resp.toolCalls ?: emptyList(), resp.usage?.promptTokens ?: 0L, resp.usage?.candidateTokens ?: 0L, resp.usedProvider)
+                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "SUCCESS", layer = layer))
+                    return com.example.data.api.ModelResponseResult(textResult, resp.toolCalls ?: emptyList(), resp.usage?.promptTokens ?: 0L, resp.usage?.candidateTokens ?: 0L, resp.usedProvider)
                 } catch (e: Exception) {
                     com.example.util.ProviderRateLimitTracker.recordFallbackTrigger("openrouter")
-                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "FAILED", errorMessage = e.message ?: e.toString()))
+                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "FAILED", errorMessage = e.message ?: e.toString(), layer = layer))
                 }
             }
             key == "nvidia" -> {
@@ -4654,10 +4731,10 @@ Tebrikler! Bölüm 3'ü başarıyla tamamladın."""
                 val (canSend, rateReason) = com.example.util.ProviderRateLimitTracker.canSendRequest("nvidia")
                 if (!canSend) {
                     com.example.util.ProviderRateLimitTracker.recordFallbackTrigger("nvidia")
-                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "FAILED", errorMessage = "Önceden Engellendi (Rate Limit): $rateReason"))
+                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "FAILED", errorMessage = "Önceden Engellendi (Rate Limit): $rateReason", layer = layer))
                     return null
                 }
-                logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "TRYING"))
+                logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "TRYING", layer = layer))
                 try {
                     val adapter = com.example.data.api.LLMAdapterFactory.createAdapter("nvidia", mName, settings)
                     var prompt = systemPrompt
@@ -4666,14 +4743,29 @@ Tebrikler! Bölüm 3'ü başarıyla tamamladın."""
                     }
                     val startTime = System.currentTimeMillis()
                     val resp = adapter.sendMessage(prompt, messages, com.example.data.api.MemoryToolRegistry.CENTRAL_TOOLS)
+
+                    var textResult = resp.text
+                    if (com.example.util.OutputQualityValidator.hasRepetitiveLoops(textResult)) {
+                        logFallbackAttempt(ProviderFallbackLogEntry(providerName = "$label (Tekrar Tespit)", status = "TRYING", errorMessage = "Tekrar döngüsü yakalandı, retry atılıyor.", layer = layer))
+                        val retryPrompt = prompt + com.example.util.OutputQualityValidator.buildRepetitionRetryInstruction()
+                        val retryResp = adapter.sendMessage(retryPrompt, messages, com.example.data.api.MemoryToolRegistry.CENTRAL_TOOLS)
+                        if (com.example.util.OutputQualityValidator.hasRepetitiveLoops(retryResp.text)) {
+                            textResult = com.example.util.OutputQualityValidator.truncateAtRepetition(retryResp.text)
+                        } else {
+                            textResult = retryResp.text
+                        }
+                    }
+
+                    textResult = com.example.util.OutputQualityValidator.enforceLengthLimits(textResult, settings.responseLength)
+
                     val duration = System.currentTimeMillis() - startTime
                     val totalTokens = (resp.usage?.promptTokens ?: 0L) + (resp.usage?.candidateTokens ?: 0L)
                     com.example.util.ProviderRateLimitTracker.recordRequest("nvidia", tokensUsed = totalTokens, responseTimeMs = duration)
-                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "SUCCESS"))
-                    return com.example.data.api.ModelResponseResult(resp.text, resp.toolCalls ?: emptyList(), resp.usage?.promptTokens ?: 0L, resp.usage?.candidateTokens ?: 0L, resp.usedProvider)
+                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "SUCCESS", layer = layer))
+                    return com.example.data.api.ModelResponseResult(textResult, resp.toolCalls ?: emptyList(), resp.usage?.promptTokens ?: 0L, resp.usage?.candidateTokens ?: 0L, resp.usedProvider)
                 } catch (e: Exception) {
                     com.example.util.ProviderRateLimitTracker.recordFallbackTrigger("nvidia")
-                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "FAILED", errorMessage = e.message ?: e.toString()))
+                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "FAILED", errorMessage = e.message ?: e.toString(), layer = layer))
                 }
             }
             key == "mistral" -> {
@@ -4683,10 +4775,10 @@ Tebrikler! Bölüm 3'ü başarıyla tamamladın."""
                 val (canSend, rateReason) = com.example.util.ProviderRateLimitTracker.canSendRequest("mistral")
                 if (!canSend) {
                     com.example.util.ProviderRateLimitTracker.recordFallbackTrigger("mistral")
-                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "FAILED", errorMessage = "Önceden Engellendi (Rate Limit): $rateReason"))
+                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "FAILED", errorMessage = "Önceden Engellendi (Rate Limit): $rateReason", layer = layer))
                     return null
                 }
-                logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "TRYING"))
+                logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "TRYING", layer = layer))
                 try {
                     val adapter = com.example.data.api.LLMAdapterFactory.createAdapter("mistral", mName, settings)
                     var prompt = systemPrompt
@@ -4695,14 +4787,29 @@ Tebrikler! Bölüm 3'ü başarıyla tamamladın."""
                     }
                     val startTime = System.currentTimeMillis()
                     val resp = adapter.sendMessage(prompt, messages, com.example.data.api.MemoryToolRegistry.CENTRAL_TOOLS)
+
+                    var textResult = resp.text
+                    if (com.example.util.OutputQualityValidator.hasRepetitiveLoops(textResult)) {
+                        logFallbackAttempt(ProviderFallbackLogEntry(providerName = "$label (Tekrar Tespit)", status = "TRYING", errorMessage = "Tekrar döngüsü yakalandı, retry atılıyor.", layer = layer))
+                        val retryPrompt = prompt + com.example.util.OutputQualityValidator.buildRepetitionRetryInstruction()
+                        val retryResp = adapter.sendMessage(retryPrompt, messages, com.example.data.api.MemoryToolRegistry.CENTRAL_TOOLS)
+                        if (com.example.util.OutputQualityValidator.hasRepetitiveLoops(retryResp.text)) {
+                            textResult = com.example.util.OutputQualityValidator.truncateAtRepetition(retryResp.text)
+                        } else {
+                            textResult = retryResp.text
+                        }
+                    }
+
+                    textResult = com.example.util.OutputQualityValidator.enforceLengthLimits(textResult, settings.responseLength)
+
                     val duration = System.currentTimeMillis() - startTime
                     val totalTokens = (resp.usage?.promptTokens ?: 0L) + (resp.usage?.candidateTokens ?: 0L)
                     com.example.util.ProviderRateLimitTracker.recordRequest("mistral", tokensUsed = totalTokens, responseTimeMs = duration)
-                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "SUCCESS"))
-                    return com.example.data.api.ModelResponseResult(resp.text, resp.toolCalls ?: emptyList(), resp.usage?.promptTokens ?: 0L, resp.usage?.candidateTokens ?: 0L, resp.usedProvider)
+                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "SUCCESS", layer = layer))
+                    return com.example.data.api.ModelResponseResult(textResult, resp.toolCalls ?: emptyList(), resp.usage?.promptTokens ?: 0L, resp.usage?.candidateTokens ?: 0L, resp.usedProvider)
                 } catch (e: Exception) {
                     com.example.util.ProviderRateLimitTracker.recordFallbackTrigger("mistral")
-                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "FAILED", errorMessage = e.message ?: e.toString()))
+                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "FAILED", errorMessage = e.message ?: e.toString(), layer = layer))
                 }
             }
             key.startsWith("custom_") -> {
@@ -4710,7 +4817,7 @@ Tebrikler! Bölüm 3'ü başarıyla tamamladın."""
                 val cp = customProvidersMap[idStr] ?: return null
                 if ("custom_${cp.id}" == settings.selectedProvider) return null
                 val label = "Özel Sağlayıcı: ${cp.label} (${cp.modelName})"
-                logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "TRYING"))
+                logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "TRYING", layer = layer))
                 try {
                     val cpAdapter = com.example.data.api.LLMAdapterFactory.createAdapter("custom_${cp.id}", cp.modelName, settings, cp)
                     val finalPrompt = if (!cpAdapter.supportsFunctionCalling()) {
@@ -4718,10 +4825,10 @@ Tebrikler! Bölüm 3'ü başarıyla tamamladın."""
                     } else systemPrompt
                     val tools = if (cpAdapter.supportsFunctionCalling()) com.example.data.api.MemoryToolRegistry.CENTRAL_TOOLS else null
                     val resp = cpAdapter.sendMessage(finalPrompt, messages, tools)
-                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "SUCCESS"))
+                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "SUCCESS", layer = layer))
                     return com.example.data.api.ModelResponseResult(resp.text, resp.toolCalls ?: emptyList(), resp.usage?.promptTokens ?: 0L, resp.usage?.candidateTokens ?: 0L, resp.usedProvider)
                 } catch (e: Exception) {
-                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "FAILED", errorMessage = e.message ?: e.toString()))
+                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "FAILED", errorMessage = e.message ?: e.toString(), layer = layer))
                 }
             }
         }
@@ -4740,28 +4847,60 @@ Tebrikler! Bölüm 3'ü başarıyla tamamladın."""
         val customProvidersList = try { db.customProviderDao().getAllProviders() } catch (_: Exception) { emptyList() }
         val customMap = customProvidersList.associateBy { it.id }
 
-        val orderList = if (settings.fallbackChainOrder.isNotBlank()) {
-            settings.fallbackChainOrder.split(",").map { it.trim() }.filter { it.isNotBlank() }
-        } else {
-            val defaultList = mutableListOf(
-                "main",
-                "llm7",
-                "pollinations",
-                "opencode_zen",
-                "gemini",
-                "claude",
-                "groq",
-                "openai",
-                "openrouter",
-                "nvidia",
-                "mistral"
-            )
-            customProvidersList.forEach { cp -> defaultList.add("custom_${cp.id}") }
-            defaultList
+        // Primary Attempt: Deny or execute main provider first
+        val primaryRes = tryExecuteProviderByKey("main", model, settings, systemPrompt, messages, botId, customMap, layer = 1)
+        if (primaryRes != null) return primaryRes
+
+        if (!settings.enableAutoFallback) {
+            throw IllegalStateException("Ana sağlayıcı (${settings.selectedProvider}) başarısız oldu ve otomatik fallback kapalı.")
         }
 
-        for (key in orderList) {
-            val res = tryExecuteProviderByKey(key, model, settings, systemPrompt, messages, botId, customMap)
+        // Katman 1: Anahtarsız/keysiz ücretsiz sağlayıcılar (kullanıcı açtıysa)
+        val layer1Keys = listOf("llm7", "pollinations", "ovh").filter { key ->
+            when (key) {
+                "llm7" -> settings.enableLlm7 && settings.selectedProvider != "llm7"
+                "pollinations" -> settings.enablePollinations && settings.selectedProvider != "pollinations"
+                "ovh" -> settings.enableOvh && settings.selectedProvider != "ovh"
+                else -> false
+            }
+        }
+
+        // Katman 2: Kullanıcının ANA/birincil sağlayıcıları (Claude, OpenAI, Groq, Gemini)
+        val layer2Keys = listOf("gemini", "claude", "groq", "openai").filter { key ->
+            when (key) {
+                "gemini" -> settings.selectedProvider != "gemini" && (settings.customApiKey.isNotBlank() || getBuildConfigKey().isNotBlank())
+                "claude" -> settings.selectedProvider != "claude" && settings.claudeApiKey.isNotBlank()
+                "groq" -> settings.selectedProvider != "groq" && settings.groqApiKey.isNotBlank()
+                "openai" -> settings.selectedProvider != "openai" && settings.openaiApiKey.isNotBlank()
+                else -> false
+            }
+        }
+
+        // Katman 3: Kullanıcının kendi key'iyle eklediği ikincil sağlayıcılar (OpenRouter, NVIDIA NIM, Mistral)
+        val layer3Keys = listOf("openrouter", "nvidia", "mistral").filter { key ->
+            when (key) {
+                "openrouter" -> settings.selectedProvider != "openrouter" && settings.openRouterApiKey.isNotBlank()
+                "nvidia" -> settings.selectedProvider != "nvidia" && settings.nvidiaApiKey.isNotBlank()
+                "mistral" -> settings.selectedProvider != "mistral" && settings.mistralApiKey.isNotBlank()
+                else -> false
+            }
+        }
+
+        // 1. Katman 1'i dene
+        for (key in layer1Keys) {
+            val res = tryExecuteProviderByKey(key, model, settings, systemPrompt, messages, botId, customMap, layer = 1)
+            if (res != null) return res
+        }
+
+        // 2. Katman 2'yi dene
+        for (key in layer2Keys) {
+            val res = tryExecuteProviderByKey(key, model, settings, systemPrompt, messages, botId, customMap, layer = 2)
+            if (res != null) return res
+        }
+
+        // 3. Katman 3'ü dene
+        for (key in layer3Keys) {
+            val res = tryExecuteProviderByKey(key, model, settings, systemPrompt, messages, botId, customMap, layer = 3)
             if (res != null) return res
         }
 
@@ -5662,48 +5801,7 @@ Tebrikler! Bölüm 3'ü başarıyla tamamladın."""
         )
     }
 
-    suspend fun testOpencodeZenConnection(modelName: String = "deepseek-v4-flash-free"): ProviderTestResult {
-        return testCustomProviderConnection(
-            baseUrl = "https://opencode.ai/zen/v1",
-            apiKey = "unused",
-            modelName = modelName.ifBlank { "deepseek-v4-flash-free" },
-            apiFormat = "openai"
-        )
-    }
 
-    suspend fun fetchOpencodeZenFreeModels(): List<String> = withContext(Dispatchers.IO) {
-        val verifiedDefaultFree = listOf(
-            "deepseek-v4-flash-free",
-            "big-pickle",
-            "nemotron-3-ultra-free",
-            "mimo-v2.5-free",
-            "hy3-free"
-        )
-        try {
-            val req = Request.Builder()
-                .url("https://opencode.ai/zen/v1/models")
-                .get()
-                .build()
-            RetrofitClient.okHttpClient.newCall(req).execute().use { resp ->
-                if (resp.isSuccessful) {
-                    val bodyStr = resp.body?.string() ?: ""
-                    val json = JSONObject(bodyStr)
-                    val data = json.optJSONArray("data")
-                    if (data != null && data.length() > 0) {
-                        val fetched = mutableListOf<String>()
-                        for (i in 0 until data.length()) {
-                            val id = data.getJSONObject(i).optString("id", "")
-                            if (id.endsWith("-free") || id.contains("-free") || id == "big-pickle") {
-                                fetched.add(id)
-                            }
-                        }
-                        if (fetched.isNotEmpty()) return@withContext fetched.distinct()
-                    }
-                }
-            }
-        } catch (_: Exception) {}
-        return@withContext verifiedDefaultFree
-    }
 
     suspend fun fetchNvidiaModels(apiKey: String): List<String> = withContext(Dispatchers.IO) {
         val defaultModels = listOf(
