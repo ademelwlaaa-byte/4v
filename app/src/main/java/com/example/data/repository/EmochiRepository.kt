@@ -692,6 +692,17 @@ class EmochiRepository(
                 processSaveMemory(botId, content, category, importance, apiKey)
             }
         }
+
+        val memorySaveTagRegex = Regex("""(?is)\[\[MEMORY_SAVE\s+action="([^"]+)"\s+content="([^"]+)"(?:\s+category="([^"]+)")?(?:\s+importance="(\d+)")?.*?\]\]""")
+        memorySaveTagRegex.findAll(responseText).forEach { match ->
+            val action = match.groupValues[1]
+            val content = match.groupValues[2]
+            val category = match.groupValues[3].ifBlank { "fact" }
+            val importance = match.groupValues[4].toIntOrNull() ?: 5
+            if (action.equals("save", ignoreCase = true) && content.isNotBlank()) {
+                processSaveMemory(botId, content, category, importance, apiKey)
+            }
+        }
     }
 
     suspend fun processSaveMemory(
@@ -1514,15 +1525,20 @@ class EmochiRepository(
         castMembers: List<CastMemberEntity> = emptyList(),
         lastMessageTimestamp: Long = 0L,
         totalMessageCount: Int = 0,
-        compactMode: Boolean = listOf("llm7", "pollinations", "ovh", "openrouter", "nvidia", "mistral").contains(settings.selectedProvider)
+        compactMode: Boolean = listOf("llm7", "pollinations", "ovh").contains(settings.selectedProvider)
     ): String {
         val now = System.currentTimeMillis()
         val emotionStateObj = EmotionState.fromJson(bot.emotionState)
         val timeInfo = calculateTimePerception(lastMessageTimestamp, now, emotionStateObj.affection, bot = bot)
 
         if (compactMode) {
-            val factsStr = if (relevantFacts.isNotEmpty()) "\n- Hafıza Gerçekleri: " + relevantFacts.joinToString("; ") { "${it.key}: ${it.value}" } else ""
-            val eventsStr = if (relevantEvents.isNotEmpty()) "\n- Geçmiş Olaylar: " + relevantEvents.joinToString("; ") { it.description } else ""
+            val pinnedStr = if (bot.pinnedMemory.isNotBlank()) "\n- Kalıcı Hafıza: ${bot.pinnedMemory}" else ""
+            val memoryNotesStr = if (bot.memoryNotes.isNotBlank()) "\n- Uzun Vadeli Hafıza: ${bot.memoryNotes}" else ""
+            val storyNotesStr = if (bot.storyNotes.isNotBlank()) "\n- Hikaye Durumu: ${bot.storyNotes}" else ""
+            val factsStr = if (relevantFacts.isNotEmpty()) "\n- Hafıza Gerçekleri (RAG): " + relevantFacts.joinToString("; ") { "${it.key}: ${it.value}" } else ""
+            val eventsStr = if (relevantEvents.isNotEmpty()) "\n- Geçmiş Olaylar (RAG): " + relevantEvents.joinToString("; ") { it.description } else ""
+            val entityStr = if (registeredEntities.isNotEmpty()) "\n- Tanımlı Varlıklar: " + registeredEntities.joinToString("; ") { "${it.entityName} (${it.description})" } else ""
+            val checkpointStr = if (recentCheckpoints.isNotEmpty()) "\n- Geçmiş Noktalar: " + recentCheckpoints.joinToString("; ") { it.summaryText } else ""
             val castStr = if (castMembers.isNotEmpty()) "\n- Çevredekiler: " + castMembers.joinToString(", ") { "${it.name} (${it.role})" } else ""
             val grammarInst = com.example.util.OutputQualityValidator.buildSystemPromptGrammarInstruction()
 
@@ -1532,7 +1548,11 @@ class EmochiRepository(
                 Kişilik: ${bot.aiPersonality}
                 Senaryo: ${bot.scenario}
                 Duygu Durumu: Sevgi=${emotionStateObj.affection}, Güven=${emotionStateObj.trust}, Gerilim=${emotionStateObj.tension}
-                Zaman Algısı: ${timeInfo.formattedTimeString}$factsStr$eventsStr$castStr
+                Zaman Algısı: ${timeInfo.formattedTimeString}$pinnedStr$memoryNotesStr$storyNotesStr$factsStr$eventsStr$entityStr$checkpointStr$castStr
+
+                [ZORUNLU HAFIZA VE RAG GEÇMİŞ KONTROL YÖNERGESİ]
+                • Yukarıdaki 'Hafıza Gerçekleri', 'Geçmiş Olaylar', 'Kalıcı Hafıza' ve 'Uzun Vadeli Hafıza' bölümlerinde yer alan tüm bilgiler senin SİLİNMEZ KESİN BELLEĞİNDİR.
+                • Kullanıcı geçmişle ilgili soru sorduğunda ("ismim ne?", "mesleğim ne?", "dün ne yaptık?" vb.) BU HAFIZA NOTLARINDAKİ BİLGİLERİ KULLANARAK YANIT VER. Asla "unuttum" veya "bana söylemedin" deme!
 
                 [TEMEL TALİMATLAR]
                 • ${bot.aiName} rolünden çıkma, doğal, tutarlı ve samimi Türkçe yanıt ver.
@@ -4460,6 +4480,18 @@ Tebrikler! Bölüm 3'ü başarıyla tamamladın."""
     ): com.example.data.api.ModelResponseResult? {
         when {
             key == "main" -> {
+                if (settings.selectedProvider == "llm7" && !settings.enableLlm7) {
+                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = "Ana Seçim (LLM7 - Devre Dışı)", status = "FAILED", errorMessage = "LLM7 kapalı olduğu için atlandı.", layer = 1))
+                    return null
+                }
+                if (settings.selectedProvider == "pollinations" && !settings.enablePollinations) {
+                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = "Ana Seçim (Pollinations - Devre Dışı)", status = "FAILED", errorMessage = "Pollinations kapalı olduğu için atlandı.", layer = 1))
+                    return null
+                }
+                if (settings.selectedProvider == "ovh" && !settings.enableOvh) {
+                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = "Ana Seçim (OVH - Devre Dışı)", status = "FAILED", errorMessage = "OVH kapalı olduğu için atlandı.", layer = 1))
+                    return null
+                }
                 val isCustom = settings.selectedProvider.startsWith("custom_")
                 val label = if (isCustom) {
                     val customId = settings.selectedProvider.removePrefix("custom_").toLongOrNull()
@@ -4491,9 +4523,7 @@ Tebrikler! Bölüm 3'ü başarıyla tamamladın."""
                 logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "TRYING", layer = layer))
                 try {
                     val adapter = com.example.data.api.LLMAdapterFactory.createAdapter("llm7", "default", settings)
-                    var llm7Prompt = if (botId != null) {
-                        db.botDao().getBotById(botId)?.let { buildSystemPrompt(it, settings, compactMode = true) } ?: systemPrompt.take(1200)
-                    } else systemPrompt.take(1200)
+                    var llm7Prompt = systemPrompt
 
                     if (com.example.util.OutputQualityValidator.checkForRecentCliches(messages)) {
                         llm7Prompt += com.example.util.OutputQualityValidator.buildClichePromptInstruction()
@@ -4544,9 +4574,7 @@ Tebrikler! Bölüm 3'ü başarıyla tamamladın."""
                 logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "TRYING", layer = layer))
                 try {
                     val adapter = com.example.data.api.LLMAdapterFactory.createAdapter("pollinations", pModel, settings)
-                    var prompt = if (botId != null) {
-                        db.botDao().getBotById(botId)?.let { buildSystemPrompt(it, settings, compactMode = true) } ?: systemPrompt.take(1200)
-                    } else systemPrompt.take(1200)
+                    var prompt = systemPrompt
 
                     if (com.example.util.OutputQualityValidator.checkForRecentCliches(messages)) {
                         prompt += com.example.util.OutputQualityValidator.buildClichePromptInstruction()
@@ -4591,9 +4619,7 @@ Tebrikler! Bölüm 3'ü başarıyla tamamladın."""
                 logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "TRYING", layer = layer))
                 try {
                     val adapter = com.example.data.api.LLMAdapterFactory.createAdapter("ovh", oModel, settings)
-                    var prompt = if (botId != null) {
-                        db.botDao().getBotById(botId)?.let { buildSystemPrompt(it, settings, compactMode = true) } ?: systemPrompt.take(1200)
-                    } else systemPrompt.take(1200)
+                    var prompt = systemPrompt
 
                     val startTime = System.currentTimeMillis()
                     var resp = adapter.sendMessage(prompt, messages, null)

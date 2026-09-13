@@ -23,7 +23,9 @@ data class LLMResponse(
 
 enum class ReliabilityTier {
     PRIMARY,
-    SECONDARY
+    SECONDARY,
+    STABLE_FREE,
+    STABLE_KEY
 }
 
 interface LLMProviderAdapter {
@@ -381,20 +383,20 @@ object LLMAdapterFactory {
                     model = mName,
                     providerName = "openrouter",
                     supportsFC = true,
-                    reliabilityTier = ReliabilityTier.SECONDARY
+                    reliabilityTier = ReliabilityTier.STABLE_FREE
                 )
             }
             providerKey == "nvidia" -> {
                 val apiKey = settings.nvidiaApiKey
                 if (apiKey.isBlank()) throw IllegalStateException("NVIDIA NIM API Key eksik.")
-                val mName = modelName.ifBlank { settings.nvidiaModel }
+                val mName = modelName.ifBlank { settings.nvidiaModel.ifBlank { "meta/llama-3.3-70b-instruct" } }
                 GenericOpenAICompatibleAdapter(
                     endpointUrl = "https://integrate.api.nvidia.com/v1/chat/completions",
                     apiKey = apiKey,
                     model = mName,
                     providerName = "nvidia",
                     supportsFC = true,
-                    reliabilityTier = ReliabilityTier.SECONDARY
+                    reliabilityTier = ReliabilityTier.STABLE_FREE
                 )
             }
             providerKey == "mistral" -> {
@@ -407,7 +409,7 @@ object LLMAdapterFactory {
                     model = mName,
                     providerName = "mistral",
                     supportsFC = true,
-                    reliabilityTier = ReliabilityTier.SECONDARY
+                    reliabilityTier = ReliabilityTier.STABLE_FREE
                 )
             }
             providerKey.startsWith("custom_") -> {

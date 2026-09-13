@@ -34,27 +34,43 @@ object OutputQualityValidator {
 
     /**
      * Detects degenerate repetition loops where sentences or n-gram patterns are repeated
-     * with >= 75% similarity or exact phrase duplication.
+     * with >= 65% similarity across all sentence/paragraph pairs (sliding window),
+     * not just adjacent sentences.
      */
     fun hasRepetitiveLoops(text: String): Boolean {
-        if (text.isBlank() || text.length < 50) return false
+        if (text.isBlank() || text.length < 40) return false
 
-        // 1. Sentence-level similarity check
+        // 1. Sliding window sentence-level similarity check across ALL sentence pairs (i, j where j > i)
         val sentences = splitIntoSentences(text)
         if (sentences.size >= 2) {
             for (i in 0 until sentences.size - 1) {
                 val s1 = sentences[i].trim()
-                val s2 = sentences[i + 1].trim()
-                if (s1.length >= 12 && s2.length >= 12) {
+                if (s1.length < 10) continue
+                for (j in (i + 1) until sentences.size) {
+                    val s2 = sentences[j].trim()
+                    if (s2.length < 10) continue
                     val sim = calculateSimilarity(s1, s2)
-                    if (sim >= 0.75) {
+                    if (sim >= 0.65) {
                         return true
                     }
                 }
             }
         }
 
-        // 2. Substring n-gram repetition check (e.g. 25+ char string appearing 3+ times)
+        // 2. Paragraph-level similarity check across all paragraph pairs
+        val paragraphs = text.split("\n").map { it.trim() }.filter { it.length >= 20 }
+        if (paragraphs.size >= 2) {
+            for (i in 0 until paragraphs.size - 1) {
+                for (j in (i + 1) until paragraphs.size) {
+                    val sim = calculateSimilarity(paragraphs[i], paragraphs[j])
+                    if (sim >= 0.60) {
+                        return true
+                    }
+                }
+            }
+        }
+
+        // 3. Substring n-gram repetition check (e.g. 25+ char string appearing 3+ times)
         val cleanText = text.lowercase()
         val minChunkLen = 25
         if (cleanText.length >= minChunkLen * 3) {
@@ -73,24 +89,28 @@ object OutputQualityValidator {
 
     /**
      * Truncates text right at the beginning of the first detected repetitive sentence/phrase,
-     * returning the clean initial portion.
+     * returning the clean initial portion. Uses sliding window to check non-adjacent pairs.
      */
     fun truncateAtRepetition(text: String): String {
-        if (text.isBlank() || text.length < 50) return text.trim()
+        if (text.isBlank() || text.length < 40) return text.trim()
 
         val sentences = splitIntoSentences(text)
         if (sentences.size < 2) return text.trim()
 
         var cutoffSentenceIndex = sentences.size
 
+        // Sliding window across all sentence pairs (i, j) to find the earliest repeating sentence index 'j'
         for (i in 0 until sentences.size - 1) {
             val s1 = sentences[i].trim()
-            val s2 = sentences[i + 1].trim()
-            if (s1.length >= 12 && s2.length >= 12) {
+            if (s1.length < 10) continue
+            for (j in (i + 1) until sentences.size) {
+                val s2 = sentences[j].trim()
+                if (s2.length < 10) continue
                 val sim = calculateSimilarity(s1, s2)
-                if (sim >= 0.75) {
-                    cutoffSentenceIndex = i + 1
-                    break
+                if (sim >= 0.65) {
+                    if (j < cutoffSentenceIndex) {
+                        cutoffSentenceIndex = j
+                    }
                 }
             }
         }
@@ -143,6 +163,22 @@ object OutputQualityValidator {
 
     fun buildSystemPromptGrammarInstruction(): String {
         return "\n[DİL VE UZUNLUK TALİMATI: Yanıtını göndermeden önce yazım ve dilbilgisi hatası olmadığından emin ol. Cümleleri kısa ve net tut. Tekrar eden cümle veya paragraf kalıplarından kesinlikle kaçın.]"
+    }
+
+    /**
+     * Scans for contradictory scene-time expressions within the same response text,
+     * e.g. "az önce" / "biraz önce" vs "saatlerdir" / "uzun zamandır".
+     */
+    fun hasInconsistentSceneTime(text: String): Boolean {
+        if (text.isBlank()) return false
+        val lower = text.lowercase()
+        val immediateTerms = listOf("az önce", "biraz önce", "henüz", "daha yeni", "şimdi geldin", "yeni geldin")
+        val longAgoTerms = listOf("saatlerdir", "uzun zamandır", "günlerdir", "aylardır", "yıllardır", "saatler önce")
+
+        val hasImmediate = immediateTerms.any { lower.contains(it) }
+        val hasLongAgo = longAgoTerms.any { lower.contains(it) }
+
+        return hasImmediate && hasLongAgo
     }
 
     private fun splitIntoSentences(text: String): List<String> {

@@ -261,9 +261,12 @@ val MIGRATION_27_28 = object : Migration(27, 28) {
         TimePerceptionMismatchLogEntity::class,
         CustomProviderEntity::class,
         EmptyResponseLogEntity::class,
-        MalformedOutputLogEntity::class
+        MalformedOutputLogEntity::class,
+        EntityRelationEntity::class,
+        ImplicitCorrectionLogEntity::class,
+        ArchivedMemoryEntity::class
     ],
-    version = 34,
+    version = 35,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -290,6 +293,9 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun customProviderDao(): CustomProviderDao
     abstract fun emptyResponseLogDao(): EmptyResponseLogDao
     abstract fun malformedOutputLogDao(): MalformedOutputLogDao
+    abstract fun entityRelationDao(): EntityRelationDao
+    abstract fun implicitCorrectionLogDao(): ImplicitCorrectionLogDao
+    abstract fun archivedMemoryDao(): ArchivedMemoryDao
 
     companion object {
         val MIGRATION_28_29 = object : Migration(28, 29) {
@@ -562,6 +568,47 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_34_35 = object : Migration(34, 35) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `entity_relations` (" +
+                        "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`botId` TEXT NOT NULL, " +
+                        "`sourceEntityId` INTEGER NOT NULL DEFAULT 0, " +
+                        "`sourceEntityName` TEXT NOT NULL DEFAULT '', " +
+                        "`relationType` TEXT NOT NULL, " +
+                        "`targetEntityId` INTEGER NOT NULL DEFAULT 0, " +
+                        "`targetEntityName` TEXT NOT NULL DEFAULT '', " +
+                        "`confidence` TEXT NOT NULL DEFAULT 'certain', " +
+                        "`createdAtMessageIndex` INTEGER NOT NULL DEFAULT 0" +
+                        ")"
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `implicit_correction_logs` (" +
+                        "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`botId` TEXT NOT NULL, " +
+                        "`memoryId` INTEGER NOT NULL, " +
+                        "`memoryType` TEXT NOT NULL, " +
+                        "`userFeedbackText` TEXT NOT NULL, " +
+                        "`previousConfidence` TEXT NOT NULL, " +
+                        "`newConfidence` TEXT NOT NULL, " +
+                        "`timestamp` INTEGER NOT NULL" +
+                        ")"
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `archived_memories` (" +
+                        "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`botId` TEXT NOT NULL, " +
+                        "`originalMemoryId` INTEGER NOT NULL, " +
+                        "`memoryType` TEXT NOT NULL, " +
+                        "`content` TEXT NOT NULL, " +
+                        "`archivedReason` TEXT NOT NULL, " +
+                        "`timestamp` INTEGER NOT NULL" +
+                        ")"
+                )
+            }
+        }
+
         @Volatile
         private var INSTANCE: AppDatabase? = null
 
@@ -597,7 +644,8 @@ abstract class AppDatabase : RoomDatabase() {
                         MIGRATION_30_31,
                         MIGRATION_31_32,
                         MIGRATION_32_33,
-                        MIGRATION_33_34
+                        MIGRATION_33_34,
+                        MIGRATION_34_35
                     )
                     .fallbackToDestructiveMigration(dropAllTables = true)
                     .build()
