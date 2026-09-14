@@ -2002,7 +2002,10 @@ ${if (isObsessionUnlocked) "obsession_delta: <-3 ile +3 arası takıntı değiş
             val charEmotionsBlock = if (charEmotions.isNotEmpty()) {
                 "\n\n## YAN KARAKTERLERİN DUYGU VE İLİŞKİ DURUMLARI\n" + charEmotions.joinToString("\n") { c ->
                     val st = EmotionState.fromJson(c.emotionState)
-                    "- ${c.characterName}: Birincil=${st.mood}, İkincil=${st.secondaryMood}, Yakınlık=${st.affection}/100, Güven=${st.trust}/100, Kırgınlık=${st.hurt}/100"
+                    val customStr = if (st.customEmotions.isNotEmpty()) {
+                        " | Özel Duygular: " + st.customEmotions.joinToString(", ") { ce -> "${ce.name}=${ce.currentValue}/${ce.maxValue} (${ce.difficulty}: ${ce.purpose.ifBlank { "davranışları etkiler" }})" }
+                    } else ""
+                    "- ${c.characterName}: Birincil=${st.mood}, İkincil=${st.secondaryMood}, Yakınlık=${st.affection}/100, Güven=${st.trust}/100, Kırgınlık=${st.hurt}/100$customStr"
                 }
             } else ""
 

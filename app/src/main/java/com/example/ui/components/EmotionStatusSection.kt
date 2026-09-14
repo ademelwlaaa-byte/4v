@@ -366,6 +366,15 @@ fun EmotionStatusSection(
                                 Text("🛡️ Güven: ${charEmotion.trust}%", color = Color(0xFF4D96FF), fontSize = 10.sp)
                                 Text("⚡ Gerginlik: ${charEmotion.tension}%", color = Color(0xFFFFB302), fontSize = 10.sp)
                             }
+                            if (charEmotion.customEmotions.isNotEmpty()) {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "✨ Özel: " + charEmotion.customEmotions.joinToString(", ") { ce -> "${ce.name}: ${ce.currentValue}/${ce.maxValue}" },
+                                    color = Color(0xFFD8B4FE),
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
                         }
                     }
 

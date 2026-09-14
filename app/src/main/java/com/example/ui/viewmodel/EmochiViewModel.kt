@@ -847,6 +847,15 @@ class EmochiViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    fun updateCharacterEmotionState(botId: String, characterName: String, emotionStateJson: String) {
+        viewModelScope.launch {
+            val existing = db.characterEmotionDao().getEmotionForCharacter(botId, characterName)
+            val entity = existing?.copy(emotionState = emotionStateJson)
+                ?: CharacterEmotionEntity(botId = botId, characterName = characterName, emotionState = emotionStateJson)
+            db.characterEmotionDao().insertOrUpdate(entity)
+        }
+    }
+
     fun updateSettings(settings: UserSettingsEntity) {
         viewModelScope.launch {
             val sanitized = settings.copy(
