@@ -27,6 +27,10 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Edit
@@ -3345,6 +3349,7 @@ fun BotSettingsModal(
     var confirmResetChat by remember { mutableStateOf(false) }
     var confirmDeleteBot by remember { mutableStateOf(false) }
     var showNeuralVault by remember { mutableStateOf(false) }
+    var showEmotionControlModal by remember { mutableStateOf(false) }
     var expandedBotSection by remember { mutableStateOf<String?>(null) }
 
     val viewModel: com.example.ui.viewmodel.EmochiViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
@@ -3410,7 +3415,85 @@ fun BotSettingsModal(
                 Spacer(modifier = Modifier.height(10.dp))
 
                 // Emotion Bar
-                EmotionStatusSection(bot = bot, characterEmotions = characterEmotions, affectionEvents = affectionEvents, filterCount = filterCount)
+                EmotionStatusSection(
+                    bot = bot,
+                    characterEmotions = characterEmotions,
+                    affectionEvents = affectionEvents,
+                    filterCount = filterCount,
+                    onUpdateCharacterEmotion = { charName, mood, affection, trust, tension ->
+                        viewModel.updateCharacterEmotion(bot.id, charName, mood, affection, trust, tension)
+                    }
+                )
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // DEDICATED EMOTION & RELATIONSHIP EDITING BUTTON
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1D2F)),
+                    shape = RoundedCornerShape(14.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFF6B81).copy(alpha = 0.6f)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { showEmotionControlModal = true }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                            Box(
+                                modifier = Modifier
+                                    .size(38.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFFFF6B81).copy(alpha = 0.2f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text("🎭", fontSize = 18.sp)
+                            }
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column {
+                                Text(
+                                    text = "❤️ Duygu & İlişki Düzenleme Paneli",
+                                    color = EmochiTextPrimary,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = "Ruh hali, sevgi, güven, gerginlik ve yan karakter durumlarını özelleştirmek için tıklayın",
+                                    color = EmochiTextMuted,
+                                    fontSize = 10.5.sp
+                                )
+                            }
+                        }
+                        Icon(
+                            imageVector = Icons.Default.ChevronRight,
+                            contentDescription = "Aç",
+                            tint = Color(0xFFFF6B81)
+                        )
+                    }
+                }
+
+                if (showEmotionControlModal) {
+                    CharacterEmotionControlModal(
+                        bot = bot,
+                        characterEmotions = characterEmotions,
+                        keyCharacters = keyCharacters,
+                        onDismiss = { showEmotionControlModal = false },
+                        onSaveBotEmotion = { updatedStateJson ->
+                            val updatedBot = bot.copy(
+                                emotionState = updatedStateJson,
+                                previousEmotionState = updatedStateJson,
+                                updatedAt = System.currentTimeMillis()
+                            )
+                            viewModel.updateBotProfile(updatedBot)
+                            showEmotionControlModal = false
+                        },
+                        onSaveCharacterEmotion = { charName, mood, affection, trust, tension ->
+                            viewModel.updateCharacterEmotion(bot.id, charName, mood, affection, trust, tension)
+                        }
+                    )
+                }
 
                 Spacer(modifier = Modifier.height(14.dp))
 
@@ -5340,6 +5423,645 @@ fun ProviderReliabilityDashboardUI() {
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                             Text("Ort. Yanıt | Hata | Devir:", color = EmochiTextMuted, fontSize = 9.5.sp)
                             Text("${stat.averageResponseTimeMs} ms | ${stat.malformedCount} hata | ${stat.fallbackCount} devir", color = Color.White, fontSize = 9.5.sp)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun CharacterEmotionControlModal(
+    bot: BotEntity,
+    characterEmotions: List<com.example.data.local.CharacterEmotionEntity> = emptyList(),
+    keyCharacters: List<KeyCharacter> = emptyList(),
+    onDismiss: () -> Unit,
+    onSaveBotEmotion: (String) -> Unit,
+    onSaveCharacterEmotion: (String, String, Int, Int, Int) -> Unit
+) {
+    val initialEmotion = remember(bot.emotionState) {
+        com.example.data.local.EmotionState.fromJson(bot.emotionState)
+    }
+
+    var selectedTab by remember { mutableStateOf("main") }
+
+    var mood by remember { mutableStateOf(initialEmotion.dominantEmotion) }
+    var secondaryMood by remember { mutableStateOf(initialEmotion.computedSecondaryEmotion ?: "") }
+    var suppressedEmotion by remember { mutableStateOf(initialEmotion.suppressedEmotion) }
+    var affection by remember { mutableStateOf(initialEmotion.relationshipAxes.affectionScore.toFloat()) }
+    var trust by remember { mutableStateOf(initialEmotion.primaryEmotions.trust.toFloat()) }
+    var physicalComfort by remember { mutableStateOf(initialEmotion.physicalComfortScore.toFloat()) }
+    var hurt by remember { mutableStateOf(initialEmotion.relationshipAxes.resentmentScore.toFloat()) }
+    var obsession by remember { mutableStateOf(initialEmotion.obsessionScore.toFloat()) }
+    var tension by remember { mutableStateOf(initialEmotion.tension) }
+    var speechPattern by remember { mutableStateOf(initialEmotion.speechPattern) }
+    var resilience by remember { mutableStateOf(initialEmotion.resilience.toFloat()) }
+
+    var customEmotionsList by remember {
+        mutableStateOf(initialEmotion.customEmotions)
+    }
+
+    var showAddCustomDialog by remember { mutableStateOf(false) }
+    var newCustomName by remember { mutableStateOf("") }
+    var newCustomDifficulty by remember { mutableStateOf("Orta") }
+    var newCustomMin by remember { mutableStateOf("0") }
+    var newCustomMax by remember { mutableStateOf("100") }
+    var newCustomCurrent by remember { mutableStateOf("50") }
+    var newCustomPurpose by remember { mutableStateOf("") }
+
+    val sideCharEmotions = remember(characterEmotions, keyCharacters) {
+        val map = mutableMapOf<String, com.example.data.local.CharacterEmotionEntity>()
+        characterEmotions.forEach { map[it.characterName] = it }
+        keyCharacters.forEach { kc ->
+            if (kc.name.isNotBlank() && !map.containsKey(kc.name)) {
+                map[kc.name] = com.example.data.local.CharacterEmotionEntity(
+                    botId = bot.id,
+                    characterName = kc.name
+                )
+            }
+        }
+        map
+    }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 12.dp),
+            shape = RoundedCornerShape(20.dp),
+            color = Color.Transparent,
+            border = androidx.compose.foundation.BorderStroke(1.dp, EmochiBorder)
+        ) {
+            Box {
+                AppBackground()
+                Column(
+                    modifier = Modifier
+                        .padding(18.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    // Header
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("🎭", fontSize = 20.sp)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column {
+                                Text("Karakter Duygu & İlişki Paneli", color = EmochiTextPrimary, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                                Text("Ruh hali ve duygu parametrelerini yönetin", color = EmochiTextMuted, fontSize = 11.sp)
+                            }
+                        }
+                        IconButton(onClick = onDismiss) {
+                            Icon(Icons.Default.Close, contentDescription = "Kapat", tint = EmochiTextSecondary)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // Character Selector Tabs
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        FilterChip(
+                            selected = selectedTab == "main",
+                            onClick = { selectedTab = "main" },
+                            label = { Text("🤖 ${bot.aiName} (Ana Bot)", fontSize = 12.sp, fontWeight = FontWeight.Bold) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = Color(0xFFFF6B81),
+                                selectedLabelColor = Color.White,
+                                containerColor = Color(0xFF1B1D30),
+                                labelColor = EmochiTextSecondary
+                            )
+                        )
+
+                        sideCharEmotions.keys.forEach { charName ->
+                            FilterChip(
+                                selected = selectedTab == charName,
+                                onClick = { selectedTab = charName },
+                                label = { Text("👤 $charName", fontSize = 12.sp) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = EmochiPrimary,
+                                    selectedLabelColor = Color.White,
+                                    containerColor = Color(0xFF1B1D30),
+                                    labelColor = EmochiTextSecondary
+                                )
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    if (selectedTab == "main") {
+                        // Main Bot Controls
+                        Text("Baskın Ruh Hali (Mood)", color = EmochiTextPrimary, fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            val presetMoods = listOf("nötr", "mutlu", "flörtöz", "kıskanç", "utangaç", "gergin", "tutkulu", "kırgın", "sevecen", "soğuk", "heyecanlı", "sakin")
+                            presetMoods.forEach { m ->
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(if (mood.equals(m, ignoreCase = true)) Color(0xFFFF6B81) else Color(0xFF1E1F35))
+                                        .clickable { mood = m }
+                                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                                ) {
+                                    Text(m, color = Color.White, fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold)
+                                }
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(6.dp))
+                        OutlinedTextField(
+                            value = mood,
+                            onValueChange = { mood = it },
+                            placeholder = { Text("Özel ruh hali girin...", fontSize = 12.sp, color = EmochiTextMuted) },
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = customTextFieldColors(),
+                            singleLine = true
+                        )
+
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("İkincil Duygu", color = EmochiTextSecondary, fontSize = 11.5.sp)
+                                OutlinedTextField(
+                                    value = secondaryMood,
+                                    onValueChange = { secondaryMood = it },
+                                    placeholder = { Text("ör. minnettar", fontSize = 11.sp, color = EmochiTextMuted) },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = customTextFieldColors(),
+                                    singleLine = true
+                                )
+                            }
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Bastırılmış İç Duygu", color = EmochiTextSecondary, fontSize = 11.5.sp)
+                                OutlinedTextField(
+                                    value = suppressedEmotion,
+                                    onValueChange = { suppressedEmotion = it },
+                                    placeholder = { Text("ör. çekingenlik", fontSize = 11.sp, color = EmochiTextMuted) },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = customTextFieldColors(),
+                                    singleLine = true
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(14.dp))
+
+                        // Sliders Section
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFF181A2A)),
+                            shape = RoundedCornerShape(12.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, EmochiBorder),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                val tierLabel = when (affection.toInt()) {
+                                    in 0..15 -> "💔 Düşman / Soğuk (0-15)"
+                                    in 16..35 -> "👤 Yabancı (16-35)"
+                                    in 36..55 -> "🙂 Tanıdık / Nötr (36-55)"
+                                    in 56..70 -> "🤝 Arkadaş (56-70)"
+                                    in 71..85 -> "💖 Flört / İlgili (71-85)"
+                                    in 86..95 -> "🔥 Sevgili / Âşık (86-95)"
+                                    else -> "👑 Ruh Eşi / Derin Bağ (96-100)"
+                                }
+                                Text("❤️ Sevgi & Yakınlık: ${affection.toInt()}% ($tierLabel)", color = Color(0xFFFF6B81), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                Slider(
+                                    value = affection,
+                                    onValueChange = { affection = it },
+                                    valueRange = 0f..100f,
+                                    colors = SliderDefaults.colors(thumbColor = Color(0xFFFF6B81), activeTrackColor = Color(0xFFFF6B81))
+                                )
+
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text("🛡️ Güven Seviyesi: ${trust.toInt()}%", color = Color(0xFF4D96FF), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                Slider(
+                                    value = trust,
+                                    onValueChange = { trust = it },
+                                    valueRange = 0f..100f,
+                                    colors = SliderDefaults.colors(thumbColor = Color(0xFF4D96FF), activeTrackColor = Color(0xFF4D96FF))
+                                )
+
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text("🤝 Fiziksel Yakınlık Rahatlığı: ${physicalComfort.toInt()}%", color = Color(0xFFF59E0B), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                Slider(
+                                    value = physicalComfort,
+                                    onValueChange = { physicalComfort = it },
+                                    valueRange = 0f..100f,
+                                    colors = SliderDefaults.colors(thumbColor = Color(0xFFF59E0B), activeTrackColor = Color(0xFFF59E0B))
+                                )
+
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text("💔 Kırgınlık / Mesafe (Hurt): ${hurt.toInt()}%", color = Color(0xFF9333EA), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                Slider(
+                                    value = hurt,
+                                    onValueChange = { hurt = it },
+                                    valueRange = 0f..100f,
+                                    colors = SliderDefaults.colors(thumbColor = Color(0xFF9333EA), activeTrackColor = Color(0xFF9333EA))
+                                )
+
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text("🖤 Takıntı / Bağımlılık (Obsession): ${obsession.toInt()}%", color = Color(0xFFE11D48), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                Slider(
+                                    value = obsession,
+                                    onValueChange = { obsession = it },
+                                    valueRange = 0f..100f,
+                                    colors = SliderDefaults.colors(thumbColor = Color(0xFFE11D48), activeTrackColor = Color(0xFFE11D48))
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text("⚡ Gerginlik / Stres Düzeyi", color = EmochiTextPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            val tensionOptions = listOf("none" to "Sakin 🍃", "mild" to "Hafif ⚡", "conflict" to "Çatışma 🔥", "crisis" to "Kriz ⚠️")
+                            tensionOptions.forEach { (key, label) ->
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(if (tension.equals(key, ignoreCase = true)) Color(0xFFFFB302) else Color(0xFF1E1F35))
+                                        .clickable { tension = key }
+                                        .padding(vertical = 8.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(label, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text("🗣️ Konuşma Üslubu & Hızı", color = EmochiTextPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        OutlinedTextField(
+                            value = speechPattern,
+                            onValueChange = { speechPattern = it },
+                            placeholder = { Text("ör. utangaç, kısık sesli, hızlı konuşan...", fontSize = 11.5.sp, color = EmochiTextMuted) },
+                            modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
+                            colors = customTextFieldColors(),
+                            singleLine = true
+                        )
+
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Text("🛡️ Duygusal Direnç: ${resilience.toInt()}/10", color = EmochiTextSecondary, fontSize = 11.5.sp)
+                        Slider(
+                            value = resilience,
+                            onValueChange = { resilience = it },
+                            valueRange = 1f..10f,
+                            steps = 8
+                        )
+
+                        // ==========================================
+                        // SPECIAL USER-DEFINED EMOTIONS SECTION
+                        // ==========================================
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFF141628)),
+                            shape = RoundedCornerShape(14.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFA855F7).copy(alpha = 0.5f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text("✨", fontSize = 16.sp)
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("Özel Tanımlı Duygular (${customEmotionsList.size})", color = Color(0xFFD8B4FE), fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                    Button(
+                                        onClick = { showAddCustomDialog = true },
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFA855F7)),
+                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                        shape = RoundedCornerShape(8.dp)
+                                    ) {
+                                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color.White)
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("Yeni Duygu Ekle", fontSize = 11.sp, color = Color.White, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+
+                                if (customEmotionsList.isEmpty()) {
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Text(
+                                        text = "Henüz özel bir duygu tanımlanmadı. 'Yeni Duygu Ekle' butonuna basarak kazanım zorluğu, değer aralığı ve amacı olan yeni duygular oluşturabilirsiniz.",
+                                        color = EmochiTextMuted,
+                                        fontSize = 11.sp
+                                    )
+                                } else {
+                                    Spacer(modifier = Modifier.height(10.dp))
+                                    customEmotionsList.forEachIndexed { index, ce ->
+                                        Card(
+                                            colors = CardDefaults.cardColors(containerColor = Color(0xFF1F213A)),
+                                            shape = RoundedCornerShape(10.dp),
+                                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                                        ) {
+                                            Column(modifier = Modifier.padding(10.dp)) {
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                                        Text("✨ ${ce.name}", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                                        Spacer(modifier = Modifier.width(8.dp))
+                                                        Box(
+                                                            modifier = Modifier
+                                                                .clip(RoundedCornerShape(4.dp))
+                                                                .background(
+                                                                    when (ce.difficulty) {
+                                                                        "Kolay" -> Color(0xFF22C55E).copy(alpha = 0.2f)
+                                                                        "Orta" -> Color(0xFF3B82F6).copy(alpha = 0.2f)
+                                                                        "Zor" -> Color(0xFFF59E0B).copy(alpha = 0.2f)
+                                                                        else -> Color(0xFFEF4444).copy(alpha = 0.2f)
+                                                                    }
+                                                                )
+                                                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                                                        ) {
+                                                            Text("Zorluk: ${ce.difficulty}", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+                                                        }
+                                                    }
+
+                                                    IconButton(
+                                                        onClick = {
+                                                            customEmotionsList = customEmotionsList.toMutableList().apply { removeAt(index) }
+                                                        },
+                                                        modifier = Modifier.size(24.dp)
+                                                    ) {
+                                                        Icon(Icons.Default.Delete, contentDescription = "Sil", tint = Color(0xFFFF6B6B), modifier = Modifier.size(16.dp))
+                                                    }
+                                                }
+
+                                                if (ce.purpose.isNotBlank()) {
+                                                    Spacer(modifier = Modifier.height(2.dp))
+                                                    Text("🎯 Amacı: ${ce.purpose}", color = EmochiTextSecondary, fontSize = 11.sp)
+                                                }
+
+                                                Spacer(modifier = Modifier.height(6.dp))
+                                                Text("Değer Aralığı: ${ce.minValue} - ${ce.maxValue} | Şu Anki Değer: ${ce.currentValue}", color = Color(0xFFD8B4FE), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+
+                                                Slider(
+                                                    value = ce.currentValue.toFloat().coerceIn(ce.minValue.toFloat(), ce.maxValue.toFloat()),
+                                                    onValueChange = { newVal ->
+                                                        val updated = ce.copy(currentValue = newVal.toInt())
+                                                        customEmotionsList = customEmotionsList.toMutableList().apply { set(index, updated) }
+                                                    },
+                                                    valueRange = ce.minValue.toFloat()..ce.maxValue.toFloat().coerceAtLeast(ce.minValue.toFloat() + 1f),
+                                                    colors = SliderDefaults.colors(thumbColor = Color(0xFFA855F7), activeTrackColor = Color(0xFFA855F7))
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        // Side Character Controls
+                        val charEntity = sideCharEmotions[selectedTab]
+                        val sideEmotion = remember(charEntity?.emotionState) {
+                            if (charEntity != null) com.example.data.local.EmotionState.fromJson(charEntity.emotionState) else com.example.data.local.EmotionState()
+                        }
+
+                        var sideMood by remember { mutableStateOf(sideEmotion.dominantEmotion) }
+                        var sideAffection by remember { mutableStateOf(sideEmotion.affection.toFloat()) }
+                        var sideTrust by remember { mutableStateOf(sideEmotion.trust.toFloat()) }
+                        var sideTension by remember { mutableStateOf(sideEmotion.tension.toIntOrNull() ?: 10) }
+
+                        Text("👤 $selectedTab - Duygu Parametreleri", color = EmochiTextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        Text("Ruh Hali (Mood)", color = EmochiTextSecondary, fontSize = 12.sp)
+                        OutlinedTextField(
+                            value = sideMood,
+                            onValueChange = { sideMood = it },
+                            placeholder = { Text("ör. dostane, kıskanç, nötr", fontSize = 11.5.sp, color = EmochiTextMuted) },
+                            modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
+                            colors = customTextFieldColors(),
+                            singleLine = true
+                        )
+
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFF181A2A)),
+                            shape = RoundedCornerShape(12.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, EmochiBorder),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Text("❤️ Sevgi: ${sideAffection.toInt()}%", color = Color(0xFFFF6B81), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                Slider(
+                                    value = sideAffection,
+                                    onValueChange = { sideAffection = it },
+                                    valueRange = 0f..100f
+                                )
+
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text("🛡️ Güven: ${sideTrust.toInt()}%", color = Color(0xFF4D96FF), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                Slider(
+                                    value = sideTrust,
+                                    onValueChange = { sideTrust = it },
+                                    valueRange = 0f..100f
+                                )
+
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text("⚡ Gerginlik: $sideTension%", color = Color(0xFFFFB302), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                Slider(
+                                    value = sideTension.toFloat(),
+                                    onValueChange = { sideTension = it.toInt() },
+                                    valueRange = 0f..100f
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(14.dp))
+                        Button(
+                            onClick = {
+                                onSaveCharacterEmotion(selectedTab, sideMood, sideAffection.toInt(), sideTrust.toInt(), sideTension)
+                                onDismiss()
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = EmochiPrimary),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("👤 $selectedTab Duygularını Kaydet & Dön", color = Color.White, fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    if (selectedTab == "main") {
+                        Spacer(modifier = Modifier.height(18.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End
+                        ) {
+                            TextButton(onClick = onDismiss) {
+                                Text("İptal", color = EmochiTextMuted)
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Button(
+                                onClick = {
+                                    val updatedObj = initialEmotion.copy(
+                                        dominantEmotion = mood.ifBlank { "nötr" },
+                                        computedSecondaryEmotion = secondaryMood.ifBlank { null },
+                                        suppressedEmotion = suppressedEmotion,
+                                        relationshipAxes = initialEmotion.relationshipAxes.copy(
+                                            affectionScore = affection.toInt(),
+                                            resentmentScore = hurt.toInt()
+                                        ),
+                                        primaryEmotions = initialEmotion.primaryEmotions.copy(
+                                            trust = trust.toInt()
+                                        ),
+                                        physicalComfortScore = physicalComfort.toInt(),
+                                        obsessionScore = obsession.toInt(),
+                                        tension = tension,
+                                        speechPattern = speechPattern,
+                                        resilience = resilience.toInt(),
+                                        customEmotionsJson = com.example.data.local.CustomEmotionDefinition.listToJsonArrayStr(customEmotionsList)
+                                    )
+                                    onSaveBotEmotion(updatedObj.toJson())
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF6B81))
+                            ) {
+                                Icon(Icons.Default.Tune, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Kaydet & Eski Menüye Dön", color = Color.White, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (showAddCustomDialog) {
+        Dialog(onDismissRequest = { showAddCustomDialog = false }) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1F35)),
+                shape = RoundedCornerShape(16.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFA855F7)),
+                modifier = Modifier.fillMaxWidth().padding(8.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text("✨ Yeni Özel Duygu Ekle", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Text("Duygu Adı", color = EmochiTextSecondary, fontSize = 11.5.sp)
+                    OutlinedTextField(
+                        value = newCustomName,
+                        onValueChange = { newCustomName = it },
+                        placeholder = { Text("ör. Sadakat, Kıskançlık, Şüphe...", fontSize = 11.sp, color = EmochiTextMuted) },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = customTextFieldColors(),
+                        singleLine = true
+                    )
+
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text("Kazanım Zorluğu", color = EmochiTextSecondary, fontSize = 11.5.sp)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        val difficulties = listOf("Kolay", "Orta", "Zor", "Aşırı Zor")
+                        difficulties.forEach { diff ->
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(if (newCustomDifficulty == diff) Color(0xFFA855F7) else Color(0xFF141628))
+                                    .clickable { newCustomDifficulty = diff }
+                                    .padding(vertical = 6.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(diff, color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Min Değer", color = EmochiTextSecondary, fontSize = 11.sp)
+                            OutlinedTextField(
+                                value = newCustomMin,
+                                onValueChange = { newCustomMin = it.filter { c -> c.isDigit() } },
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = customTextFieldColors(),
+                                singleLine = true
+                            )
+                        }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Max Değer", color = EmochiTextSecondary, fontSize = 11.sp)
+                            OutlinedTextField(
+                                value = newCustomMax,
+                                onValueChange = { newCustomMax = it.filter { c -> c.isDigit() } },
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = customTextFieldColors(),
+                                singleLine = true
+                            )
+                        }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Şu Anki Değer", color = EmochiTextSecondary, fontSize = 11.sp)
+                            OutlinedTextField(
+                                value = newCustomCurrent,
+                                onValueChange = { newCustomCurrent = it.filter { c -> c.isDigit() } },
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = customTextFieldColors(),
+                                singleLine = true
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text("Duygunun Amacı / Etkisi", color = EmochiTextSecondary, fontSize = 11.5.sp)
+                    OutlinedTextField(
+                        value = newCustomPurpose,
+                        onValueChange = { newCustomPurpose = it },
+                        placeholder = { Text("ör. Karakterin sadakat derinliğini belirler...", fontSize = 11.sp, color = EmochiTextMuted) },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = customTextFieldColors()
+                    )
+
+                    Spacer(modifier = Modifier.height(14.dp))
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                        TextButton(onClick = { showAddCustomDialog = false }) {
+                            Text("İptal", color = EmochiTextMuted)
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Button(
+                            onClick = {
+                                if (newCustomName.isNotBlank()) {
+                                    val minVal = newCustomMin.toIntOrNull() ?: 0
+                                    val maxVal = newCustomMax.toIntOrNull() ?: 100
+                                    val curVal = (newCustomCurrent.toIntOrNull() ?: 0).coerceIn(minVal, maxVal)
+                                    val newDef = com.example.data.local.CustomEmotionDefinition(
+                                        name = newCustomName,
+                                        difficulty = newCustomDifficulty,
+                                        minValue = minVal,
+                                        maxValue = maxVal,
+                                        currentValue = curVal,
+                                        purpose = newCustomPurpose
+                                    )
+                                    customEmotionsList = customEmotionsList + newDef
+                                    showAddCustomDialog = false
+                                    newCustomName = ""
+                                    newCustomPurpose = ""
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFA855F7))
+                        ) {
+                            Text("Ekle", color = Color.White, fontWeight = FontWeight.Bold)
                         }
                     }
                 }

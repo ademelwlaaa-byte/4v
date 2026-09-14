@@ -1862,6 +1862,13 @@ Durdu, ifadesi ciddileşti.
 
         val isObsessionUnlocked = totalMessageCount >= 150 && emotionStateObj.highAffectionStreak >= 25
 
+        val customEmotionsDirective = if (emotionStateObj.customEmotions.isNotEmpty()) {
+            "\n## KULLANICI TARAFINDAN TANIMLANMIŞ ÖZEL DUYGULAR:\n" +
+                    emotionStateObj.customEmotions.joinToString("\n") { ce ->
+                        "- ${ce.name} [Kazanım Zorluğu: ${ce.difficulty}, Aralık: ${ce.minValue}-${ce.maxValue}, Şu Anki Değer: ${ce.currentValue}]: ${ce.purpose.ifBlank { "Tutum ve tepkileri yönlendirir." }}"
+                    } + "\n- YÖNERGE: Yukarıdaki özel tanımlı duyguları ve değerlerini karakterin davranışlarında ve karar verme sürecinde göz önüne al.\n"
+        } else ""
+
         val extraSohbetRulesDirective = """
 
 ## 1) KOD TARAFINDAN HESAPLANAN GERÇEK ZAMAN ALGISI (ZAMAN KONTROLÜ)
@@ -1972,7 +1979,7 @@ $extraSohbetRulesDirective
 - İkincil / Karmaşık Duygu: ${emotionStateObj.secondaryMood.ifBlank { "nötr" }}
 - Bastırılmış İçsel Duygu: ${emotionStateObj.suppressedEmotion.ifBlank { "yok" }}
 - Yakınlık/Sevgi: ${emotionStateObj.affection}/100 [Kademe: ${emotionStateObj.getAffectionTierLabel()}] | Güven: ${emotionStateObj.trust}/100 | Gerginlik: ${emotionStateObj.tension}/100 | Kırgınlık: ${emotionStateObj.hurt}/100
-- Konuşma Üslubu/Hızı: ${emotionStateObj.speechPattern.ifBlank { "doğal" }}
+- Konuşma Üslubu/Hızı: ${emotionStateObj.speechPattern.ifBlank { "doğal" }}$customEmotionsDirective
 
 ## DUYGU VE ATMOSFER GÜNCELLEME TALİMATI (GİZLİ SİSTEM FORMATI - METİNDE HİÇBİR GÖRÜNÜR LOG BASTIRMA)
 Her yanıtının EN SONUNA, gizli sistem formatında duygu güncellemesini ekle (görünür metinde duygu durumları, parantez içi anlatımlar veya debug logları KESİNLİKLE görünmeyecek):

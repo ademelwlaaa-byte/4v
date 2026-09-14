@@ -51,6 +51,7 @@ fun EmotionStatusSection(
     characterEmotions: List<CharacterEmotionEntity> = emptyList(),
     affectionEvents: List<AffectionEventEntity> = emptyList(),
     filterCount: Int = 0,
+    onUpdateCharacterEmotion: ((characterName: String, mood: String, affection: Int, trust: Int, tension: Int) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val emotion = remember(bot.emotionState) { EmotionState.fromJson(bot.emotionState) }
@@ -187,6 +188,28 @@ fun EmotionStatusSection(
                 )
             }
 
+            // User Defined Custom Emotions
+            if (emotion.customEmotions.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(10.dp))
+                Text(
+                    text = "✨ Özel Tanımlı Duygular",
+                    color = Color(0xFFD8B4FE),
+                    fontSize = 11.5.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                emotion.customEmotions.forEach { ce ->
+                    Spacer(modifier = Modifier.height(6.dp))
+                    val labelText = if (ce.purpose.isNotBlank()) "${ce.name} (${ce.difficulty}) — ${ce.purpose}" else "${ce.name} (${ce.difficulty})"
+                    EmotionBarItem(
+                        label = labelText,
+                        value = ce.currentValue.coerceIn(ce.minValue, ce.maxValue),
+                        maxValue = ce.maxValue.coerceAtLeast(ce.minValue + 1),
+                        color = Color(0xFFA855F7),
+                        icon = "✨"
+                    )
+                }
+            }
+
             // Secondary & Suppressed Emotions
             if (emotion.secondaryMood.isNotBlank() || emotion.suppressedEmotion.isNotBlank()) {
                 Spacer(modifier = Modifier.height(10.dp))
@@ -289,16 +312,18 @@ fun EmotionStatusSection(
                     )
                 }
 
-                // Character Emotions List
+                // Character Emotions List & Manual Editor
                 if (characterEmotions.isNotEmpty()) {
                     Spacer(modifier = Modifier.height(10.dp))
                     Text(
-                        text = "👥 Yan Karakterler Duygu Durumu",
+                        text = "👥 Yan Karakterler Duygu Durumu (Düzenlenebilir)",
                         color = EmochiPrimary,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold
                     )
                     Spacer(modifier = Modifier.height(6.dp))
+
+                    var editingCharacter by remember { mutableStateOf<CharacterEmotionEntity?>(null) }
 
                     characterEmotions.forEach { charEntity ->
                         val charEmotion = remember(charEntity.emotionState) { EmotionState.fromJson(charEntity.emotionState) }
@@ -308,14 +333,20 @@ fun EmotionStatusSection(
                                 .padding(vertical = 4.dp)
                                 .clip(RoundedCornerShape(8.dp))
                                 .background(Color(0xFF1B1D30))
+                                .clickable {
+                                    if (onUpdateCharacterEmotion != null) {
+                                        editingCharacter = charEntity
+                                    }
+                                }
                                 .padding(8.dp)
                         ) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = charEntity.characterName,
+                                    text = charEntity.characterName + if (onUpdateCharacterEmotion != null) " ✏️" else "",
                                     color = EmochiTextPrimary,
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Bold
@@ -334,6 +365,92 @@ fun EmotionStatusSection(
                                 Text("❤️ Sevgi: ${charEmotion.affection}%", color = Color(0xFFFF6B81), fontSize = 10.sp)
                                 Text("🛡️ Güven: ${charEmotion.trust}%", color = Color(0xFF4D96FF), fontSize = 10.sp)
                                 Text("⚡ Gerginlik: ${charEmotion.tension}%", color = Color(0xFFFFB302), fontSize = 10.sp)
+                            }
+                        }
+                    }
+
+                    editingCharacter?.let { charEntity ->
+                        val currentEmotion = remember(charEntity.emotionState) { EmotionState.fromJson(charEntity.emotionState) }
+                        var editMood by remember { mutableStateOf(currentEmotion.mood) }
+                        var editAffection by remember { mutableStateOf(currentEmotion.affection.toFloat()) }
+                        var editTrust by remember { mutableStateOf(currentEmotion.trust.toFloat()) }
+                        var editTension by remember { mutableStateOf(currentEmotion.tension.toIntOrNull() ?: 10) }
+
+                        androidx.compose.ui.window.Dialog(onDismissRequest = { editingCharacter = null }) {
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E2E)),
+                                shape = RoundedCornerShape(16.dp),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, EmochiBorder),
+                                modifier = Modifier.fillMaxWidth().padding(16.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(16.dp)) {
+                                    Text(
+                                        text = "✏️ ${charEntity.characterName} Duygu Düzenleme",
+                                        color = EmochiTextPrimary,
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Spacer(modifier = Modifier.height(10.dp))
+
+                                    Text("Ruh Hali (Mood)", color = EmochiTextSecondary, fontSize = 12.sp)
+                                    androidx.compose.material3.OutlinedTextField(
+                                        value = editMood,
+                                        onValueChange = { editMood = it },
+                                        modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
+                                        colors = customTextFieldColors(),
+                                        singleLine = true
+                                    )
+
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Text("❤️ Sevgi: ${editAffection.toInt()}%", color = Color(0xFFFF6B81), fontSize = 12.sp)
+                                    androidx.compose.material3.Slider(
+                                        value = editAffection,
+                                        onValueChange = { editAffection = it },
+                                        valueRange = 0f..100f
+                                    )
+
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Text("🛡️ Güven: ${editTrust.toInt()}%", color = Color(0xFF4D96FF), fontSize = 12.sp)
+                                    androidx.compose.material3.Slider(
+                                        value = editTrust,
+                                        onValueChange = { editTrust = it },
+                                        valueRange = 0f..100f
+                                    )
+
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Text("⚡ Gerginlik: $editTension%", color = Color(0xFFFFB302), fontSize = 12.sp)
+                                    androidx.compose.material3.Slider(
+                                        value = editTension.toFloat(),
+                                        onValueChange = { editTension = it.toInt() },
+                                        valueRange = 0f..100f
+                                    )
+
+                                    Spacer(modifier = Modifier.height(12.dp))
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.End
+                                    ) {
+                                        androidx.compose.material3.TextButton(onClick = { editingCharacter = null }) {
+                                            Text("İptal", color = EmochiTextMuted)
+                                        }
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        androidx.compose.material3.Button(
+                                            onClick = {
+                                                onUpdateCharacterEmotion?.invoke(
+                                                    charEntity.characterName,
+                                                    editMood,
+                                                    editAffection.toInt(),
+                                                    editTrust.toInt(),
+                                                    editTension
+                                                )
+                                                editingCharacter = null
+                                            },
+                                            colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = EmochiPrimary)
+                                        ) {
+                                            Text("Kaydet", color = Color.White)
+                                        }
+                                    }
+                                }
                             }
                         }
                     }

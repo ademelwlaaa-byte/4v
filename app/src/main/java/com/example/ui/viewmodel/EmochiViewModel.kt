@@ -10,6 +10,7 @@ import com.example.data.local.CharacterEmotionEntity
 import com.example.data.local.MessageEntity
 import com.example.data.local.UserSettingsEntity
 import com.example.data.repository.EmochiRepository
+import org.json.JSONObject
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -826,6 +827,23 @@ class EmochiViewModel(application: Application) : AndroidViewModel(application) 
     fun updateBotProfile(updatedBot: BotEntity) {
         viewModelScope.launch {
             repository.saveBot(updatedBot)
+        }
+    }
+
+    fun updateCharacterEmotion(botId: String, characterName: String, newMood: String, affection: Int, trust: Int, tension: Int, intensity: Int = 5) {
+        viewModelScope.launch {
+            val existing = db.characterEmotionDao().getEmotionForCharacter(botId, characterName)
+            val updatedStateJson = JSONObject().apply {
+                put("mood", newMood)
+                put("intensity", intensity)
+                put("affection", affection)
+                put("trust", trust)
+                put("tension", tension)
+            }.toString()
+
+            val entity = existing?.copy(emotionState = updatedStateJson)
+                ?: CharacterEmotionEntity(botId = botId, characterName = characterName, emotionState = updatedStateJson)
+            db.characterEmotionDao().insertOrUpdate(entity)
         }
     }
 

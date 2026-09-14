@@ -402,6 +402,68 @@ data class WorldState(
 }
 
 // ==========================================
+// Custom Defined Emotion Data Class
+// ==========================================
+data class CustomEmotionDefinition(
+    val id: String = java.util.UUID.randomUUID().toString(),
+    val name: String,
+    val difficulty: String = "Orta", // Kolay, Orta, Zor, Aşırı Zor
+    val minValue: Int = 0,
+    val maxValue: Int = 100,
+    val currentValue: Int = 0,
+    val purpose: String = ""
+) {
+    fun toJsonObject(): JSONObject {
+        return JSONObject().apply {
+            put("id", id)
+            put("name", name)
+            put("difficulty", difficulty)
+            put("minValue", minValue)
+            put("maxValue", maxValue)
+            put("currentValue", currentValue)
+            put("purpose", purpose)
+        }
+    }
+
+    companion object {
+        fun fromJsonObject(json: JSONObject): CustomEmotionDefinition {
+            return CustomEmotionDefinition(
+                id = json.optString("id", java.util.UUID.randomUUID().toString()),
+                name = json.optString("name", "Bilinmeyen Duygu"),
+                difficulty = json.optString("difficulty", "Orta"),
+                minValue = json.optInt("minValue", 0),
+                maxValue = json.optInt("maxValue", 100),
+                currentValue = json.optInt("currentValue", 0),
+                purpose = json.optString("purpose", "")
+            )
+        }
+
+        fun listFromJsonArrayStr(jsonArrayStr: String?): List<CustomEmotionDefinition> {
+            if (jsonArrayStr.isNullOrBlank()) return emptyList()
+            return try {
+                val arr = JSONArray(jsonArrayStr)
+                val list = mutableListOf<CustomEmotionDefinition>()
+                for (i in 0 until arr.length()) {
+                    val obj = arr.optJSONObject(i)
+                    if (obj != null) {
+                        list.add(fromJsonObject(obj))
+                    }
+                }
+                list
+            } catch (e: Exception) {
+                emptyList()
+            }
+        }
+
+        fun listToJsonArrayStr(list: List<CustomEmotionDefinition>): String {
+            val arr = JSONArray()
+            list.forEach { arr.put(it.toJsonObject()) }
+            return arr.toString()
+        }
+    }
+}
+
+// ==========================================
 // Backward-compatible EmotionState
 // ==========================================
 data class EmotionState(
@@ -431,7 +493,8 @@ data class EmotionState(
     val userToneHistoryJson: String = "[]",
     val userInconsistencyFlag: Boolean = false,
     val resilience: Int = 5,
-    val speechPattern: String = ""
+    val speechPattern: String = "",
+    val customEmotionsJson: String = "[]"
 ) {
     // Backwards compatibility properties
     val affection: Int get() = relationshipAxes.affectionScore
@@ -441,6 +504,7 @@ data class EmotionState(
     val intensity: Int get() = ((primaryEmotions.joy + primaryEmotions.anger + primaryEmotions.fear + primaryEmotions.sadness) / 40).coerceIn(1, 10)
     val hurt: Int get() = relationshipAxes.resentmentScore
     val obsession: Int get() = obsessionScore
+    val customEmotions: List<CustomEmotionDefinition> get() = CustomEmotionDefinition.listFromJsonArrayStr(customEmotionsJson)
 
     fun toJson(): String {
         val json = JSONObject()
@@ -478,6 +542,7 @@ data class EmotionState(
         json.put("userInconsistencyFlag", userInconsistencyFlag)
         json.put("resilience", resilience)
         json.put("speechPattern", speechPattern)
+        json.put("customEmotionsJson", customEmotionsJson)
 
         // Legacy fields for direct UI access
         json.put("mood", mood)
@@ -586,7 +651,8 @@ data class EmotionState(
                     userToneHistoryJson = json.optString("userToneHistoryJson", "[]"),
                     userInconsistencyFlag = json.optBoolean("userInconsistencyFlag", false),
                     resilience = json.optInt("resilience", 5),
-                    speechPattern = json.optString("speechPattern", "")
+                    speechPattern = json.optString("speechPattern", ""),
+                    customEmotionsJson = json.optString("customEmotionsJson", "[]")
                 )
             } catch (e: Exception) {
                 DEFAULT
