@@ -12,8 +12,8 @@ data class UserSettingsEntity(
     val openaiApiKey: String = "",
     val backupApiKey: String = "",
     val selectedProvider: String = "gemini", // "gemini", "groq", "claude", "openai"
-    val selectedModel: String = "gemini-2.5-flash",
-    val fallbackModel: String = "gemini-2.5-flash",
+    val selectedModel: String = "gemini-2.0-flash",
+    val fallbackModel: String = "gemini-2.0-flash",
     val responseLength: String = "standard", // "short", "standard", "long"
     val enableNsfw: Boolean = true, // +18 / Filtresiz RP modu
     val enableOoc: Boolean = true, // Parantez İçi Yönlendirme Modu (... Bu böyle olmalı)
@@ -43,7 +43,7 @@ data class UserSettingsEntity(
     val nvidiaModel: String = "deepseek-ai/deepseek-v4-flash",
     val mistralApiKey: String = "",
     val mistralModel: String = "mistral-large-latest",
-    val geminiModel: String = "gemini-2.5-flash",
+    val geminiModel: String = "gemini-2.0-flash",
     val claudeModel: String = "claude-3-5-sonnet-20241022",
     val groqModel: String = "llama-3.3-70b-versatile",
     val openaiModel: String = "gpt-4o"

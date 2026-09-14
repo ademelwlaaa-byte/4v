@@ -458,7 +458,21 @@ class EmochiRepository(
     suspend fun getOrCreateSettings(): UserSettingsEntity {
         var settings = settingsDao.getUserSettings()
         if (settings == null) {
-            settings = UserSettingsEntity()
+            settings = UserSettingsEntity(
+                selectedModel = "gemini-2.0-flash",
+                fallbackModel = "gemini-2.0-flash",
+                geminiModel = "gemini-2.0-flash"
+            )
+            settingsDao.insertOrUpdate(settings)
+        } else if (settings.selectedModel.contains("2.5") || settings.selectedModel.contains("3.5") || settings.geminiModel.contains("2.5") || settings.geminiModel.contains("3.5")) {
+            val updatedSelected = sanitizeModelName(settings.selectedModel)
+            val updatedFallback = sanitizeModelName(settings.fallbackModel)
+            val updatedGemini = sanitizeModelName(settings.geminiModel)
+            settings = settings.copy(
+                selectedModel = updatedSelected,
+                fallbackModel = updatedFallback,
+                geminiModel = updatedGemini
+            )
             settingsDao.insertOrUpdate(settings)
         }
         return settings
@@ -2810,9 +2824,9 @@ micro_atmosphere: <mikro mekan/fiziksel ortam/ışık/ses/gerilim>
     private fun sanitizeModelName(model: String): String {
         val clean = model.trim().lowercase()
         return when {
-            clean == "gemini-1.5-flash" || clean == "gemini-2.0-flash" -> "gemini-2.5-flash"
-            clean == "gemini-1.5-pro" || clean == "gemini-2.0-pro" || clean == "gemini-2.0-flash-thinking" -> "gemini-2.5-pro"
-            clean.isEmpty() -> "gemini-2.5-flash"
+            clean == "gemini-2.5-flash" || clean == "gemini-3.5-flash" || clean == "gemini-2.0-flash" || clean == "gemini-1.5-flash" -> "gemini-2.0-flash"
+            clean == "gemini-2.5-pro" || clean == "gemini-2.0-pro" || clean == "gemini-1.5-pro" || clean == "gemini-2.0-flash-thinking" -> "gemini-1.5-pro"
+            clean.isEmpty() -> "gemini-2.0-flash"
             else -> model.trim()
         }
     }
@@ -2903,7 +2917,7 @@ micro_atmosphere: <mikro mekan/fiziksel ortam/ışık/ses/gerilim>
         olderMessages: List<MessageEntity>
     ): BotEntity {
         val settings = getOrCreateSettings()
-        val selectedModel = sanitizeModelName(settings.selectedModel.ifBlank { "gemini-2.5-flash" })
+        val selectedModel = sanitizeModelName(settings.selectedModel.ifBlank { "gemini-2.0-flash" })
 
         val aiName = if (bot.mode == "universe") bot.universeName else bot.aiName
         val userLabel = bot.userCharName.ifBlank { "Kullanıcı" }
@@ -3133,7 +3147,7 @@ micro_atmosphere: <mikro mekan/fiziksel ortam/ışık/ses/gerilim>
             tools = memoryTools
         )
 
-        val modelsToTry = listOf(sanitizedModel, "gemini-2.5-flash", "gemini-3.5-flash").distinct()
+        val modelsToTry = listOf(sanitizedModel, "gemini-2.0-flash", "gemini-1.5-flash").distinct()
         var lastException: Exception? = null
 
         for (currModel in modelsToTry) {
@@ -3459,7 +3473,7 @@ micro_atmosphere: <mikro mekan/fiziksel ortam/ışık/ses/gerilim>
         }
 
         val settings = getOrCreateSettings()
-        val selectedModel = sanitizeModelName(settings.selectedModel.ifBlank { "gemini-2.5-flash" })
+        val selectedModel = sanitizeModelName(settings.selectedModel.ifBlank { "gemini-2.0-flash" })
 
         // Context Window & Token Budget Management
         val (effectiveBot, effectiveMessages) = prepareContextAndSummarizeIfNeeded(bot, messages, selectedModel)
@@ -4662,7 +4676,7 @@ Tebrikler! Bölüm 3'ü başarıyla tamamladın."""
                 if (settings.selectedProvider == "gemini") return null
                 val gemKey = if (settings.customApiKey.isNotBlank()) settings.customApiKey else getBuildConfigKey()
                 if (gemKey.isBlank()) return null
-                val gModel = settings.geminiModel.ifBlank { "gemini-2.5-flash" }
+                val gModel = settings.geminiModel.ifBlank { "gemini-2.0-flash" }
                 val label = "Gemini AI ($gModel)"
                 logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "TRYING", layer = layer))
                 try {
@@ -4887,15 +4901,18 @@ Tebrikler! Bölüm 3'ü başarıyla tamamladın."""
         val primaryRes = tryExecuteProviderByKey("main", model, settings, systemPrompt, messages, botId, customMap, layer = 1)
         if (primaryRes != null) return primaryRes
 
+        val primaryError = _providerFallbackLog.value.firstOrNull { it.providerName.startsWith("Ana Seçim") || it.providerName.startsWith("Özel Sağlayıcı") }?.errorMessage
+
         if (!settings.enableAutoFallback) {
-            throw IllegalStateException("Ana sağlayıcı (${settings.selectedProvider}) başarısız oldu ve otomatik fallback kapalı.")
+            val errDetail = if (!primaryError.isNullOrBlank()) ": $primaryError" else "."
+            throw IllegalStateException("Ana sağlayıcı (${settings.selectedProvider}) başarısız oldu$errDetail (otomatik yedekleme kapalı).")
         }
 
-        // Katman 1: Anahtarsız/keysiz ücretsiz sağlayıcılar (kullanıcı açtıysa)
-        val layer1Keys = listOf("llm7", "pollinations", "ovh").filter { key ->
+        // Katman 1: Anahtarsız/keysiz ücretsiz sağlayıcılar (yalnızca kullanıcı açtıysa)
+        val layer1Keys = listOf("pollinations", "llm7", "ovh").filter { key ->
             when (key) {
-                "llm7" -> settings.enableLlm7 && settings.selectedProvider != "llm7"
                 "pollinations" -> settings.enablePollinations && settings.selectedProvider != "pollinations"
+                "llm7" -> settings.enableLlm7 && settings.selectedProvider != "llm7"
                 "ovh" -> settings.enableOvh && settings.selectedProvider != "ovh"
                 else -> false
             }
@@ -4903,8 +4920,10 @@ Tebrikler! Bölüm 3'ü başarıyla tamamladın."""
 
         // Katman 2: Kullanıcının ANA/birincil sağlayıcıları (Claude, OpenAI, Groq, Gemini)
         val layer2Keys = listOf("gemini", "claude", "groq", "openai").filter { key ->
+            val geminiKey = if (settings.customApiKey.isNotBlank()) settings.customApiKey else getBuildConfigKey()
+            val hasValidGemini = geminiKey.isNotBlank() && geminiKey != "MY_GEMINI_API_KEY"
             when (key) {
-                "gemini" -> settings.selectedProvider != "gemini" && (settings.customApiKey.isNotBlank() || getBuildConfigKey().isNotBlank())
+                "gemini" -> settings.selectedProvider != "gemini" && hasValidGemini
                 "claude" -> settings.selectedProvider != "claude" && settings.claudeApiKey.isNotBlank()
                 "groq" -> settings.selectedProvider != "groq" && settings.groqApiKey.isNotBlank()
                 "openai" -> settings.selectedProvider != "openai" && settings.openaiApiKey.isNotBlank()
@@ -4940,7 +4959,10 @@ Tebrikler! Bölüm 3'ü başarıyla tamamladın."""
             if (res != null) return res
         }
 
-        throw IllegalStateException("Hiçbir sağlayıcıya ulaşılamadı, lütfen daha sonra tekrar dene veya bir API sağlayıcı ayarla.")
+        if (!primaryError.isNullOrBlank()) {
+            throw IllegalStateException(primaryError)
+        }
+        throw IllegalStateException("Hiçbir sağlayıcıya ulaşılamadı. Lütfen API ayarlarınızı ve internet bağlantınızı kontrol edin.")
     }
 
     suspend fun generateOpeningMessage(bot: BotEntity): String = withContext(Dispatchers.IO) {
@@ -4954,7 +4976,7 @@ Tebrikler! Bölüm 3'ü başarıyla tamamladın."""
 
         val requestMsgs = listOf(MessageEntity(id = "init", botId = bot.id, role = "user", text = "Sahneyi/mesajı başlat.", timestamp = 0L))
 
-        val result = executeModelRequestWithFallback(sanitizeModelName(settings.selectedModel.ifBlank { "gemini-2.5-flash" }), settings, systemPrompt, requestMsgs, botId = bot.id)
+        val result = executeModelRequestWithFallback(sanitizeModelName(settings.selectedModel.ifBlank { "gemini-2.0-flash" }), settings, systemPrompt, requestMsgs, botId = bot.id)
         recordTokenUsage(bot.id, result.promptTokens, result.candidateTokens)
         return@withContext result.text
     }
@@ -4978,7 +5000,7 @@ Tebrikler! Bölüm 3'ü başarıyla tamamladın."""
 
         try {
             val requestMsgs = listOf(MessageEntity(id = "sum", botId = bot.id, role = "user", text = "$prompt\n\nSAHNE:\n$recapText", timestamp = 0L))
-            val res = callGeminiApi(apiKey, "gemini-2.5-flash", "Sen yardımcı bir özetleyicisin.", requestMsgs)
+            val res = callGeminiApi(apiKey, "gemini-2.0-flash", "Sen yardımcı bir özetleyicisin.", requestMsgs)
             recordTokenUsage(bot.id, res.promptTokens, res.candidateTokens)
             val raw = res.text
 
@@ -5074,8 +5096,8 @@ Tebrikler! Bölüm 3'ü başarıyla tamamladın."""
                             claudeApiKey = sObj.optString("claudeApiKey", ""),
                             openaiApiKey = sObj.optString("openaiApiKey", ""),
                             backupApiKey = sObj.optString("backupApiKey", ""),
-                            selectedModel = sObj.optString("selectedModel", "gemini-2.5-flash"),
-                            fallbackModel = sObj.optString("fallbackModel", "gemini-2.5-flash")
+                            selectedModel = sObj.optString("selectedModel", "gemini-2.0-flash"),
+                            fallbackModel = sObj.optString("fallbackModel", "gemini-2.0-flash")
                         )
                         settingsDao.insertOrUpdate(settings)
                     } catch (_: Exception) {}

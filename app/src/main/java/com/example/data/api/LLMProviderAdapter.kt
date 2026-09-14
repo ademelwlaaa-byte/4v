@@ -303,7 +303,7 @@ class GeminiAdapter(
         )
 
         val response = RetrofitClient.service.generateContent(
-            model = model,
+            model = model.ifBlank { "gemini-2.5-flash" },
             apiKey = apiKey,
             request = request
         )
@@ -354,10 +354,11 @@ object LLMAdapterFactory {
                 )
             }
             providerKey == "pollinations" -> {
+                val pModel = if (modelName.contains("openai") || modelName.contains("mistral") || modelName.contains("llama") || modelName.contains("qwen") || modelName.contains("deepseek")) modelName else settings.pollinationsModel.ifBlank { "openai" }
                 GenericOpenAICompatibleAdapter(
                     endpointUrl = "https://text.pollinations.ai/openai/chat/completions",
                     apiKey = "unused",
-                    model = modelName.ifBlank { "openai" },
+                    model = pModel,
                     providerName = "pollinations",
                     supportsFC = false,
                     reliabilityTier = ReliabilityTier.SECONDARY
@@ -446,49 +447,58 @@ object LLMAdapterFactory {
                     throw IllegalStateException("Seçili Özel Sağlayıcı (Custom Provider) veritabanında bulunamadı.")
                 }
             }
-            providerKey == "groq" || modelName.contains("llama") || modelName.contains("groq") || modelName.contains("mixtral") -> {
+            providerKey == "groq" -> {
                 val apiKey = settings.groqApiKey.ifBlank { settings.customApiKey }
-                if (apiKey.isBlank()) throw IllegalStateException("Groq API Key eksik.")
+                if (apiKey.isBlank()) throw IllegalStateException("Groq API Key eksik. Lütfen Ayarlar -> AI Model Ayarları menüsünden Groq API Key girin.")
+                val mName = if (modelName.contains("llama") || modelName.contains("groq") || modelName.contains("mixtral")) modelName else settings.groqModel.ifBlank { "llama-3.3-70b-versatile" }
                 GenericOpenAICompatibleAdapter(
                     endpointUrl = "https://api.groq.com/openai/v1/chat/completions",
                     apiKey = apiKey,
-                    model = modelName,
+                    model = mName,
                     providerName = "groq",
                     supportsFC = true
                 )
             }
-            providerKey == "claude" || modelName.contains("claude") -> {
+            providerKey == "claude" -> {
                 val apiKey = settings.claudeApiKey
-                if (apiKey.isBlank()) throw IllegalStateException("Claude API Key eksik.")
+                if (apiKey.isBlank()) throw IllegalStateException("Claude API Key eksik. Lütfen Ayarlar -> AI Model Ayarları menüsünden Claude API Key girin.")
+                val mName = if (modelName.contains("claude")) modelName else settings.claudeModel.ifBlank { "claude-3-5-sonnet-20241022" }
                 GenericAnthropicCompatibleAdapter(
                     apiKey = apiKey,
-                    model = modelName,
+                    model = mName,
                     providerName = "claude",
                     supportsFC = true
                 )
             }
-            providerKey == "openai" || providerKey == "deepseek" || modelName.contains("gpt") || modelName.contains("deepseek") -> {
+            providerKey == "openai" || providerKey == "deepseek" -> {
                 val isDeepseek = modelName.contains("deepseek") || providerKey == "deepseek"
                 val url = if (isDeepseek) "https://api.deepseek.com/chat/completions" else "https://api.openai.com/v1/chat/completions"
                 val apiKey = settings.openaiApiKey.ifBlank { settings.groqApiKey }
-                if (apiKey.isBlank()) throw IllegalStateException("OpenAI/DeepSeek API Key eksik.")
+                if (apiKey.isBlank()) throw IllegalStateException("OpenAI API Key eksik. Lütfen Ayarlar -> AI Model Ayarları menüsünden OpenAI API Key girin.")
+                val mName = if (modelName.contains("gpt") || modelName.contains("deepseek")) modelName else settings.openaiModel.ifBlank { "gpt-4o" }
                 GenericOpenAICompatibleAdapter(
                     endpointUrl = url,
                     apiKey = apiKey,
-                    model = modelName,
+                    model = mName,
                     providerName = if (isDeepseek) "deepseek" else "openai",
                     supportsFC = true
                 )
             }
             else -> { // Default Gemini
                 val customKey = settings.customApiKey.trim()
-                val primaryKey = if (customKey.isNotBlank()) customKey else buildConfigGeminiKey
-                if (primaryKey.isBlank() || primaryKey == "MY_GEMINI_API_KEY") {
-                    throw IllegalStateException("Gemini API Key eksik.")
+                val buildKey = buildConfigGeminiKey.trim()
+                val primaryKey = when {
+                    customKey.isNotBlank() -> customKey
+                    buildKey.isNotBlank() && buildKey != "MY_GEMINI_API_KEY" -> buildKey
+                    else -> ""
                 }
+                if (primaryKey.isBlank()) {
+                    throw IllegalStateException("Gemini API Key eksik. Lütfen Ayarlar -> AI Model Ayarları menüsünden Gemini API Key girin.")
+                }
+                val gModelName = modelName.ifBlank { settings.geminiModel.ifBlank { "gemini-2.5-flash" } }
                 GeminiAdapter(
                     apiKey = primaryKey,
-                    model = modelName,
+                    model = gModelName,
                     providerName = "gemini",
                     enableNsfw = settings.enableNsfw,
                     supportsFC = true
