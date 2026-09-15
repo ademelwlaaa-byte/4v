@@ -1453,6 +1453,9 @@ class EmochiRepository(
         result = result
             .replace(Regex("""(?is)<think>.*?</think>"""), "")
             .replace(Regex("""(?is)<reasoning>.*?</reasoning>"""), "")
+            .replace(Regex("""(?is)\[\[?CHARACTER_EMOTION.*?(?:\]\]?|\[/CHARACTER_EMOTION\]\]?)"""), "")
+            .replace(Regex("""(?is)\[\[?WORLD_ATMOSPHERE.*?(?:\]\]?|\[/WORLD_ATMOSPHERE\]\]?)"""), "")
+            .replace(Regex("""(?is)\[\[?EMOTION_UPDATE.*?(?:\]\]?|\[/EMOTION_UPDATE\]\]?)"""), "")
             .replace(Regex("""(?is)\[\[STATE_JSON\s*\{.*?\}\s*\]\]"""), "")
             .replace(Regex("""(?is)\[\[STATE\s+affectionScore=.*?\]\]"""), "")
             .replace(Regex("""(?is)\[\[STATE.*?\]\]"""), "")
@@ -1466,7 +1469,11 @@ class EmochiRepository(
                     l.startsWith("\"suppressed_emotion\"") || l.startsWith("\"computed_secondary_emotion\"") ||
                     l.startsWith("\"self_check\"") || l.startsWith("\"schemaversion\"") ||
                     l.startsWith("[emotion_update") || l.startsWith("[character_emotion") ||
-                    l.startsWith("[world_atmosphere") || l.startsWith("[[state")
+                    l.startsWith("[world_atmosphere") || l.startsWith("[[state") ||
+                    l.startsWith("mood:") || l.startsWith("secondary_mood:") || l.startsWith("suppressed_emotion:") ||
+                    l.startsWith("intensity:") || l.startsWith("current_event:") || l.startsWith("macro_atmosphere:") ||
+                    l.startsWith("micro_atmosphere:") || l.startsWith("[/character_emotion") || l.startsWith("[/world_atmosphere") ||
+                    l.startsWith("[/emotion_update")
         }
 
         val cleaned = cleanLines.joinToString("\n").trim()
@@ -1617,64 +1624,16 @@ class EmochiRepository(
 
             [[STATE_JSON
             {
-              "primary_emotions": {
-                "joy": <0-100>, "trust": <0-100>, "fear": <0-100>, "anger": <0-100>,
-                "sadness": <0-100>, "anticipation": <0-100>, "surprise": <0-100>, "disgust": <0-100>
-              },
-              "relationship_axes": {
-                "affectionScore": <0-100>, "respectScore": <0-100>,
-                "comfortScore": <0-100>, "resentmentScore": <0-100>
-              },
-              "physicalComfortScore": <0-100>,
-              "obsessionScore": <0-100>,
-              "emotionalResidue": <0-100>,
-              "dominant_emotion": "<birincil baskın duygu>",
-              "suppressed_emotion": "<bastırılmış içsel duygu veya null>",
-              "delta": {
-                "axis": "<ör. affectionScore>",
-                "value": <değişim miktarı, ör. +2, -5, 0>,
-                "reason": "<2-5 kelimelik kısa açıklama>",
-                "context": {
-                  "setting": "<public|private>",
-                  "mode": "<formal|casual>",
-                  "tension": "<none|conflict|crisis>"
-                }
-              },
-              "world_state": {
-                "macro": {
-                  "era_rules": "<makro dönem kuralı>",
-                  "factions_hierarchy": "<hiyerarşi>",
-                  "global_tension_level": <0-100>,
-                  "active_world_events": []
-                },
-                "meso": {
-                  "current_location": "<bulunulan mekan>",
-                  "time_of_day": "<günün saati>",
-                  "weather": "<hava durumu>",
-                  "who_is_present": ["<sahnede olanlar>"],
-                  "location_persistent_notes": "<mekan notu>"
-                },
-                "micro": {
-                  "scene_tension": "<none|conflict|crisis>",
-                  "scene_mood": "<anlık ortam havası>",
-                  "recent_trigger_event": null
-                },
-                "last_updated_message_index": $totalMessageCount
-              },
-              "self_check": {
-                "is_delta_justified_by_scene": true,
-                "is_expression_consistent_with_attachment_style": true,
-                "did_i_skip_a_stage": false,
-                "did_i_contradict_recent_emotional_state": false
-              },
+              "primary_emotions": {"joy": 0, "trust": 50, "fear": 0, "anger": 0, "sadness": 0, "anticipation": 0, "surprise": 0, "disgust": 0},
+              "relationship_axes": {"aff": <0-100>, "rsp": <0-100>, "cmf": <0-100>, "res": <0-100>},
+              "p_cmf": <0-100>, "obs": <0-100>, "dom": "<baskın duygu>", "sup": "<bastırılmış duygu>",
+              "delta": {"ax": "aff", "val": <değişim, ör. +2, -5, 0>, "rsn": "<2-5 kelimelik sebep>", "context": {"stg": "<p|v>", "md": "<f|c>", "tns": "<n|c|k>"}},
+              "self_check": {"is_delta_justified_by_scene": true, "is_expression_consistent_with_attachment_style": true, "did_i_skip_a_stage": false, "did_i_contradict_recent_emotional_state": false},
               "schemaVersion": 2
             }
             ]]
 
-            - reason: ASLA cümle yazma. Sadece 2-5 kelimelik kısa bir etiket yaz (ör. "samimi anı", "iş konuşması", "kırgınlık").
-            - setting: public (başkaları var, çarpan 0.3) veya private (baş başa, çarpan 1.0).
-            - mode: formal (resmi etkileşim, çarpan 0.3) veya casual (samimi, çarpan 1.0).
-            - tension: none (sakin, 1.0), conflict (gerginlik, 0.1), crisis (kriz anı, 0.0 - tüm artışlar kilitlenir).
+            - rsn: Max 2-5 kelimelik etiket. stg: p (public), v (private). md: f (formal), c (casual). tns: n (none), c (conflict), k (crisis).
         """.trimIndent()
 
         val injectionProtection = """
@@ -2867,15 +2826,21 @@ micro_atmosphere: <mikro mekan/fiziksel ortam/ışık/ses/gerilim>
         messages: List<MessageEntity>,
         modelName: String
     ): Pair<BotEntity, List<MessageEntity>> {
-        if (messages.size <= 8) return Pair(bot, messages)
+        val maxWindow = when {
+            modelName.contains("deepseek") || modelName.contains("gemini") -> 30
+            modelName.contains("claude") || modelName.contains("gpt") || modelName.contains("llama") -> 20
+            else -> 15
+        }
+        val activeMessages = if (messages.size > maxWindow) messages.takeLast(maxWindow) else messages
+        if (activeMessages.size <= 8) return Pair(bot, activeMessages)
 
         val modelLimit = getModelContextLimit(modelName)
         val maxBudgetTokens = (modelLimit * 0.75).toInt().coerceAtMost(24_000)
 
-        val userQuery = messages.lastOrNull { it.role == "user" }?.text ?: ""
+        val userQuery = activeMessages.lastOrNull { it.role == "user" }?.text ?: ""
         val relevantFragments = getRelevantMemoryFragments(bot, userQuery)
         val currentSysPrompt = buildSystemPrompt(bot, getOrCreateSettings(), relevantFragments = relevantFragments)
-        val currentTokens = estimateTotalTokens(currentSysPrompt, messages)
+        val currentTokens = estimateTotalTokens(currentSysPrompt, activeMessages)
 
         val isCriticallyFull = (currentTokens > maxBudgetTokens * 0.9) || (messages.size > 50)
         val exceedsTriggerThreshold = messages.size > 22
@@ -2898,7 +2863,7 @@ micro_atmosphere: <mikro mekan/fiziksel ortam/ışık/ses/gerilim>
             }
         }
 
-        return Pair(bot, messages)
+        return Pair(bot, activeMessages)
     }
 
     suspend fun performBackgroundSummarization(botId: String) = withContext(Dispatchers.IO) {

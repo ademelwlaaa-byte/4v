@@ -166,11 +166,15 @@ data class RelationshipAxes(
     companion object {
         fun fromJsonObject(json: JSONObject?): RelationshipAxes {
             if (json == null) return RelationshipAxes()
+            val aff = if (json.has("aff")) json.optInt("aff", 50) else json.optInt("affectionScore", 50)
+            val rsp = if (json.has("rsp")) json.optInt("rsp", 50) else json.optInt("respectScore", 50)
+            val cmf = if (json.has("cmf")) json.optInt("cmf", 50) else json.optInt("comfortScore", 50)
+            val res = if (json.has("res")) json.optInt("res", 0) else json.optInt("resentmentScore", 0)
             return RelationshipAxes(
-                affectionScore = json.optInt("affectionScore", 50).coerceIn(0, 100),
-                respectScore = json.optInt("respectScore", 50).coerceIn(0, 100),
-                comfortScore = json.optInt("comfortScore", 50).coerceIn(0, 100),
-                resentmentScore = json.optInt("resentmentScore", 0).coerceIn(0, 100)
+                affectionScore = aff.coerceIn(0, 100),
+                respectScore = rsp.coerceIn(0, 100),
+                comfortScore = cmf.coerceIn(0, 100),
+                resentmentScore = res.coerceIn(0, 100)
             )
         }
     }

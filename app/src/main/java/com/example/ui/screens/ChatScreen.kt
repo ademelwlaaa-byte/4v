@@ -3853,6 +3853,11 @@ fun BookReaderView(
 
 fun cleanCopyText(rawText: String): String {
     return rawText
+        .replace(Regex("""(?is)<think>.*?</think>"""), "")
+        .replace(Regex("""(?is)<reasoning>.*?</reasoning>"""), "")
+        .replace(Regex("""(?is)\[\[?CHARACTER_EMOTION.*?(?:\]\]?|\[/CHARACTER_EMOTION\]\]?)"""), "")
+        .replace(Regex("""(?is)\[\[?WORLD_ATMOSPHERE.*?(?:\]\]?|\[/WORLD_ATMOSPHERE\]\]?)"""), "")
+        .replace(Regex("""(?is)\[\[?EMOTION_UPDATE.*?(?:\]\]?|\[/EMOTION_UPDATE\]\]?)"""), "")
         .replace(Regex("""(?is)\[\[STATE_JSON\s*\{.*?\}\s*\]\]"""), "")
         .replace(Regex("""(?is)\[\[STATE\s+affectionScore=.*?\]\]"""), "")
         .replace(Regex("""(?is)\[\[STATE.*?\]\]"""), "")
