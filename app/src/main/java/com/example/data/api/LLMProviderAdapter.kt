@@ -361,11 +361,10 @@ object LLMAdapterFactory {
                 )
             }
             providerKey == "pollinations" -> {
-                val pModel = if (modelName.contains("openai") || modelName.contains("mistral") || modelName.contains("llama") || modelName.contains("qwen") || modelName.contains("deepseek")) modelName else settings.pollinationsModel.ifBlank { "openai" }
                 GenericOpenAICompatibleAdapter(
                     endpointUrl = "https://text.pollinations.ai/openai/chat/completions",
                     apiKey = "unused",
-                    model = pModel,
+                    model = "openai",
                     providerName = "pollinations",
                     supportsFC = false,
                     reliabilityTier = ReliabilityTier.SECONDARY
@@ -375,7 +374,7 @@ object LLMAdapterFactory {
                 GenericOpenAICompatibleAdapter(
                     endpointUrl = "https://llama-3-70b-instruct.endpoints.kepler.ai.cloud.ovh.net/v1/chat/completions",
                     apiKey = "unused",
-                    model = modelName.ifBlank { "meta-llama/Meta-Llama-3-70B-Instruct" },
+                    model = "meta-llama/Meta-Llama-3-70B-Instruct",
                     providerName = "ovh",
                     supportsFC = false,
                     reliabilityTier = ReliabilityTier.SECONDARY
@@ -384,7 +383,11 @@ object LLMAdapterFactory {
             providerKey == "openrouter" -> {
                 val apiKey = settings.openRouterApiKey
                 if (apiKey.isBlank()) throw IllegalStateException("OpenRouter API Key eksik.")
-                val mName = modelName.ifBlank { settings.openRouterModel.ifBlank { "deepseek/deepseek-chat" } }
+                val mName = when {
+                    modelName.contains("/") -> modelName
+                    settings.openRouterModel.contains("/") -> settings.openRouterModel
+                    else -> "deepseek/deepseek-chat"
+                }
                 GenericOpenAICompatibleAdapter(
                     endpointUrl = "https://openrouter.ai/api/v1/chat/completions",
                     apiKey = apiKey,
@@ -397,7 +400,11 @@ object LLMAdapterFactory {
             providerKey == "nvidia" -> {
                 val apiKey = settings.nvidiaApiKey
                 if (apiKey.isBlank()) throw IllegalStateException("NVIDIA NIM API Key eksik.")
-                val mName = modelName.ifBlank { settings.nvidiaModel.ifBlank { "meta/llama-3.3-70b-instruct" } }
+                val mName = when {
+                    modelName.contains("/") -> modelName
+                    settings.nvidiaModel.contains("/") -> settings.nvidiaModel
+                    else -> "meta/llama-3.3-70b-instruct"
+                }
                 GenericOpenAICompatibleAdapter(
                     endpointUrl = "https://integrate.api.nvidia.com/v1/chat/completions",
                     apiKey = apiKey,
@@ -410,7 +417,11 @@ object LLMAdapterFactory {
             providerKey == "mistral" -> {
                 val apiKey = settings.mistralApiKey
                 if (apiKey.isBlank()) throw IllegalStateException("Mistral API Key eksik.")
-                val mName = modelName.ifBlank { settings.mistralModel.ifBlank { "mistral-large-latest" } }
+                val mName = when {
+                    modelName.contains("mistral") || modelName.contains("pixtral") -> modelName
+                    settings.mistralModel.isNotBlank() -> settings.mistralModel
+                    else -> "mistral-large-latest"
+                }
                 GenericOpenAICompatibleAdapter(
                     endpointUrl = "https://api.mistral.ai/v1/chat/completions",
                     apiKey = apiKey,
@@ -457,8 +468,11 @@ object LLMAdapterFactory {
             providerKey == "groq" -> {
                 val apiKey = settings.groqApiKey.ifBlank { settings.customApiKey }
                 if (apiKey.isBlank()) throw IllegalStateException("Groq API Key eksik. Lütfen Ayarlar -> AI Model Ayarları menüsünden Groq API Key girin.")
-                val rawModel = if (modelName.contains("llama") || modelName.contains("groq") || modelName.contains("mixtral") || modelName.contains("gemma")) modelName else settings.groqModel.ifBlank { "llama-3.3-70b-versatile" }
-                val mName = if (rawModel.contains("deepseek-r1-distill-llama") || rawModel.contains("llama3-70b") || rawModel.contains("llama3-8b")) "llama-3.3-70b-versatile" else rawModel
+                val mName = when {
+                    modelName.contains("mixtral") -> "mixtral-8x7b-32768"
+                    modelName.contains("gemma") -> "gemma2-9b-it"
+                    else -> "llama-3.3-70b-versatile"
+                }
                 GenericOpenAICompatibleAdapter(
                     endpointUrl = "https://api.groq.com/openai/v1/chat/completions",
                     apiKey = apiKey,
@@ -470,7 +484,11 @@ object LLMAdapterFactory {
             providerKey == "claude" -> {
                 val apiKey = settings.claudeApiKey
                 if (apiKey.isBlank()) throw IllegalStateException("Claude API Key eksik. Lütfen Ayarlar -> AI Model Ayarları menüsünden Claude API Key girin.")
-                val mName = if (modelName.contains("claude")) modelName else settings.claudeModel.ifBlank { "claude-3-5-sonnet-20241022" }
+                val mName = when {
+                    modelName.contains("claude") -> modelName
+                    settings.claudeModel.contains("claude") -> settings.claudeModel
+                    else -> "claude-3-5-sonnet-20241022"
+                }
                 GenericAnthropicCompatibleAdapter(
                     apiKey = apiKey,
                     model = mName,
@@ -478,23 +496,31 @@ object LLMAdapterFactory {
                     supportsFC = true
                 )
             }
-            providerKey == "openai" || providerKey == "deepseek" -> {
-                val isDeepseek = modelName.contains("deepseek") || providerKey == "deepseek"
-                val url = if (isDeepseek) "https://api.deepseek.com/chat/completions" else "https://api.openai.com/v1/chat/completions"
-                val apiKey = settings.openaiApiKey.ifBlank { settings.groqApiKey }
+            providerKey == "openai" -> {
+                val apiKey = settings.openaiApiKey
                 if (apiKey.isBlank()) throw IllegalStateException("OpenAI API Key eksik. Lütfen Ayarlar -> AI Model Ayarları menüsünden OpenAI API Key girin.")
-                
                 val mName = when {
-                    isDeepseek -> if (modelName.contains("deepseek")) modelName else "deepseek-chat"
                     modelName.startsWith("gpt-") || modelName.startsWith("o1") || modelName.startsWith("o3") -> modelName
                     settings.openaiModel.startsWith("gpt-") || settings.openaiModel.startsWith("o1") || settings.openaiModel.startsWith("o3") -> settings.openaiModel
                     else -> "gpt-4o"
                 }
                 GenericOpenAICompatibleAdapter(
-                    endpointUrl = url,
+                    endpointUrl = "https://api.openai.com/v1/chat/completions",
                     apiKey = apiKey,
                     model = mName,
-                    providerName = if (isDeepseek) "deepseek" else "openai",
+                    providerName = "openai",
+                    supportsFC = true
+                )
+            }
+            providerKey == "deepseek" -> {
+                val apiKey = settings.openaiApiKey.ifBlank { settings.groqApiKey }
+                if (apiKey.isBlank()) throw IllegalStateException("DeepSeek API Key (OpenAI API Key alanına yazılan) eksik.")
+                val mName = if (modelName.contains("reasoner") || modelName.contains("r1")) "deepseek-reasoner" else "deepseek-chat"
+                GenericOpenAICompatibleAdapter(
+                    endpointUrl = "https://api.deepseek.com/chat/completions",
+                    apiKey = apiKey,
+                    model = mName,
+                    providerName = "deepseek",
                     supportsFC = true
                 )
             }
@@ -512,7 +538,8 @@ object LLMAdapterFactory {
                 val rawGModel = if (modelName.contains("gemini")) modelName else settings.geminiModel.ifBlank { "gemini-2.0-flash" }
                 val gModelName = when {
                     rawGModel.contains("2.5") || rawGModel.contains("3.5") || rawGModel == "gemini-1.5-flash" -> "gemini-2.0-flash"
-                    else -> rawGModel
+                    rawGModel.contains("pro") -> "gemini-1.5-pro"
+                    else -> "gemini-2.0-flash"
                 }
                 GeminiAdapter(
                     apiKey = primaryKey,
