@@ -411,20 +411,36 @@ fun GlobalSettingsModal(
             description = "Üst düzey zeka, derin kurgu ve detaylı roman kalitesinde tutarlı karakter anlatımı."
         ),
         ModelSpec(
-            key = "llama-3.3-70b-versatile",
-            name = "Groq Llama 3.3 70B",
+            key = "openai/gpt-oss-120b",
+            name = "Groq GPT-OSS 120B",
             provider = "Groq API",
             tokenCostRate = "🟡 Orta (~1.0x Token)",
             badgeColor = Color(0xFFFF9800),
-            description = "Groq sunucularında ultra hızlı yanıt süresi ve doğal Türkçe rol yapma kabiliyeti."
+            description = "Groq Production katmanında ultra hızlı ve yüksek zekalı açık kaynak model."
         ),
         ModelSpec(
-            key = "llama-3.1-8b-instant",
-            name = "Groq Llama 3.1 8B",
+            key = "openai/gpt-oss-20b",
+            name = "Groq GPT-OSS 20B",
             provider = "Groq API",
             tokenCostRate = "🟢 Düşük (~0.5x Token)",
             badgeColor = Color(0xFF4CAF50),
-            description = "Groq sunucularında anlık ultra hızlı ve pratik sohbet yanıtları."
+            description = "Groq Production katmanında anlık ultra hızlı ve pratik sohbet yanıtları."
+        ),
+        ModelSpec(
+            key = "qwen/qwen3.6-27b",
+            name = "Groq Qwen 3.6 27B",
+            provider = "Groq API",
+            tokenCostRate = "🟡 Orta (~1.0x Token)",
+            badgeColor = Color(0xFF9C27B0),
+            description = "Qwen 3.6 27B deneysel model. (Preview katmanında)"
+        ),
+        ModelSpec(
+            key = "qwen/qwen3.8-27b",
+            name = "Groq Qwen 3.8 27B",
+            provider = "Groq API",
+            tokenCostRate = "🟡 Orta (~1.0x Token)",
+            badgeColor = Color(0xFFE91E63),
+            description = "Qwen 3.8 27B en son yayınlanan deneysel model. (Preview katmanında)"
         ),
         ModelSpec(
             key = "claude-3-5-sonnet-20241022",
@@ -3157,6 +3173,10 @@ fun GlobalSettingsModal(
                                         backupApiKey = backupApiKey.trim(),
                                         selectedProvider = selectedProvider,
                                         selectedModel = selectedModel,
+                                        groqModel = if (selectedProvider == "groq") selectedModel else settings.groqModel,
+                                        openaiModel = if (selectedProvider == "openai") selectedModel else settings.openaiModel,
+                                        geminiModel = if (selectedProvider == "gemini") selectedModel else settings.geminiModel,
+                                        claudeModel = if (selectedProvider == "claude") selectedModel else settings.claudeModel,
                                         fallbackModel = fallbackModel,
                                         responseLength = responseLength,
                                         enableNsfw = enableNsfw,

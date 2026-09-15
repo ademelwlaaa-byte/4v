@@ -45,7 +45,7 @@ data class UserSettingsEntity(
     val mistralModel: String = "mistral-large-latest",
     val geminiModel: String = "gemini-2.0-flash",
     val claudeModel: String = "claude-3-5-sonnet-20241022",
-    val groqModel: String = "llama-3.3-70b-versatile",
+    val groqModel: String = "openai/gpt-oss-120b",
     val openaiModel: String = "gpt-4o"
 )
 

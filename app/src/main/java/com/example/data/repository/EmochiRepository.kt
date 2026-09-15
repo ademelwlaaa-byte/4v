@@ -2786,7 +2786,7 @@ micro_atmosphere: <mikro mekan/fiziksel ortam/ışık/ses/gerilim>
     private fun sanitizeModelName(model: String): String {
         val clean = model.trim().lowercase()
         return when {
-            clean == "deepseek-r1-distill-llama-70b" || clean.contains("decommissioned") || clean == "llama3-70b-8192" || clean == "llama3-8b-8192" -> "llama-3.3-70b-versatile"
+            clean.contains("llama-3.3-70b-versatile") || clean.contains("llama-3.1-8b-instant") || clean.contains("deepseek-r1-distill") || clean.contains("decommissioned") || clean == "llama3-70b-8192" || clean == "llama3-8b-8192" || clean == "qwen/qwen3-32b" || clean == "qwen3-32b" -> "openai/gpt-oss-120b"
             clean == "gemini-2.5-flash" || clean == "gemini-3.5-flash" || clean == "gemini-2.0-flash" || clean == "gemini-1.5-flash" -> "gemini-2.0-flash"
             clean == "gemini-2.5-pro" || clean == "gemini-2.0-pro" || clean == "gemini-1.5-pro" || clean == "gemini-2.0-flash-thinking" -> "gemini-1.5-pro"
             clean.isEmpty() -> "gemini-2.0-flash"
@@ -3284,7 +3284,7 @@ micro_atmosphere: <mikro mekan/fiziksel ortam/ışık/ses/gerilim>
                         } ?: availableModels.firstOrNull()
 
                         val fallbackToUse = discoveredModel ?: when {
-                            endpointUrl.contains("groq.com") -> "llama-3.3-70b-versatile"
+                            endpointUrl.contains("groq.com") -> "openai/gpt-oss-120b"
                             endpointUrl.contains("deepseek.com") -> "deepseek-chat"
                             endpointUrl.contains("openai.com") -> "gpt-4o-mini"
                             else -> "meta-llama/llama-3.3-70b-instruct"
@@ -4461,6 +4461,27 @@ Tebrikler! Bölüm 3'ü başarıyla tamamladın."""
         throw lastError ?: IllegalStateException("Sağlayıcı yanıt üretemedi.")
     }
 
+    private fun resolveModelForProvider(
+        providerKey: String,
+        settings: UserSettingsEntity,
+        customProvider: com.example.data.local.CustomProviderEntity? = null
+    ): String {
+        return when {
+            providerKey == "groq" -> sanitizeModelName(settings.groqModel.ifBlank { "openai/gpt-oss-120b" })
+            providerKey == "openai" -> settings.openaiModel.ifBlank { "gpt-4o" }
+            providerKey == "gemini" -> sanitizeModelName(settings.geminiModel.ifBlank { "gemini-2.0-flash" })
+            providerKey == "claude" -> settings.claudeModel.ifBlank { "claude-3-5-sonnet-20241022" }
+            providerKey == "openrouter" -> settings.openRouterModel.ifBlank { "deepseek/deepseek-chat" }
+            providerKey == "nvidia" -> settings.nvidiaModel.ifBlank { "deepseek-ai/deepseek-v4-flash" }
+            providerKey == "mistral" -> settings.mistralModel.ifBlank { "mistral-large-latest" }
+            providerKey == "pollinations" -> settings.pollinationsModel.ifBlank { "openai" }
+            providerKey == "ovh" -> settings.ovhModel.ifBlank { "meta-llama/Meta-Llama-3-70B-Instruct" }
+            providerKey == "llm7" -> "default"
+            providerKey.startsWith("custom_") -> customProvider?.modelName ?: ""
+            else -> sanitizeModelName(settings.geminiModel.ifBlank { "gemini-2.0-flash" })
+        }
+    }
+
     private suspend fun tryExecuteProviderByKey(
         key: String,
         model: String,
@@ -4486,21 +4507,29 @@ Tebrikler! Bölüm 3'ü başarıyla tamamladın."""
                     return null
                 }
                 val isCustom = settings.selectedProvider.startsWith("custom_")
+                val customId = if (isCustom) settings.selectedProvider.removePrefix("custom_").toLongOrNull() else null
+                val cp = if (customId != null) customProvidersMap[customId] else null
+                val activeModel = resolveModelForProvider(settings.selectedProvider, settings, cp)
                 val label = if (isCustom) {
-                    val customId = settings.selectedProvider.removePrefix("custom_").toLongOrNull()
-                    val cp = if (customId != null) customProvidersMap[customId] else null
-                    "Özel Sağlayıcı (Katman 0): ${cp?.label ?: settings.selectedProvider} (${cp?.modelName ?: model})"
+                    "Özel Sağlayıcı (Katman 0): ${cp?.label ?: settings.selectedProvider} (${cp?.modelName ?: activeModel})"
                 } else {
-                    "Ana Seçim (${settings.selectedProvider})"
+                    "Ana Seçim (${settings.selectedProvider}: $activeModel)"
                 }
                 val currentLayer = if (isCustom) 0 else 1
                 logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "TRYING", layer = currentLayer))
                 try {
-                    val result = executeSingleModelRequest(model, settings, systemPrompt, messages, botId)
+                    val result = executeSingleModelRequest(activeModel, settings, systemPrompt, messages, botId)
                     logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "SUCCESS", layer = currentLayer))
                     return result
                 } catch (e: Exception) {
-                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "FAILED", errorMessage = e.message ?: e.toString(), layer = currentLayer))
+                    val errRaw = e.message ?: e.toString()
+                    val errLower = errRaw.lowercase()
+                    val isQwenPreview = activeModel.contains("qwen") || settings.groqModel.contains("qwen")
+                    val is404 = errLower.contains("404") || errLower.contains("not found") || errLower.contains("not_found") || errLower.contains("does not exist")
+                    val finalErrMsg = if (settings.selectedProvider == "groq" && isQwenPreview && is404) {
+                        "Bu Qwen modeli Groq tarafından kaldırılmış olabilir (Preview modeller kısa bildirimle kalkabilir), lütfen openai/gpt-oss-120b'ye geçin veya modelleri yenileyin."
+                    } else errRaw
+                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "FAILED", errorMessage = finalErrMsg, layer = currentLayer))
                 }
             }
             key == "llm7" -> {
@@ -4673,7 +4702,7 @@ Tebrikler! Bölüm 3'ü başarıyla tamamladın."""
             }
             key == "groq" -> {
                 if (settings.selectedProvider == "groq" || settings.groqApiKey.isBlank()) return null
-                val gModel = settings.groqModel.ifBlank { "llama-3.3-70b-versatile" }
+                val gModel = sanitizeModelName(settings.groqModel.ifBlank { "openai/gpt-oss-120b" })
                 val label = "Groq ($gModel)"
                 logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "TRYING", layer = layer))
                 try {
@@ -4682,7 +4711,14 @@ Tebrikler! Bölüm 3'ü başarıyla tamamladın."""
                     logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "SUCCESS", layer = layer))
                     return com.example.data.api.ModelResponseResult(resp.text, resp.toolCalls ?: emptyList(), resp.usage?.promptTokens ?: 0L, resp.usage?.candidateTokens ?: 0L, resp.usedProvider)
                 } catch (e: Exception) {
-                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "FAILED", errorMessage = e.message ?: e.toString(), layer = layer))
+                    val errRaw = e.message ?: e.toString()
+                    val errLower = errRaw.lowercase()
+                    val isQwenPreview = gModel.contains("qwen")
+                    val is404 = errLower.contains("404") || errLower.contains("not found") || errLower.contains("not_found") || errLower.contains("does not exist")
+                    val finalErrMsg = if (isQwenPreview && is404) {
+                        "Bu Qwen modeli Groq tarafından kaldırılmış olabilir (Preview modeller kısa bildirimle kalkabilir), lütfen openai/gpt-oss-120b'ye geçin veya modelleri yenileyin."
+                    } else errRaw
+                    logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "FAILED", errorMessage = finalErrMsg, layer = layer))
                 }
             }
             key == "openai" -> {

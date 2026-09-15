@@ -469,9 +469,11 @@ object LLMAdapterFactory {
                 val apiKey = settings.groqApiKey.ifBlank { settings.customApiKey }
                 if (apiKey.isBlank()) throw IllegalStateException("Groq API Key eksik. Lütfen Ayarlar -> AI Model Ayarları menüsünden Groq API Key girin.")
                 val mName = when {
+                    modelName.startsWith("openai/") || modelName.startsWith("qwen/") -> modelName
                     modelName.contains("mixtral") -> "mixtral-8x7b-32768"
                     modelName.contains("gemma") -> "gemma2-9b-it"
-                    else -> "llama-3.3-70b-versatile"
+                    settings.groqModel.isNotBlank() && (settings.groqModel.startsWith("openai/") || settings.groqModel.startsWith("qwen/")) -> settings.groqModel
+                    else -> "openai/gpt-oss-120b"
                 }
                 GenericOpenAICompatibleAdapter(
                     endpointUrl = "https://api.groq.com/openai/v1/chat/completions",

@@ -266,7 +266,7 @@ val MIGRATION_27_28 = object : Migration(27, 28) {
         ImplicitCorrectionLogEntity::class,
         ArchivedMemoryEntity::class
     ],
-    version = 35,
+    version = 36,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -333,7 +333,7 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE user_settings ADD COLUMN opencodeZenApiKey TEXT NOT NULL DEFAULT ''")
                 db.execSQL("ALTER TABLE user_settings ADD COLUMN geminiModel TEXT NOT NULL DEFAULT 'gemini-2.5-flash'")
                 db.execSQL("ALTER TABLE user_settings ADD COLUMN claudeModel TEXT NOT NULL DEFAULT 'claude-3-5-sonnet-20241022'")
-                db.execSQL("ALTER TABLE user_settings ADD COLUMN groqModel TEXT NOT NULL DEFAULT 'llama-3.3-70b-versatile'")
+                db.execSQL("ALTER TABLE user_settings ADD COLUMN groqModel TEXT NOT NULL DEFAULT 'openai/gpt-oss-120b'")
                 db.execSQL("ALTER TABLE user_settings ADD COLUMN openaiModel TEXT NOT NULL DEFAULT 'gpt-4o'")
             }
         }
@@ -383,7 +383,7 @@ abstract class AppDatabase : RoomDatabase() {
                         "`mistralModel` TEXT NOT NULL DEFAULT 'mistral-large-latest', " +
                         "`geminiModel` TEXT NOT NULL DEFAULT 'gemini-2.5-flash', " +
                         "`claudeModel` TEXT NOT NULL DEFAULT 'claude-3-5-sonnet-20241022', " +
-                        "`groqModel` TEXT NOT NULL DEFAULT 'llama-3.3-70b-versatile', " +
+                        "`groqModel` TEXT NOT NULL DEFAULT 'openai/gpt-oss-120b', " +
                         "`openaiModel` TEXT NOT NULL DEFAULT 'gpt-4o'" +
                         ")"
                 )
@@ -413,7 +413,7 @@ abstract class AppDatabase : RoomDatabase() {
                         "COALESCE(nvidiaApiKey, ''), COALESCE(nvidiaModel, 'deepseek-ai/deepseek-v4-flash'), " +
                         "COALESCE(mistralApiKey, ''), COALESCE(mistralModel, 'mistral-large-latest'), " +
                         "COALESCE(geminiModel, 'gemini-2.5-flash'), COALESCE(claudeModel, 'claude-3-5-sonnet-20241022'), " +
-                        "COALESCE(groqModel, 'llama-3.3-70b-versatile'), COALESCE(openaiModel, 'gpt-4o') " +
+                        "COALESCE(groqModel, 'openai/gpt-oss-120b'), COALESCE(openaiModel, 'gpt-4o') " +
                         "FROM `user_settings`"
                 )
 
@@ -487,7 +487,7 @@ abstract class AppDatabase : RoomDatabase() {
                         "`mistralModel` TEXT NOT NULL DEFAULT 'mistral-large-latest', " +
                         "`geminiModel` TEXT NOT NULL DEFAULT 'gemini-2.5-flash', " +
                         "`claudeModel` TEXT NOT NULL DEFAULT 'claude-3-5-sonnet-20241022', " +
-                        "`groqModel` TEXT NOT NULL DEFAULT 'llama-3.3-70b-versatile', " +
+                        "`groqModel` TEXT NOT NULL DEFAULT 'openai/gpt-oss-120b', " +
                         "`openaiModel` TEXT NOT NULL DEFAULT 'gpt-4o'" +
                         ")"
                 )
@@ -532,7 +532,7 @@ abstract class AppDatabase : RoomDatabase() {
                 val mistralModelSel = colExpr("mistralModel", "'mistral-large-latest'")
                 val geminiModelSel = colExpr("geminiModel", "'gemini-2.5-flash'")
                 val claudeModelSel = colExpr("claudeModel", "'claude-3-5-sonnet-20241022'")
-                val groqModelSel = colExpr("groqModel", "'llama-3.3-70b-versatile'")
+                val groqModelSel = colExpr("groqModel", "'openai/gpt-oss-120b'")
                 val openaiModelSel = colExpr("openaiModel", "'gpt-4o'")
 
                 db.execSQL(
@@ -609,6 +609,13 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_35_36 = object : Migration(35, 36) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("UPDATE user_settings SET groqModel = 'openai/gpt-oss-120b' WHERE groqModel LIKE '%llama%' OR groqModel LIKE '%deepseek%' OR groqModel LIKE '%versatile%' OR groqModel LIKE '%instant%' OR groqModel LIKE '%qwen3-32b%'")
+                db.execSQL("UPDATE user_settings SET selectedModel = 'openai/gpt-oss-120b' WHERE selectedModel LIKE '%llama%' OR selectedModel LIKE '%deepseek%' OR selectedModel LIKE '%versatile%' OR selectedModel LIKE '%instant%' OR selectedModel LIKE '%qwen3-32b%'")
+            }
+        }
+
         @Volatile
         private var INSTANCE: AppDatabase? = null
 
@@ -645,7 +652,8 @@ abstract class AppDatabase : RoomDatabase() {
                         MIGRATION_31_32,
                         MIGRATION_32_33,
                         MIGRATION_33_34,
-                        MIGRATION_34_35
+                        MIGRATION_34_35,
+                        MIGRATION_35_36
                     )
                     .fallbackToDestructiveMigration(dropAllTables = true)
                     .build()
