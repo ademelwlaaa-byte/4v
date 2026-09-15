@@ -395,24 +395,16 @@ fun GlobalSettingsModal(
             description = "API Key gerektirmeyen tamamen ücretsiz OpenAI uyumlu servis. Öncelik modunda varsayılan olarak denenir."
         ),
         ModelSpec(
-            key = "gemini-2.5-flash",
-            name = "Gemini 2.5 Flash",
+            key = "gemini-2.0-flash",
+            name = "Gemini 2.0 Flash",
             provider = "Google Gemini",
             tokenCostRate = "🟢 Düşük (~0.5x Token)",
             badgeColor = Color(0xFF4CAF50),
             description = "En gelişmiş, dengeli ve hızlı Gemini modeli. Düşük token harcaması ile yüksek kaliteli rol yapma yanıtları verir."
         ),
         ModelSpec(
-            key = "gemini-3.5-flash",
-            name = "Gemini 3.5 Flash",
-            provider = "Google Gemini",
-            tokenCostRate = "⚡ Hızlı & Yeni Nesil",
-            badgeColor = Color(0xFF00BCD4),
-            description = "Yeni nesil ultra hızlı yanıt süresi. Karmaşık senaryolar ve sohbetler için optimize edilmiştir."
-        ),
-        ModelSpec(
-            key = "gemini-2.5-pro",
-            name = "Gemini 2.5 Pro",
+            key = "gemini-1.5-pro",
+            name = "Gemini 1.5 Pro",
             provider = "Google Gemini",
             tokenCostRate = "🔴 Yüksek (~2.5x Token)",
             badgeColor = Color(0xFFE91E63),
@@ -427,12 +419,12 @@ fun GlobalSettingsModal(
             description = "Groq sunucularında ultra hızlı yanıt süresi ve doğal Türkçe rol yapma kabiliyeti."
         ),
         ModelSpec(
-            key = "deepseek-r1-distill-llama-70b",
-            name = "Groq DeepSeek R1",
+            key = "llama-3.1-8b-instant",
+            name = "Groq Llama 3.1 8B",
             provider = "Groq API",
-            tokenCostRate = "🔴 Yüksek (~2.0x Token)",
-            badgeColor = Color(0xFF9C27B0),
-            description = "Derin mantık ve karmaşık kurgu senaryolarında akıl yürütme odaklı karakter yanıtları."
+            tokenCostRate = "🟢 Düşük (~0.5x Token)",
+            badgeColor = Color(0xFF4CAF50),
+            description = "Groq sunucularında anlık ultra hızlı ve pratik sohbet yanıtları."
         ),
         ModelSpec(
             key = "claude-3-5-sonnet-20241022",
@@ -449,6 +441,14 @@ fun GlobalSettingsModal(
             tokenCostRate = "🟡 Orta (~1.2x Token)",
             badgeColor = Color(0xFFFFC107),
             description = "Hızlı ve seri Claude kalitesi. Kısa ve orta boy diyaloglar için ideal."
+        ),
+        ModelSpec(
+            key = "gpt-4o",
+            name = "OpenAI GPT-4o",
+            provider = "OpenAI",
+            tokenCostRate = "🔴 Yüksek (~2.0x Token)",
+            badgeColor = Color(0xFF9C27B0),
+            description = "OpenAI amiral gemisi akıllı sohbet modeli."
         ),
         ModelSpec(
             key = "gpt-4o-mini",

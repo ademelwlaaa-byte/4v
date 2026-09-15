@@ -457,8 +457,8 @@ object LLMAdapterFactory {
             providerKey == "groq" -> {
                 val apiKey = settings.groqApiKey.ifBlank { settings.customApiKey }
                 if (apiKey.isBlank()) throw IllegalStateException("Groq API Key eksik. Lütfen Ayarlar -> AI Model Ayarları menüsünden Groq API Key girin.")
-                val isGroqModel = modelName.contains("llama") || modelName.contains("groq") || modelName.contains("mixtral") || modelName.contains("gemma")
-                val mName = if (isGroqModel) modelName else settings.groqModel.ifBlank { "llama-3.3-70b-versatile" }
+                val rawModel = if (modelName.contains("llama") || modelName.contains("groq") || modelName.contains("mixtral") || modelName.contains("gemma")) modelName else settings.groqModel.ifBlank { "llama-3.3-70b-versatile" }
+                val mName = if (rawModel.contains("deepseek-r1-distill-llama") || rawModel.contains("llama3-70b") || rawModel.contains("llama3-8b")) "llama-3.3-70b-versatile" else rawModel
                 GenericOpenAICompatibleAdapter(
                     endpointUrl = "https://api.groq.com/openai/v1/chat/completions",
                     apiKey = apiKey,
@@ -509,7 +509,11 @@ object LLMAdapterFactory {
                 if (primaryKey.isBlank()) {
                     throw IllegalStateException("Gemini API Key eksik. Lütfen Ayarlar -> AI Model Ayarları menüsünden Gemini API Key girin.")
                 }
-                val gModelName = if (modelName.contains("gemini")) modelName else settings.geminiModel.ifBlank { "gemini-2.5-flash" }
+                val rawGModel = if (modelName.contains("gemini")) modelName else settings.geminiModel.ifBlank { "gemini-2.0-flash" }
+                val gModelName = when {
+                    rawGModel.contains("2.5") || rawGModel.contains("3.5") || rawGModel == "gemini-1.5-flash" -> "gemini-2.0-flash"
+                    else -> rawGModel
+                }
                 GeminiAdapter(
                     apiKey = primaryKey,
                     model = gModelName,

@@ -2786,6 +2786,7 @@ micro_atmosphere: <mikro mekan/fiziksel ortam/ışık/ses/gerilim>
     private fun sanitizeModelName(model: String): String {
         val clean = model.trim().lowercase()
         return when {
+            clean == "deepseek-r1-distill-llama-70b" || clean.contains("decommissioned") || clean == "llama3-70b-8192" || clean == "llama3-8b-8192" -> "llama-3.3-70b-versatile"
             clean == "gemini-2.5-flash" || clean == "gemini-3.5-flash" || clean == "gemini-2.0-flash" || clean == "gemini-1.5-flash" -> "gemini-2.0-flash"
             clean == "gemini-2.5-pro" || clean == "gemini-2.0-pro" || clean == "gemini-1.5-pro" || clean == "gemini-2.0-flash-thinking" -> "gemini-1.5-pro"
             clean.isEmpty() -> "gemini-2.0-flash"
