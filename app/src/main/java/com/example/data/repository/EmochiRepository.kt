@@ -1557,6 +1557,9 @@ class EmochiRepository(
             val grammarInst = com.example.util.OutputQualityValidator.buildSystemPromptGrammarInstruction()
 
             return """
+                [ÖNCELİKLİ KALİTE VE KURAL KONTROLÜ]
+                KURALLARA KESİN UY: Yanıtını vermeden önce şunu kontrol et — (1) aynı cümleyi veya paragrafı tekrar etmiyor musun, (2) yazım/dilbilgisi hatası var mı, (3) istenen uzunluk sınırının içinde misin, (4) STATE bloğunu doğru formatta, tam olarak istenen şekilde yazdın mı. Bu 4 kontrolden herhangi birine 'hayır' diyorsan yanıtını düzelt, sonra gönder.
+
                 [KARAKTER KARTI (COMPACT MODE)]
                 Karakter Adı: ${bot.aiName}
                 Kişilik: ${bot.aiPersonality}
@@ -4901,7 +4904,9 @@ Tebrikler! Bölüm 3'ü başarıyla tamamladın."""
         val primaryRes = tryExecuteProviderByKey("main", model, settings, systemPrompt, messages, botId, customMap, layer = 1)
         if (primaryRes != null) return primaryRes
 
-        val primaryError = _providerFallbackLog.value.firstOrNull { it.providerName.startsWith("Ana Seçim") || it.providerName.startsWith("Özel Sağlayıcı") }?.errorMessage
+        val primaryError = _providerFallbackLog.value.lastOrNull {
+            (it.providerName.startsWith("Ana Seçim") || it.providerName.startsWith("Özel Sağlayıcı")) && !it.errorMessage.isNullOrBlank()
+        }?.errorMessage
 
         if (!settings.enableAutoFallback) {
             val errDetail = if (!primaryError.isNullOrBlank()) ": $primaryError" else "."
@@ -4941,28 +4946,39 @@ Tebrikler! Bölüm 3'ü başarıyla tamamladın."""
             }
         }
 
+        // Katman 0 / Özel Sağlayıcılar: Tanımlı diğer custom provider'lar
+        val customKeys = customProvidersList.map { "custom_${it.id}" }.filter { it != settings.selectedProvider }
+
         // 1. Katman 1'i dene
         for (key in layer1Keys) {
             val res = tryExecuteProviderByKey(key, model, settings, systemPrompt, messages, botId, customMap, layer = 1)
             if (res != null) return res
         }
 
-        // 2. Katman 2'yi dene
+        // 2. Katman 2'yi dene (Gemini, Claude, Groq, OpenAI)
         for (key in layer2Keys) {
             val res = tryExecuteProviderByKey(key, model, settings, systemPrompt, messages, botId, customMap, layer = 2)
             if (res != null) return res
         }
 
-        // 3. Katman 3'ü dene
+        // 3. Katman 3'ü dene (OpenRouter, NVIDIA NIM, Mistral)
         for (key in layer3Keys) {
             val res = tryExecuteProviderByKey(key, model, settings, systemPrompt, messages, botId, customMap, layer = 3)
+            if (res != null) return res
+        }
+
+        // 4. Özel Sağlayıcıları dene
+        for (key in customKeys) {
+            val res = tryExecuteProviderByKey(key, model, settings, systemPrompt, messages, botId, customMap, layer = 0)
             if (res != null) return res
         }
 
         if (!primaryError.isNullOrBlank()) {
             throw IllegalStateException(primaryError)
         }
-        throw IllegalStateException("Hiçbir sağlayıcıya ulaşılamadı. Lütfen API ayarlarınızı ve internet bağlantınızı kontrol edin.")
+        val failedLogs = _providerFallbackLog.value.filter { it.status == "FAILED" && !it.errorMessage.isNullOrBlank() }
+        val errSummary = if (failedLogs.isNotEmpty()) " " + failedLogs.joinToString("; ") { "${it.providerName}: ${it.errorMessage}" } else ""
+        throw IllegalStateException("Hiçbir sağlayıcıya ulaşılamadı.$errSummary Lütfen API ayarlarınızı ve internet bağlantınızı kontrol edin.")
     }
 
     suspend fun generateOpeningMessage(bot: BotEntity): String = withContext(Dispatchers.IO) {
