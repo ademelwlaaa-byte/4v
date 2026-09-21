@@ -10,7 +10,8 @@ import org.json.JSONObject
 
 data class TokenUsage(
     val promptTokens: Long = 0L,
-    val candidateTokens: Long = 0L
+    val candidateTokens: Long = 0L,
+    val cachedTokens: Long = 0L
 )
 
 data class LLMResponse(
@@ -155,6 +156,8 @@ class GenericOpenAICompatibleAdapter(
             val usageObj = respJson.optJSONObject("usage")
             val pTokens = usageObj?.optLong("prompt_tokens", 0L) ?: 0L
             val cTokens = usageObj?.optLong("completion_tokens", 0L) ?: 0L
+            val pDetails = usageObj?.optJSONObject("prompt_tokens_details")
+            val cachedTokens = pDetails?.optLong("cached_tokens", 0L) ?: usageObj?.optLong("cached_tokens", 0L) ?: 0L
 
             val rawState = extractRawStateBlock(text)
 
@@ -162,7 +165,7 @@ class GenericOpenAICompatibleAdapter(
                 text = text,
                 toolCalls = parsedTools.ifEmpty { null },
                 rawStateBlock = rawState,
-                usage = TokenUsage(pTokens, cTokens),
+                usage = TokenUsage(pTokens, cTokens, cachedTokens),
                 usedProvider = providerName
             )
         }
@@ -248,6 +251,7 @@ class GenericAnthropicCompatibleAdapter(
             val usageObj = jsonResp.optJSONObject("usage")
             val pTokens = usageObj?.optLong("input_tokens", 0L) ?: 0L
             val cTokens = usageObj?.optLong("output_tokens", 0L) ?: 0L
+            val cachedTokens = usageObj?.optLong("cache_read_input_tokens", 0L) ?: 0L
 
             val rawState = extractRawStateBlock(text)
 
@@ -255,7 +259,7 @@ class GenericAnthropicCompatibleAdapter(
                 text = text,
                 toolCalls = parsedTools.ifEmpty { null },
                 rawStateBlock = rawState,
-                usage = TokenUsage(pTokens, cTokens),
+                usage = TokenUsage(pTokens, cTokens, cachedTokens),
                 usedProvider = providerName
             )
         }
@@ -327,6 +331,7 @@ class GeminiAdapter(
 
         val pTokens = response.usageMetadata?.promptTokenCount?.toLong() ?: 0L
         val cTokens = response.usageMetadata?.candidatesTokenCount?.toLong() ?: 0L
+        val cachedTokens = response.usageMetadata?.cachedContentTokenCount?.toLong() ?: 0L
 
         val rawState = extractRawStateBlock(text)
 
@@ -334,7 +339,7 @@ class GeminiAdapter(
             text = text,
             toolCalls = parsedTools.ifEmpty { null },
             rawStateBlock = rawState,
-            usage = TokenUsage(pTokens, cTokens),
+            usage = TokenUsage(pTokens, cTokens, cachedTokens),
             usedProvider = providerName
         )
     }

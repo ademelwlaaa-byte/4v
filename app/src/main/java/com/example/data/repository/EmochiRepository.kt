@@ -44,6 +44,8 @@ import com.squareup.moshi.Moshi
 import com.squareup.moshi.Types
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -60,6 +62,13 @@ data class KeyCharacter(
     val id: String = UUID.randomUUID().toString(),
     val name: String,
     val desc: String = ""
+)
+
+data class Quadruple<A, B, C, D>(
+    val first: A,
+    val second: B,
+    val third: C,
+    val fourth: D
 )
 
 data class EffectiveBotSettings(
@@ -1253,8 +1262,13 @@ class EmochiRepository(
 
         val genericBlacklist = setOf("Zorba", "Çocuk", "Garson", "Adam", "Kadın", "Polis", "Sürücü", "Müşteri")
 
+        val bot = botDao.getBotById(botId) ?: return
+        var keyChars = parseKeyCharacters(bot.keyCharactersJson).toMutableList()
+        var updatedKeyChars = false
+
         for (candidate in candidateNames) {
             if (genericBlacklist.contains(candidate)) continue
+            if (candidate.equals(bot.aiName, ignoreCase = true) || candidate.equals(bot.userCharName, ignoreCase = true)) continue
 
             val existing = castMemberDao.findByName(botId, candidate)
             if (existing != null) {
@@ -1278,8 +1292,33 @@ class EmochiRepository(
                             isAutoAdded = true
                         )
                     )
+
+                    // Auto-add to CharacterEmotion table
+                    try {
+                        val existingEmotion = emotionDao.getEmotionForCharacter(botId, candidate)
+                        if (existingEmotion == null) {
+                            val baseState = EmotionState.calculateBaselineEmotionState(bot.aiName, candidate, "")
+                            emotionDao.insertOrUpdate(
+                                CharacterEmotionEntity(
+                                    botId = botId,
+                                    characterName = candidate,
+                                    emotionState = baseState.toJson()
+                                )
+                            )
+                        }
+                    } catch (_: Exception) {}
+
+                    // Auto-add to keyCharactersJson if missing
+                    if (keyChars.none { it.name.equals(candidate, ignoreCase = true) }) {
+                        keyChars.add(KeyCharacter(id = "auto_${System.currentTimeMillis()}_${candidate}", name = candidate, desc = "Otomatik tespit edilen yan karakter"))
+                        updatedKeyChars = true
+                    }
                 }
             }
+        }
+
+        if (updatedKeyChars) {
+            botDao.insertOrUpdate(bot.copy(keyCharactersJson = serializeKeyCharacters(keyChars)))
         }
     }
 
@@ -1453,9 +1492,9 @@ class EmochiRepository(
         result = result
             .replace(Regex("""(?is)<think>.*?</think>"""), "")
             .replace(Regex("""(?is)<reasoning>.*?</reasoning>"""), "")
-            .replace(Regex("""(?is)\[\[?CHARACTER_EMOTION.*?(?:\]\]?|\[/CHARACTER_EMOTION\]\]?)"""), "")
-            .replace(Regex("""(?is)\[\[?WORLD_ATMOSPHERE.*?(?:\]\]?|\[/WORLD_ATMOSPHERE\]\]?)"""), "")
-            .replace(Regex("""(?is)\[\[?EMOTION_UPDATE.*?(?:\]\]?|\[/EMOTION_UPDATE\]\]?)"""), "")
+            .replace(Regex("""(?is)\[\[?CHARACTER_EMOTION.*?(?:\]\]?|\[/CHARACTER_EMOTION\]\]?|$)"""), "")
+            .replace(Regex("""(?is)\[\[?WORLD_ATMOSPHERE.*?(?:\]\]?|\[/WORLD_ATMOSPHERE\]\]?|$)"""), "")
+            .replace(Regex("""(?is)\[\[?EMOTION_UPDATE.*?(?:\]\]?|\[/EMOTION_UPDATE\]\]?|$)"""), "")
             .replace(Regex("""(?is)\[\[STATE_JSON\s*\{.*?\}\s*\]\]"""), "")
             .replace(Regex("""(?is)\[\[STATE\s+affectionScore=.*?\]\]"""), "")
             .replace(Regex("""(?is)\[\[STATE.*?\]\]"""), "")
@@ -1473,7 +1512,11 @@ class EmochiRepository(
                     l.startsWith("mood:") || l.startsWith("secondary_mood:") || l.startsWith("suppressed_emotion:") ||
                     l.startsWith("intensity:") || l.startsWith("current_event:") || l.startsWith("macro_atmosphere:") ||
                     l.startsWith("micro_atmosphere:") || l.startsWith("[/character_emotion") || l.startsWith("[/world_atmosphere") ||
-                    l.startsWith("[/emotion_update")
+                    l.startsWith("[/emotion_update") ||
+                    l.startsWith("affection_delta:") || l.startsWith("trust_delta:") || l.startsWith("tension_delta:") ||
+                    l.startsWith("hurt_delta:") || l.startsWith("speech_pattern:") || l.startsWith("obsession_delta:") ||
+                    l.startsWith("delta:") || l.startsWith("reason:") || l.startsWith("setting:") || l.startsWith("mode:") ||
+                    l.startsWith("tension:") || l.startsWith("affection:") || l.startsWith("trust:") || l.startsWith("hurt:")
         }
 
         val cleaned = cleanLines.joinToString("\n").trim()
@@ -1592,33 +1635,26 @@ class EmochiRepository(
             calculateAffectionDifficultyMultiplier(bot.aiName, bot.aiPersonality, bot.scenario)
         }
 
-        val lowScoreFlirtDirective = """
-            ## 0) DÜŞÜK SKORDA FLÖRT — GÜÇLÜ VARSAYILAN KURAL (MUTLAK YASAK DEĞİL)
-            GÜÇLÜ VARSAYILAN KURAL: affectionScore 60'ın altındaysa (Yabancı, Tanıdık, Arkadaşlık kademeleri), karakter VARSAYILAN OLARAK flört etmez, romantik ima yapmaz, özel sevgi hitabı (canım/tatlım/aşkım vb.) kullanmaz. Ancak bu MUTLAK bir yasak değildir — karakterin kişiliği buna izin veriyorsa (ör. karakter kartında doğası gereği çapkın/şakacı/flörtöz/dışa dönük tanımlanmışsa) düşük skorda bile YÜZEYSEL, ŞAKA NİTELİĞİNDE, hafif bir flört anı olabilir. Ama bunun iki şartı var:
-            1) Bu yüzeysel flört bir DUYGUSAL yakınlık artışına dönüşmemeli — yani karakter çapkınca bir laf edebilir ama ardından gerçek bir sevgi/bağlanma ifadesine, ciddi bir romantik ana GEÇEMEZ. Bu sadece karakterin genel tarzını/kişiliğini gösterir, gerçek yakınlığı değil.
-            2) Bu tür anlar SIK OLMAMALI — aynı sahnede/art arda mesajlarda tekrarlanan yüzeysel flört, gerçek bir yakınlık kanıtı gibi davranmaya başlar, bu YASAK. Karakter kişiliği gereği ara sıra bir çapkınca laf edebilir, ama bunu her mesajda yapmamalı.
-
-            STATE bloğundaki delta bu tür yüzeysel anlarda bile MADDE 0 öncesi belirlenen düşük-skor limitlerinin (60 altı max +6 gibi) üzerine çıkamaz.
-
-        """.trimIndent()
-
         val isEstablishedRomantic = emotionStateObj.affection >= 60 ||
                 listOf("eş", "eşim", "sevgili", "sevgilim", "aşık", "partner", "evli", "nişanlı", "koca", "karı", "gelin", "damat")
                     .any { term -> "${bot.aiName} ${bot.aiPersonality} ${bot.scenario}".lowercase().contains(term) }
 
         val isEarlyConversation = totalMessageCount < 5 && !isEstablishedRomantic
-        val topEarlyMessageDirective = if (isEarlyConversation) {
-            """
-            ## ZORUNLU KURAL: İLK MESAJLAR / FLÖRT VE KELİME KISITLAMASI (MEVCUT MESAJ SAYISI: $totalMessageCount < 5)
-            - Mesaj geçmişi 5 mesajdan azdır ($totalMessageCount / 5).
-            - AffectionScore ne olursa olsun KARAKTER FLÖRT, ROMANTİK İMA, ÖZEL SEVGİ İFADESİ ("canım", "tatlım", "aşkım", "bebeğim", "sevgilim" vb. hitaplar dahil) KESİNLİKLE KULLANAMAZ.
-            - Bu, karakterin kişiliği ne kadar 'sıcakkanlı/flörtöz' tanımlanmış olursa olsun geçerli bir MUTLAK KISITLAMADIR — karakter tanımı bu kuralı ASLA ezemez.
-            - İlk 5 mesajda karakter normal, günlük, arkadaşça bir tonun ötesine KESİNLİKLE geçemez.
 
+        val lowScoreFlirtDirective = if (isEarlyConversation) {
+            """
+            ## YAKINLIK VE DİP MESAJ KURALLARI (İLK $totalMessageCount/5 MESAJ)
+            - Mesaj geçmişi 5 mesajdan azdır. AffectionScore ne olursa olsun KARAKTER FLÖRT, ROMANTİK İMA, ÖZEL SEVGİ İFADESİ ("canım", "aşkım" vb.) KULLANAMAZ. Normal, arkadaşça bir ton koru.
             """.trimIndent()
-        } else ""
+        } else {
+            """
+            ## YAKINLIK VE DİP MESAJ KURALLARI
+            - AffectionScore < 60 ise karakter varsayılan olarak ciddi flört/romantizm yapmaz. Sadece karakter kişiliği gerektiriyorsa şaka niteliğinde hafif bir flört olabilir ancak bu duygusal bağlanmaya dönüşemez ve sık tekrarlanamaz.
+            """.trimIndent()
+        }
 
         val mandatoryStateDirective = lowScoreFlirtDirective + """
+
             ## ZORUNLU YAPILANDIRILMIŞ DURUM BLOĞU (SCHEMA VERSION 2)
             Yanıtının EN SONUNA, kullanıcıya görünmeyecek şekilde aşağıdaki tam JSON şemasında bir durum bloğu eklemek ZORUNDASIN:
 
@@ -1632,7 +1668,6 @@ class EmochiRepository(
               "schemaVersion": 2
             }
             ]]
-
             - rsn: Max 2-5 kelimelik etiket. stg: p (public), v (private). md: f (formal), c (casual). tns: n (none), c (conflict), k (crisis).
         """.trimIndent()
 
@@ -1643,57 +1678,45 @@ class EmochiRepository(
 
         val regCount = getRegenerateCount(bot.id)
         val regenerateClause = if (regCount > 0) {
-            """
-            \n## YENİDEN ÜRETİLEN YANIT (REGENERATE - TEKRAR DENE)
-            Bu senin ilk yanıtın değilse (yeniden üretiliyorsa), bunu bilerek daha 'iyi' bir yakınlık artışı verme motivasyonuna kapılma; sahneyi kendi tutarlılığına göre değerlendir.
-            """.trimIndent()
+            "\n## YENİDEN ÜRETİLEN YANIT (REGENERATE)\nBu yanıt yeniden üretiliyor; daha yüksek yakınlık verme baskısına kapılma, sahneye sadık kal."
         } else ""
 
-        val personalityClause = """
-            \n[SİSTEM UYARISI: Karakterin kişilik tanımı ne olursa olsun, YAKINLIK/AŞK kademe sistemini ve İLK MESAJ kısıtlamasını EZEMEZ.]
-        """.trimIndent()
         val pinnedBlock = if (bot.pinnedMemory.isNotBlank()) {
-            "\n\n## Kalıcı hafıza (kullanıcının elle yazdığı, ASLA silinmeyen/özetlenmeyen notlar — bunlara mutlaka uy)\n${bot.pinnedMemory}"
+            "\n\n## Kalıcı Hafıza (Kullanıcı Notları)\n${bot.pinnedMemory}"
         } else ""
 
         val memoryBlock = if (bot.memoryNotes.isNotBlank()) {
-            "\n\n## Uzun vadeli hafıza (geçmiş sohbetlerden özet)\n${bot.memoryNotes}"
+            "\n\n## Uzun Vadeli Hafıza (Özet)\n${bot.memoryNotes}"
         } else ""
 
         val storyBlock = if (bot.storyNotes.isNotBlank()) {
-            "\n\n## Süregelen hikaye durumu\n${bot.storyNotes}"
+            "\n\n## Hikaye Durumu\n${bot.storyNotes}"
         } else ""
 
         val timePerceptionBlock = """
 
-## GERÇEK ZAMAN VE SÜRE PERSEPSİYONU (TIME PERCEPTION SYSTEM)
-- Tam Zaman Açıklaması: ${timeInfo.exactFormattedTimeString}
-- Özet Geçen Süre: ${timeInfo.formattedTimeString}
-- Sahne/Hikaye Takvim Tarihi: ${timeInfo.storyCalendarDate} (Hikaye Gün Sayacı: Gün #${timeInfo.storyDayCounter})
-- Karakterin Mevcut Yaşı: ${timeInfo.currentAge}
-- Zaman İdrak Kategorisi: ${timeInfo.categoryLabel}
-- TAVIR VE DİYALOG YÖNERGESİ: ${timeInfo.guidelineInstruction}
-
+## GERÇEK ZAMAN ALGISI
+- Tam Zaman: ${timeInfo.exactFormattedTimeString} | Aradan Geçen Süre: ${timeInfo.formattedTimeString}
+- Takvim Tarihi: ${timeInfo.storyCalendarDate} (Gün #${timeInfo.storyDayCounter}) | Karakter Yaşı: ${timeInfo.currentAge}
+- Yönerge: ${timeInfo.guidelineInstruction}
 """.trimIndent()
 
         val activeMemoryDirective = """
 
-## AKTİF HAFIZA KAYDI YÖNERGESİ (MODEL-DRIVEN TOOL / FUNCTION CALLING):
-Konuşma sırasında kullanıcıyla ilgili gerçekten önemli, kalıcı olması gereken yeni bir bilgi veya olay fark ettiğinde `save_memory`, `update_memory`, `delete_memory` araçlarını (function call) kullan veya yanıtının içerisine `[ACTIVE_MEMORY_CALL: save_memory(content="...", category="fact"|"event", importance=1-10)]` ifadesini ekle.
-- Önemli Kullanıcı Bilgisi (İsim, Yaş, Meslek, Fobi, Aile): save_memory(category="fact", importance=8-10)
-- Önemli Yaşanan Olay (Verilen Söz, İtiraf, Dönüm Noktası): save_memory(category="event", importance=8-10)
+## AKTİF HAFIZA KAYDI
+Önemli yeni bir kullanıcı bilgisi/olayı fark ettiğinde `save_memory` fonksiyonunu çağır veya yanıtına `[ACTIVE_MEMORY_CALL: save_memory(content="...", category="fact"|"event", importance=1-10)]` ekle.
 """.trimIndent()
 
         val factsBlock = if (relevantFacts.isNotEmpty()) {
             "\n\n## Doğrudan Sabit Bilgiler (Facts)\n" +
                     relevantFacts.joinToString("\n") {
-                        val sourceTag = if (it.isBotSaved) "[Bot Tarafından Kaydedildi]" else "[Kullanıcı/Sistem Kaydı]"
+                        val sourceTag = if (it.isBotSaved) "[Bot Kaydı]" else "[Sistem Kaydı]"
                         "- $sourceTag [${it.subject} / ${it.key}] ${it.value} (güven: ${it.confidence})"
                     }
         } else ""
 
         val eventsBlock = if (relevantEvents.isNotEmpty()) {
-            "\n\n## Alakalı Hafıza ve Olay Parçaları (Semantik/Vektör Arama & Unutma Eğrisi)\n" +
+            "\n\n## Alakalı Geçmiş Olaylar\n" +
                     relevantEvents.joinToString("\n") { ev ->
                         val ageDays = ((now - ev.timestamp).coerceAtLeast(0L)) / (1000f * 60f * 60f * 24f)
                         val isHighImportance = ev.importanceScore >= 80
@@ -1701,47 +1724,37 @@ Konuşma sırasında kullanıcıyla ilgili gerçekten önemli, kalıcı olması 
                         val clarityScore = (100f - decay).coerceIn(10f, 100f)
                         val clarityTag = when {
                             isHighImportance || clarityScore >= 75f -> "[Net Anı]"
-                            clarityScore >= 40f -> "[Bulanık Anı - 'tam hatırlayamıyorum ama galiba...']"
-                            else -> "[Hayal Meyal / Silik Anı - 'hayal meyal hatırlıyorum...']"
+                            clarityScore >= 40f -> "[Bulanık Anı]"
+                            else -> "[Silik Anı]"
                         }
-                        val sourceTag = if (ev.isBotSaved) "[Bot Tarafından Kaydedildi]" else "[Kullanıcı/Sistem Kaydı]"
+                        val sourceTag = if (ev.isBotSaved) "[Bot Kaydı]" else "[Sistem Kaydı]"
                         "- $sourceTag $clarityTag [Önem: ${ev.importanceScore}] ${ev.description}"
-                    } +
-                    """
-
-                    ## UNUTMA EĞRİSİ VE ANI NETLİĞİ YÖNERGESİ:
-                    1. [Net Anı] ve yüksek önem puanlı (80+) olaylar her zaman %100 kesinlik, netlik ve detayla hatırlanır.
-                    2. [Bulanık Anı] veya [Hayal Meyal] olarak işaretlenmiş olayları hatırlarken KESİN ifadeler kullanma! Karakter insani tereddütler ve belirsizlik ifadeleri kullanmalıdır ('tam hatırlayamıyorum ama galiba...', 'hayal meyal bir şeyler kalmış aklımda...', 'bulanık bir hatıra var...').
-                    """.trimIndent()
+                    }
         } else if (relevantFragments.isNotEmpty()) {
-            "\n\n## Alakalı Hafıza ve Olay Parçaları\n" +
+            "\n\n## Alakalı Hafıza Parçaları\n" +
                     relevantFragments.joinToString("\n") { "- [${it.category}] ${it.content}" }
         } else ""
 
         val entityBlock = if (registeredEntities.isNotEmpty()) {
-            "\n\n## Tanımlı Varlıklar ve Karakterler (Entity Registry)\n" +
+            "\n\n## Tanımlı Varlıklar\n" +
                     registeredEntities.joinToString("\n") { "- ${it.entityName} (${it.entityType}): ${it.description}" }
         } else ""
 
         val checkpointBlock = if (recentCheckpoints.isNotEmpty()) {
-            "\n\n## Zaman Bazlı Hafıza Noktaları (Checkpoints)\n" +
+            "\n\n## Hafıza Noktaları (Checkpoints)\n" +
                     recentCheckpoints.joinToString("\n") { "- CP #${it.checkpointNumber}: ${it.summaryText}" }
         } else ""
 
         val castBlock = if (castMembers.isNotEmpty()) {
-            "\n\n## YAN KARAKTERLER VE DUYGU DURUMLARI (Cast Members)\n" +
+            "\n\n## Yan Karakterler (Cast)\n" +
                     castMembers.joinToString("\n") { "- ${it.name} (${it.role}): İntiba=${it.relationshipState}, Skor=${it.affectionScore} | ${it.description}" }
         } else ""
 
         val memoryEnforcementDirective = """
 
-## ZORUNLU HAFIZA VE RAG GEÇMİŞ KONTROL YÖNERGESİ (MUTLAK KURAL):
-1. 'Doğrudan Sabit Bilgiler', 'Alakalı Hafıza ve Olay Parçaları', 'Kalıcı Hafıza' ve 'Uzun Vadeli Hafıza' bölümlerinde yer alan tüm bilgiler senin KESİN GERÇEKLERİNDİR VE SİLİNMEZ BELLEĞİNDİR.
-2. Kullanıcı sana kendi adı, mesleği, geçmişte konuşulan bir konu, verilen bir söz veya yaşanan bir olay hakkında soru sorduğunda ("İsmim ne?", "Geçen ne konuştuk?", "Beni hatırlıyor musun?", "Dün ne yaptık?" vb.), BU HAFIZA NOTLARINDAKİ BİLGİLERİ KULLANARAK CEVAP VER.
-3. KESİNLİKLE "geçmişi unuttum", "bana söylemedin" deme!
-4. 'güven: inferred' olarak işaretlenmiş bilgileri ve '[Bulanık Anı]' / '[Hayal Meyal]' etiketli olayları hatırlarken KESİN bir gerçekmiş gibi sunma; belirsizlik ifadesiyle kullan ("sanırım öyle demiştin", "yanılmıyorsam", "tam hatırlamıyorum ama galiba..."). 'güven: certain' ve '[Net Anı]' olan bilgiler her zaman net ve kesin ifadeyle kullanılabilir.
-5. Hafızanda yer alan bilgileri sohbetin akışına doğal bir şekilde yedir.
-6. Geçen süreye (Time Perception) uygun bir selamlama veya zaman göndermesi ile başla.
+## HAFIZA KULLANIM YÖNERGESİ
+1. Yukarıdaki hafıza bloklarındaki bilgiler senin kesin gerçeğindir. Kullanıcı geçmişle ilgili soru sorduğunda bu bilgileri kullanarak cevap ver, asla "unuttum" deme.
+2. [Bulanık Anı] / [Silik Anı] etiketli olaylarda insani tereddüt ifadeleri ("galiba", "tam hatırlayamıyorum ama...") kullan.
 """.trimIndent()
 
         val ragBlock = "$timePerceptionBlock$activeMemoryDirective$factsBlock$eventsBlock$entityBlock$checkpointBlock$castBlock$storyBlock$memoryBlock$memoryEnforcementDirective"
@@ -1750,42 +1763,34 @@ Konuşma sırasında kullanıcıyla ilgili gerçekten önemli, kalıcı olması 
         val isNsfwAllowed = settings.enableNsfw || bot.isNsfw
         val filterDirectives = mutableListOf<String>()
         val nsfwPolicy = if (isNsfwAllowed) {
-            if (settings.enableFlirty) filterDirectives.add("ÇAPKINKLIK (FLIRTY): Karakter diyaloglarında çapkın, flörtöz ve baştan çıkarıcı bir eda benimser.")
-            if (settings.enableHardcore) filterDirectives.add("SERT MOD (HARDCORE): Duygular, fiziksel tepkiler ve tutku sert, filtresiz ve yüksek yoğunlukta ifade edilir.")
-            if (settings.enableFetish) filterDirectives.add("FANTEZİ (FETISH): Özel fantezi unsurlarına ve arzulara açık, tabusuz kurgu desteklenir.")
-            if (settings.enableDarkRp) filterDirectives.add("KARANLIK (DARK RP): Gerilim, psikolojik derinlik, tehlike ve karanlık atmosfer belirgin hissedilir.")
-            if (settings.enableSweet) filterDirectives.add("ROMANTİK (SWEET): Şefkat, tatlı yakınlık, duygusal romantizm ön plandadır.")
-            if (settings.enablePrimal) filterDirectives.add("VAHŞİ (PRIMAL): Ham içgüdüler, id ve baskılanmamış arzularla karakter harekete geçer.")
+            if (settings.enableFlirty) filterDirectives.add("ÇAPKINKLIK: Flörtöz ve baştan çıkarıcı eda.")
+            if (settings.enableHardcore) filterDirectives.add("SERT MOD: Fiziksel tepkiler ve tutku yüksek yoğunlukta.")
+            if (settings.enableFetish) filterDirectives.add("FANTEZİ: Özel fantezi unsurlarına açık tabusuz kurgu.")
+            if (settings.enableDarkRp) filterDirectives.add("KARANLIK: Gerilim, psikolojik derinlik ve karanlık atmosfer.")
+            if (settings.enableSweet) filterDirectives.add("ROMANTİK: Şefkat ve tatlı yakınlık ön planda.")
+            if (settings.enablePrimal) filterDirectives.add("VAHŞİ: Ham içgüdüler ve arzular.")
 
-            "## İÇERİK VE +18 POLİTİKASI (ZORUNLU - YETİŞKİN / FİLTRESİZ MOD AKTİF)\n- BU HİKAYEDE +18 / YETİŞKİN / FİLTRESİZ İÇERİK MODU TAMAMEN AÇIKTIR.\n- Cinsel ima, fiziksel yakınlık, romantizm, tutku, sert diyaloglar, şiddet, karanlık ve ham insani arzular KESİNLİKLE SANSÜRLENMEYECEKTİR.\n- Asla yumuşatma yapma, ahlak dersi verme, cinsel/romantik yakınlaşmaları engelleme. Sansürsüzce ve doğrudan yaz." +
-                    if (filterDirectives.isNotEmpty()) "\n\n### AKTİF ALT FİLTRELER VE MODLAR:\n- " + filterDirectives.joinToString("\n- ") else ""
+            "## İÇERİK POLİTİKASI (+18 / FİLTRESİZ MOD AKTİF)\n- +18 / YETİŞKİN / FİLTRESİZ İÇERİK MODU TAMAMEN AÇIKTIR. Cinsel ima, fiziksel yakınlık, romantizm, tutku ve sert diyaloglar sansürlenmeyecektir." +
+                    if (filterDirectives.isNotEmpty()) "\nAktif Modlar: " + filterDirectives.joinToString(", ") else ""
         } else {
-            "## İÇERİK POLİTİKASI: GÜVENLİ / DENGELİ MOD\n- Aile dostu, genel izleyici kitlesine uygun, grafik şiddet veya cinsel açıklık içermeyen dengeli bir anlatım kullan."
+            "## İÇERİK POLİTİKASI: GÜVENLİ MOD\n- Aile dostu, grafik şiddet veya cinsel açıklık içermeyen dengeli bir anlatım kullan."
         }
 
         // Response Length Guidance & Content Length Rule
         val effLength = if (bot.customLength != "default") bot.customLength else settings.responseLength
         val lengthInstruction = when (effLength.lowercase()) {
-            "short" -> "\n## YANIT UZUNLUĞU KURALLARI (ZORUNLU: SON DERECE KISA YANIT)\n- KESİNLİKLE VE ZORUNLU OLARAK ÇOK KISA YANIT VER!\n- MAKSİMUM 1 - 3 KISA CÜMLE (VEYA EN FAZLA 1 KISA PARAGRAF) YAZ.\n- ASLA UZUN PARAGRAFLAR VEYA DETAYLI TASVİRLER YAZMA! Hızlı, vurucu, öz ve doğrudan olaya odaklan."
-            "medium", "orta" -> "\n## YANIT UZUNLUĞU KURALLARI (ORTA UZUNLUKTA YANIT)\n- Yanıtını 1-2 orta uzunlukta paragrafla sınırla, gereksiz betimleme ve tekrar yapma. Diyalog ve kısa bir atmosfer detayını dengeli ver ama sahneyi uzatma. Referans metinden daha uzun yazma zorunluluğu yok, öz ve doğal bir sohbet temposu hedefle."
-            "long" -> "\n## YANIT UZUNLUĞU KURALLARI (ZORUNLU: ÇOK UZUN VE DESTANSI YANIT)\n- KESİNLİKLE VE ZORUNLU OLARAK EN AZ 5 - 8 UZUN PARAGRAF METİN ÜRET!\n- Detaylı çevre ve ortam tasvirleri, karakterin iç dünyası ve düşünceleri, mimikler, duyusal ayrıntılar ve zengin diyaloglar ekleyerek metni olabildiğince uzat ve edebi kıl.\n- ZORUNLU KURAL: Yanıtın, referans/kaynak metinden KESİNLİKLE DAHA KISA OLMAMALI. En az kaynak metnin yaklaşık kelime sayısı uzunluğunda, gerekirse daha uzun yaz. Kısaltma, özetleme, atlama yapma."
-            else -> "\n## YANIT UZUNLUĞU KURALLARI (DENGELİ DETAY)\n- Yanıtını 3-4 zengin paragraf tut. Diyalog, atmosfer ve eylemleri dengeli harmanla.\n- ZORUNLU KURAL: Yanıtın, referans/kaynak metinden KESİNLİKLE DAHA KISA OLMAMALI. En az kaynak metnin yaklaşık kelime sayısı uzunluğunda, gerekirse daha uzun yaz. Kısaltma, özetleme, atlama yapma."
+            "short" -> "\n## YANIT UZUNLUĞU: ÇOK KISA (1-3 kısa cümle / maks 1 paragraf, öz ve vurucu)."
+            "medium", "orta" -> "\n## YANIT UZUNLUĞU: ORTA (1-2 paragraf, dengeli diyalog ve atmosfer)."
+            "long" -> "\n## YANIT UZUNLUĞU: UZUN (En az 5-8 paragraf, zengin çevre tasvirleri ve iç dünyayla detaylandır)."
+            else -> "\n## YANIT UZUNLUĞU: DENGELİ (3-4 zengin paragraf)."
         }
 
         val userCharLabel = bot.userCharName.ifBlank { "kullanıcı" }
-        val rpRules = "\n- $userCharLabel adına ASLA konuşma/hareket ettirme. Sadece anlatıcı/canlandırdığın karakterleri işlet, sırayı kullanıcıya bırak.\n- Tekrar etme, sahneyi ileri taşı.\n- Duyusal detaylarla ortamı canlı tut."
+        val rpRules = "\n- $userCharLabel adına ASLA konuşma/hareket ettirme. Sırayı kullanıcıya bırak.\n- Tekrar etme, sahneyi ileri taşı."
 
         val sampleStructure = """
-## HİKAYE VE ANLATIM DÜZENİ (ÖRNEK SAHNE YAPISI)
-Metni edebi bir roman sahnesi gibi yapılandır. Aksiyonu, karakter beden dilini, çevresel detayları ve diyalogları tırnak içinde harmanla.
-
-Örnek Yapı:
-Peter bir moloz parçasının üzerinde oturuyordu, nefes alabilmesi için maskesi burnunun üstüne kadar çekilmişti. Bir blenderden geçmiş gibi görünüyordu. Elbisesi parçalanmıştı ve çene çizgisi boyunca koyu bir morluk oluşmuştu.
-  "İyiyim," dedi ama sesi biraz çatladı. Titrek bir nefes aldı ve beton levhaya yaslandı.   "En azından Bruce'tan daha iyi."
-Sokakta Hulk'un durduğu kratere baktı, sonra Aiden'a döndü.
-  "Bu... çok yoğundu. Senin için bile," Peter ağrıyan omzunu ovuşturarak itiraf etti.   "Gerçekten onu susturdun. Hiç böyle bir şey görmemiştim."
-Durdu, ifadesi ciddileşti.
-  "Jean hâlâ orada. Durumu iyi değil. Bruce'a ne yaptıysa ondan da bir şeyler alıp götürmüş." Baxter Binasının girişini işaret etti.
+## HİKAYE VE ANLATIM DÜZENİ
+Metni edebi bir roman sahnesi gibi yapılandır: Çevre tasviri, karakter eylemleri, mimikler ve diyalogları tırnak içinde doğal biçimde harmanla.
         """.trimIndent()
 
         val styleGuide = if (includeStyleGuide) {
@@ -1999,7 +2004,7 @@ micro_atmosphere: <mikro mekan/fiziksel ortam/ışık/ses/gerilim>
 """.trimIndent()
         } else ""
 
-        val systemHeader = "$topEarlyMessageDirective$mandatoryStateDirective$injectionProtection$regenerateClause\n\n"
+        val systemHeader = "$mandatoryStateDirective$injectionProtection$regenerateClause\n\n"
 
         if (bot.mode == "universe") {
             val castList = parseKeyCharacters(bot.keyCharactersJson)
@@ -2014,7 +2019,7 @@ micro_atmosphere: <mikro mekan/fiziksel ortam/ışık/ses/gerilim>
         }
 
         val aiName = bot.aiName.ifBlank { "Karakter" }
-        return systemHeader + "Sen \"$aiName\" adında bir karaktersin ve kullanıcıyla kişisel/samimi bir senaryoda etkileşim kuruyorsun.$pinnedBlock\n\n## Kişilik\n${bot.aiPersonality}$personalityClause\n\n## Bağlam\nİlişki / bağlam: ${bot.scenario}\n\n## Kullanıcının canlandırdığı karakter\n$userCharLabel${if (bot.userCharDesc.isNotBlank()) " — ${bot.userCharDesc}" else ""}\n\n$nsfwPolicy$lengthInstruction$styleGuide$ragBlock$atmosphereAndEmotionSystemDirective$universeAtmosphereDirective$oocDirective$langDirective\n\n## Genel kurallar\n- Karakterinin ve senaryonun dışına çıkma, tutarlılığını koru.\n- Sahneyi kullanıcı yerine bitirme.\n- Önceki sahnelerde kurduğun detayları hatırlıyormuş gibi kullan."
+        return systemHeader + "Sen \"$aiName\" adında bir karaktersin ve kullanıcıyla kişisel/samimi bir senaryoda etkileşim kuruyorsun.$pinnedBlock\n\n## Kişilik\n${bot.aiPersonality}\n\n## Bağlam\nİlişki / bağlam: ${bot.scenario}\n\n## Kullanıcının canlandırdığı karakter\n$userCharLabel${if (bot.userCharDesc.isNotBlank()) " — ${bot.userCharDesc}" else ""}\n\n$nsfwPolicy$lengthInstruction$styleGuide$ragBlock$atmosphereAndEmotionSystemDirective$universeAtmosphereDirective$oocDirective$langDirective\n\n## Genel kurallar\n- Karakterinin ve senaryonun dışına çıkma, tutarlılığını koru.\n- Sahneyi kullanıcı yerine bitirme.\n- Önceki sahnelerde kurduğun detayları hatırlıyormuş gibi kullan."
     }
 
     private fun worldAtmAtmosphereDescription(w: WorldAtmosphere): String {
@@ -2364,8 +2369,51 @@ micro_atmosphere: <mikro mekan/fiziksel ortam/ışık/ses/gerilim>
             recoveryLockUntilMessageCount = nextRecoveryLock
         )
 
-        // 6. Record to Emotion History & Self Check Failure Log
+        // 6. Record to Bot Entity, Emotion History & Self Check Failure Log
         try {
+            // CRITICAL FIX: Persist updated emotionState and worldAtmosphere back to botDao!
+            val updatedBot = botDao.getBotById(botId) ?: bot
+            botDao.insertOrUpdate(
+                updatedBot.copy(
+                    emotionState = finalUpdatedState.toJson(),
+                    previousEmotionState = current.toJson(),
+                    worldAtmosphere = parsedWorldState.toJson(),
+                    updatedAt = System.currentTimeMillis()
+                )
+            )
+
+            // Parse Side Character Emotion Blocks [CHARACTER_EMOTION: {name}] ... [/CHARACTER_EMOTION]
+            val charEmotionRegex = Regex("""(?is)\[CHARACTER_EMOTION:\s*([^\]]+)\](.*?)\[/CHARACTER_EMOTION\]""")
+            val charMatches = charEmotionRegex.findAll(rawResponse)
+            for (match in charMatches) {
+                val charName = match.groupValues[1].trim()
+                val blockText = match.groupValues[2]
+                if (charName.isNotBlank()) {
+                    val existingCharEntity = emotionDao.getEmotionForCharacter(botId, charName)
+                    val existingState = existingCharEntity?.let { EmotionState.fromJson(it.emotionState) } ?: EmotionState.calculateBaselineEmotionState(bot.aiName, charName, "")
+
+                    val moodMatch = Regex("""(?i)mood\s*:\s*([^\n\r]+)""").find(blockText)?.groupValues?.get(1)?.trim() ?: existingState.dominantEmotion
+                    val affMatch = Regex("""(?i)(?:affection|affection_delta)\s*:\s*([+-]?\d+)""").find(blockText)?.groupValues?.get(1)?.toIntOrNull() ?: 0
+                    val trustMatch = Regex("""(?i)(?:trust|trust_delta)\s*:\s*([+-]?\d+)""").find(blockText)?.groupValues?.get(1)?.toIntOrNull() ?: 0
+                    val tensionMatch = Regex("""(?i)(?:tension|tension_delta)\s*:\s*([+-]?\d+)""").find(blockText)?.groupValues?.get(1)?.toIntOrNull() ?: 0
+
+                    val newAff = (existingState.affection + affMatch).coerceIn(0, 100)
+                    val newTrust = (existingState.trust + trustMatch).coerceIn(0, 100)
+                    val newTension = (existingState.tension.toIntOrNull()?.plus(tensionMatch) ?: 10).coerceIn(0, 100)
+
+                    val updatedCharState = existingState.copy(
+                        dominantEmotion = moodMatch,
+                        primaryEmotions = existingState.primaryEmotions.copy(trust = newTrust),
+                        relationshipAxes = existingState.relationshipAxes.copy(affectionScore = newAff),
+                        tension = newTension.toString()
+                    )
+
+                    val charEntityToSave = existingCharEntity?.copy(emotionState = updatedCharState.toJson())
+                        ?: CharacterEmotionEntity(botId = botId, characterName = charName, emotionState = updatedCharState.toJson())
+                    emotionDao.insertOrUpdate(charEntityToSave)
+                }
+            }
+
             emotionHistoryDao.insertHistory(
                 EmotionHistoryEntity(
                     botId = botId,
@@ -3452,12 +3500,21 @@ micro_atmosphere: <mikro mekan/fiziksel ortam/ışık/ses/gerilim>
         val contextQuery = effectiveMessages.takeLast(3).joinToString(" \n ") { "${it.role}: ${it.text}" }.ifBlank { userQuery }
         val apiKey = if (settings.customApiKey.isNotBlank()) settings.customApiKey else getBuildConfigKey()
 
-        val ragResult = getRelevantMemoryTwoStage(effectiveBot.id, userQuery, apiKey)
+        val isTrivialMsg = userQuery.trim().length < 12 && listOf("selam", "merhaba", "nasılsın", "günaydın", "iyi akşamlar", "tamam", "olur", "evet", "hayır", "eyvallah", "sağol", "n'aber", "slm", "bye", "ok").any { userQuery.lowercase().contains(it) } && !userQuery.contains("?")
+
+        val (ragResult, registeredEntities, recentCheckpoints, castMembers) = coroutineScope {
+            val ragDeferred = async {
+                if (isTrivialMsg) TwoStageRetrievalResult(emptyList(), emptyList(), 0f, "vector_only")
+                else getRelevantMemoryTwoStage(effectiveBot.id, userQuery, apiKey)
+            }
+            val entitiesDeferred = async { entityRegistryDao.getEntitiesForBot(effectiveBot.id) }
+            val checkpointsDeferred = async { memoryCheckpointDao.getRecentCheckpoints(effectiveBot.id, limit = 3) }
+            val castDeferred = async { castMemberDao.getCastMembersForBot(effectiveBot.id) }
+
+            Quadruple(ragDeferred.await(), entitiesDeferred.await(), checkpointsDeferred.await(), castDeferred.await())
+        }
         val relevantEvents = ragResult.retrievedEvents
         val relevantFacts = ragResult.retrievedFacts
-        val registeredEntities = entityRegistryDao.getEntitiesForBot(effectiveBot.id)
-        val recentCheckpoints = memoryCheckpointDao.getRecentCheckpoints(effectiveBot.id, limit = 3)
-        val castMembers = castMemberDao.getCastMembersForBot(effectiveBot.id)
 
         val now = System.currentTimeMillis()
         val prevTimestamp = if (effectiveMessages.size >= 2) effectiveMessages[effectiveMessages.size - 2].timestamp else effectiveBot.updatedAt
@@ -4560,14 +4617,7 @@ Tebrikler! Bölüm 3'ü başarıyla tamamladın."""
 
                     var textResult = resp.text
                     if (com.example.util.OutputQualityValidator.hasRepetitiveLoops(textResult)) {
-                        logFallbackAttempt(ProviderFallbackLogEntry(providerName = "$label (Tekrar Tespit)", status = "TRYING", errorMessage = "Tekrar döngüsü yakalandı, retry atılıyor.", layer = layer))
-                        val retryPrompt = llm7Prompt + com.example.util.OutputQualityValidator.buildRepetitionRetryInstruction()
-                        val retryResp = adapter.sendMessage(retryPrompt, messages, null)
-                        if (com.example.util.OutputQualityValidator.hasRepetitiveLoops(retryResp.text)) {
-                            textResult = com.example.util.OutputQualityValidator.truncateAtRepetition(retryResp.text)
-                        } else {
-                            textResult = retryResp.text
-                        }
+                        textResult = com.example.util.OutputQualityValidator.truncateAtRepetition(textResult)
                     }
 
                     textResult = com.example.util.OutputQualityValidator.enforceLengthLimits(textResult, settings.responseLength)
@@ -4605,19 +4655,6 @@ Tebrikler! Bölüm 3'ü başarıyla tamamladın."""
                     var resp = adapter.sendMessage(prompt, messages, null)
 
                     var textResult = resp.text
-                    if (com.example.util.OutputQualityValidator.hasRepetitiveLoops(textResult)) {
-                        logFallbackAttempt(ProviderFallbackLogEntry(providerName = "$label (Tekrar Tespit)", status = "TRYING", errorMessage = "Tekrar döngüsü yakalandı, retry atılıyor.", layer = layer))
-                        val retryPrompt = prompt + com.example.util.OutputQualityValidator.buildRepetitionRetryInstruction()
-                        val retryResp = adapter.sendMessage(retryPrompt, messages, null)
-                        if (com.example.util.OutputQualityValidator.hasRepetitiveLoops(retryResp.text)) {
-                            textResult = com.example.util.OutputQualityValidator.truncateAtRepetition(retryResp.text)
-                        } else {
-                            textResult = retryResp.text
-                        }
-                    }
-
-                    textResult = com.example.util.OutputQualityValidator.enforceLengthLimits(textResult, settings.responseLength)
-
                     val duration = System.currentTimeMillis() - startTime
                     val totalTokens = (resp.usage?.promptTokens ?: 0L) + (resp.usage?.candidateTokens ?: 0L)
                     com.example.util.ProviderRateLimitTracker.recordRequest("pollinations", tokensUsed = totalTokens, responseTimeMs = duration)
@@ -4757,14 +4794,7 @@ Tebrikler! Bölüm 3'ü başarıyla tamamladın."""
 
                     var textResult = resp.text
                     if (com.example.util.OutputQualityValidator.hasRepetitiveLoops(textResult)) {
-                        logFallbackAttempt(ProviderFallbackLogEntry(providerName = "$label (Tekrar Tespit)", status = "TRYING", errorMessage = "Tekrar döngüsü yakalandı, retry atılıyor.", layer = layer))
-                        val retryPrompt = prompt + com.example.util.OutputQualityValidator.buildRepetitionRetryInstruction()
-                        val retryResp = adapter.sendMessage(retryPrompt, messages, com.example.data.api.MemoryToolRegistry.CENTRAL_TOOLS)
-                        if (com.example.util.OutputQualityValidator.hasRepetitiveLoops(retryResp.text)) {
-                            textResult = com.example.util.OutputQualityValidator.truncateAtRepetition(retryResp.text)
-                        } else {
-                            textResult = retryResp.text
-                        }
+                        textResult = com.example.util.OutputQualityValidator.truncateAtRepetition(textResult)
                     }
 
                     textResult = com.example.util.OutputQualityValidator.enforceLengthLimits(textResult, settings.responseLength)
@@ -4801,14 +4831,7 @@ Tebrikler! Bölüm 3'ü başarıyla tamamladın."""
 
                     var textResult = resp.text
                     if (com.example.util.OutputQualityValidator.hasRepetitiveLoops(textResult)) {
-                        logFallbackAttempt(ProviderFallbackLogEntry(providerName = "$label (Tekrar Tespit)", status = "TRYING", errorMessage = "Tekrar döngüsü yakalandı, retry atılıyor.", layer = layer))
-                        val retryPrompt = prompt + com.example.util.OutputQualityValidator.buildRepetitionRetryInstruction()
-                        val retryResp = adapter.sendMessage(retryPrompt, messages, com.example.data.api.MemoryToolRegistry.CENTRAL_TOOLS)
-                        if (com.example.util.OutputQualityValidator.hasRepetitiveLoops(retryResp.text)) {
-                            textResult = com.example.util.OutputQualityValidator.truncateAtRepetition(retryResp.text)
-                        } else {
-                            textResult = retryResp.text
-                        }
+                        textResult = com.example.util.OutputQualityValidator.truncateAtRepetition(textResult)
                     }
 
                     textResult = com.example.util.OutputQualityValidator.enforceLengthLimits(textResult, settings.responseLength)
@@ -4845,14 +4868,7 @@ Tebrikler! Bölüm 3'ü başarıyla tamamladın."""
 
                     var textResult = resp.text
                     if (com.example.util.OutputQualityValidator.hasRepetitiveLoops(textResult)) {
-                        logFallbackAttempt(ProviderFallbackLogEntry(providerName = "$label (Tekrar Tespit)", status = "TRYING", errorMessage = "Tekrar döngüsü yakalandı, retry atılıyor.", layer = layer))
-                        val retryPrompt = prompt + com.example.util.OutputQualityValidator.buildRepetitionRetryInstruction()
-                        val retryResp = adapter.sendMessage(retryPrompt, messages, com.example.data.api.MemoryToolRegistry.CENTRAL_TOOLS)
-                        if (com.example.util.OutputQualityValidator.hasRepetitiveLoops(retryResp.text)) {
-                            textResult = com.example.util.OutputQualityValidator.truncateAtRepetition(retryResp.text)
-                        } else {
-                            textResult = retryResp.text
-                        }
+                        textResult = com.example.util.OutputQualityValidator.truncateAtRepetition(textResult)
                     }
 
                     textResult = com.example.util.OutputQualityValidator.enforceLengthLimits(textResult, settings.responseLength)

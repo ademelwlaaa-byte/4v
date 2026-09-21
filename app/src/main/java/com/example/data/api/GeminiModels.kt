@@ -79,7 +79,8 @@ data class GeminiCandidate(
 data class GeminiUsageMetadata(
     val promptTokenCount: Int? = 0,
     val candidatesTokenCount: Int? = 0,
-    val totalTokenCount: Int? = 0
+    val totalTokenCount: Int? = 0,
+    val cachedContentTokenCount: Int? = 0
 )
 
 @JsonClass(generateAdapter = true)
