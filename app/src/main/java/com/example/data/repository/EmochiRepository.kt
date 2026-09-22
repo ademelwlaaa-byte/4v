@@ -18,6 +18,8 @@ import com.example.data.local.CharacterEmotionEntity
 import com.example.data.local.EmotionHistoryDao
 import com.example.data.local.EmotionHistoryEntity
 import com.example.data.local.EmotionState
+import com.example.data.local.PrimaryEmotions
+import com.example.data.local.RelationshipAxes
 import com.example.data.local.EntityRegistryEntity
 import com.example.data.local.MemoryCheckpointEntity
 import com.example.data.local.MemoryEventEntity
@@ -69,6 +71,14 @@ data class Quadruple<A, B, C, D>(
     val second: B,
     val third: C,
     val fourth: D
+)
+
+data class Tuple5<A, B, C, D, E>(
+    val first: A,
+    val second: B,
+    val third: C,
+    val fourth: D,
+    val fifth: E
 )
 
 data class EffectiveBotSettings(
@@ -142,6 +152,121 @@ class EmochiRepository(
 
         const val THRESHOLD_VECTOR_ONLY = 0.75f
         const val THRESHOLD_QUERY_REWRITE = 0.50f
+
+        @JvmStatic
+        fun cleanEmotionTags(rawText: String): String {
+            if (rawText.isBlank()) return ""
+            var result = rawText
+
+            result = result
+                .replace(Regex("""(?is)<think>.*?</think>"""), "")
+                .replace(Regex("""(?is)<reasoning>.*?</reasoning>"""), "")
+                .replace(Regex("""(?is)\[\[?CHARACTER_EMOTION.*?(?:\]\]?|\[/CHARACTER_EMOTION\]\]?|$)"""), "")
+                .replace(Regex("""(?is)\[\[?WORLD_ATMOSPHERE.*?(?:\]\]?|\[/WORLD_ATMOSPHERE\]\]?|$)"""), "")
+                .replace(Regex("""(?is)\[\[?EMOTION_UPDATE.*?(?:\]\]?|\[/EMOTION_UPDATE\]\]?|$)"""), "")
+                .replace(Regex("""(?is)\[\[STATE_JSON\s*\{.*?\}\s*\]\]"""), "")
+                .replace(Regex("""(?is)\[\[STATE\s+affectionScore=.*?\]\]"""), "")
+                .replace(Regex("""(?is)\[\[STATE.*?\]\]"""), "")
+                .replace(Regex("""(?is)\[\[MEMORY_SAVE.*?\]\]"""), "")
+                .replace(Regex("""(?is)\[ACTIVE_MEMORY_CALL:.*?\]"""), "")
+                .replace(Regex("""(?is)```(?:json)?\s*\{.*?"primary_emotions".*?\}\s*```"""), "")
+                .replace(Regex("""(?is)```(?:json)?\s*\{.*?"primary_emotion".*?\}\s*```"""), "")
+
+            val cleanLines = result.lines().filterNot { line ->
+                val l = line.trim().trimStart('-', '*', '•', '>', ' ', '"', '\'').trim().lowercase()
+                l.startsWith("primary_emotion") ||
+                l.startsWith("secondary_emotion") ||
+                l.startsWith("primary_emotions") ||
+                l.startsWith("secondary_emotions") ||
+                l.startsWith("dominant_emotion") ||
+                l.startsWith("suppressed_emotion") ||
+                l.startsWith("computed_secondary_emotion") ||
+                l.startsWith("relationship_axes") ||
+                l.startsWith("physicalcomfortscore") ||
+                l.startsWith("self_check") ||
+                l.startsWith("schemaversion") ||
+                l.startsWith("mood:") ||
+                l.startsWith("secondary_mood:") ||
+                l.startsWith("suppressed_emotion:") ||
+                l.startsWith("intensity:") ||
+                l.startsWith("current_event:") ||
+                l.startsWith("macro_atmosphere:") ||
+                l.startsWith("micro_atmosphere:") ||
+                l.startsWith("affection_delta:") ||
+                l.startsWith("trust_delta:") ||
+                l.startsWith("tension_delta:") ||
+                l.startsWith("hurt_delta:") ||
+                l.startsWith("speech_pattern:") ||
+                l.startsWith("obsession_delta:") ||
+                l.startsWith("active_memory_call") ||
+                l.startsWith("[active_memory_call") ||
+                l.startsWith("[emotion_update") ||
+                l.startsWith("[character_emotion") ||
+                l.startsWith("[world_atmosphere") ||
+                l.startsWith("[[state") ||
+                l.startsWith("[/character_emotion") ||
+                l.startsWith("[/world_atmosphere") ||
+                l.startsWith("[/emotion_update") ||
+                l.startsWith("delta:") ||
+                l.startsWith("reason:") ||
+                l.startsWith("setting:") ||
+                l.startsWith("mode:") ||
+                l.startsWith("tension:") ||
+                l.startsWith("affection:") ||
+                l.startsWith("trust:") ||
+                l.startsWith("hurt:")
+            }
+
+            val cleaned = cleanLines.joinToString("\n").trim()
+            if (cleaned.isNotBlank()) return cleaned
+
+            // Fallback 1: Try parsing JSON for embedded response text
+            try {
+                val jsonMatch = Regex("""(?is)\{.*\}""").find(rawText)?.value
+                if (jsonMatch != null) {
+                    val jsonObj = org.json.JSONObject(jsonMatch)
+                    val possibleKeys = listOf("response_text", "dialogue", "response", "reply", "message", "content", "narrative", "text")
+                    for (key in possibleKeys) {
+                        val str = jsonObj.optString(key, "")
+                        if (str.isNotBlank()) {
+                            return str.trim()
+                        }
+                    }
+                }
+            } catch (_: Exception) {}
+
+            // Fallback 2: Extract text from <think> or <reasoning> if model put narrative inside think tags
+            try {
+                val thinkMatches = Regex("""(?is)<think>(.*?)</think>""").findAll(rawText)
+                val thinkTexts = thinkMatches.map { it.groupValues[1] }.joinToString("\n").trim()
+                if (thinkTexts.isNotBlank()) {
+                    val cleanedThink = thinkTexts
+                        .replace(Regex("""(?is)\[\[.*?\]\]"""), "")
+                        .lines()
+                        .filterNot { l ->
+                            val low = l.trim().lowercase()
+                            low.startsWith("primary_emotion") || low.startsWith("secondary_emotion") || low.startsWith("dominant_emotion")
+                        }
+                        .joinToString("\n")
+                        .trim()
+                    if (cleanedThink.length > 15) {
+                        return cleanedThink
+                    }
+                }
+            } catch (_: Exception) {}
+
+            // Fallback 3: Basic clean
+            val basicClean = rawText
+                .replace(Regex("""(?is)\[\[STATE_JSON\s*\{.*?\}\s*\]\]"""), "")
+                .replace(Regex("""(?is)```(?:json)?.*?```"""), "")
+                .replace(Regex("""(?is)<think>"""), "")
+                .replace(Regex("""(?is)</think>"""), "")
+                .replace(Regex("""(?is)<reasoning>"""), "")
+                .replace(Regex("""(?is)</reasoning>"""), "")
+                .trim()
+
+            return basicClean
+        }
     }
 
     private val botDao = db.botDao()
@@ -794,6 +919,21 @@ class EmochiRepository(
                     memoryEventDao.updateEvent(event.copy(description = newContent, isBotSaved = true))
                 }
             }
+        } else if (memoryIdStr.isNotBlank()) {
+            val target = memoryIdStr.trim().lowercase()
+            val activeFacts = memoryFactDao.getActiveFacts(botId)
+            val matchingFact = activeFacts.firstOrNull {
+                it.key.lowercase().contains(target) || it.subject.lowercase().contains(target) || it.value.lowercase().contains(target)
+            }
+            if (matchingFact != null) {
+                memoryFactDao.updateFact(matchingFact.copy(value = newContent, lastConfirmedAt = System.currentTimeMillis(), isBotSaved = true))
+            } else {
+                val activeEvents = memoryEventDao.getActiveEvents(botId)
+                val matchingEvent = activeEvents.firstOrNull { it.description.lowercase().contains(target) }
+                if (matchingEvent != null) {
+                    memoryEventDao.updateEvent(matchingEvent.copy(description = newContent, isBotSaved = true))
+                }
+            }
         }
         activeMemoryCallLogDao.insertLog(
             ActiveMemoryCallLogEntity(
@@ -812,6 +952,20 @@ class EmochiRepository(
         if (id != null) {
             memoryFactDao.deleteFact(id)
             memoryEventDao.deleteEvent(id)
+        } else if (memoryIdStr.isNotBlank()) {
+            val target = memoryIdStr.trim().lowercase()
+            val activeFacts = memoryFactDao.getActiveFacts(botId)
+            for (f in activeFacts) {
+                if (f.key.lowercase().contains(target) || f.subject.lowercase().contains(target) || f.value.lowercase().contains(target)) {
+                    memoryFactDao.deleteFact(f.id)
+                }
+            }
+            val activeEvents = memoryEventDao.getActiveEvents(botId)
+            for (e in activeEvents) {
+                if (e.description.lowercase().contains(target)) {
+                    memoryEventDao.deleteEvent(e.id)
+                }
+            }
         }
         activeMemoryCallLogDao.insertLog(
             ActiveMemoryCallLogEntity(
@@ -1255,19 +1409,74 @@ class EmochiRepository(
 
     suspend fun detectAndRegisterCastMembers(botId: String, aiReplyText: String, apiKey: String? = null) {
         val now = System.currentTimeMillis()
-        val words = aiReplyText.split(Regex("\\s+"))
-        val candidateNames = words.filter {
-            it.length in 3..20 && it.first().isUpperCase() && !stopWords.contains(it.lowercase())
-        }.map { it.replace(Regex("[^a-zA-ZÇĞİÖŞÜçğıöşü]"), "") }.filter { it.isNotBlank() }.distinct()
-
-        val genericBlacklist = setOf("Zorba", "Çocuk", "Garson", "Adam", "Kadın", "Polis", "Sürücü", "Müşteri")
-
         val bot = botDao.getBotById(botId) ?: return
+
+        val comprehensiveBlacklist = setOf(
+            "bugün", "yarın", "dün", "sabah", "akşam", "gece", "gündüz", "şimdi", "sonra", "önce", "burada", "orada", "şurada",
+            "çünkü", "sadece", "oysa", "lakin", "fakat", "ayrıca", "özellikle", "nitekim", "ancak", "belki", "böyle", "şöyle",
+            "öyle", "peki", "tamam", "pekala", "lütfen", "efendim", "kullanıcı", "karakter", "insan", "adam", "kadın", "çocuk",
+            "genç", "yaşlı", "polis", "doktor", "garson", "hoca", "öğretmen", "müşteri", "sürücü", "asker", "kral", "kraliçe",
+            "prens", "prenses", "profesör", "amiral", "komutan", "yüzbaşı", "kaptan", "istanbul", "ankara", "izmir", "türkiye",
+            "dünya", "güneş", "ay", "yıldız", "sokak", "cadde", "oda", "masa", "sandalye", "kapı", "pencere", "araba", "telefon",
+            "kitap", "kalem", "kılıç", "bıçak", "kalkan", "ateş", "su", "toprak", "hava", "ruh", "ışık", "karanlık", "ağaç",
+            "orman", "deniz", "göl", "nehir", "dağ", "taş", "kaya", "ev", "saray", "şato", "kule", "zindan", "okul", "hastane",
+            "otel", "meyhane", "restoran", "kafe", "dükkan", "pazar", "şehir", "köy", "ülke", "krallık", "imparatorluk",
+            "lonca", "birlik", "takım", "grup", "sürü", "ordu", "donanma", "meclis", "pazartesi", "salı", "çarşamba", "perşembe",
+            "cuma", "cumartesi", "pazar", "ocak", "şubat", "mart", "nisan", "mayıs", "haziran", "temmuz", "ağustos", "eylül",
+            "ekim", "kasım", "aralık", "evvel", "ahir", "üstelik", "sanki", "hatta", "madem", "meğer", "güya", "zira", "aksi",
+            "yine", "yeniden", "hemen", "derhal", "biraz", "çok", "fazla", "az", "hiç", "tüm", "bütün", "her", "kendi", "biri",
+            "diğeri", "başka", "hangi", "nasıl", "neden", "niçin", "nere", "nerede", "nereden", "nereye", "kim", "kime", "kimden",
+            "kimi", "gözü", "gözleri", "sesi", "yüzü", "adımları", "elleri", "bakışı", "dudakları", "başını", "elini", "arkası",
+            "zorba", "soğuk", "sıcak", "büyük", "küçük", "uzun", "kısa", "sessiz", "hızlı", "yavaş", "güçlü", "zayıf"
+        )
+
+        val cleanReply = cleanEmotionTags(aiReplyText)
+        if (cleanReply.isBlank()) return
+
+        val candidatesWithRoleAndContext = mutableListOf<Triple<String, String, String>>()
+
+        // Title + Name
+        val titlePattern = Regex("""\b(Bay|Bayan|Doktor|Prof|Profesör|Yüzbaşı|Kaptan|Amiral|Komutan|Lord|Prens|Prenses|Kral|Kraliçe|Usta|Hoca|Savaşçı|Büyücü|Şövalye|Mimar|Aziz|Üstat|Gözcü)\s+([A-ZÇĞİÖŞÜ][a-zçğıöşü]{2,18})\b""")
+        titlePattern.findAll(cleanReply).forEach { match ->
+            val title = match.groupValues[1]
+            val name = match.groupValues[2]
+            if (!comprehensiveBlacklist.contains(name.lowercase())) {
+                candidatesWithRoleAndContext.add(Triple(name, title, match.value))
+            }
+        }
+
+        // Name + Honorific
+        val honorificPattern = Regex("""\b([A-ZÇĞİÖŞÜ][a-zçğıöşü]{2,18})\s+(Bey|Hanım|Efendi|Ağa|Usta|Abi|Abla|Komutan|Kaptan|Doktor|Hazretleri)\b""")
+        honorificPattern.findAll(cleanReply).forEach { match ->
+            val name = match.groupValues[1]
+            val honorific = match.groupValues[2]
+            if (!comprehensiveBlacklist.contains(name.lowercase())) {
+                candidatesWithRoleAndContext.add(Triple(name, honorific, match.value))
+            }
+        }
+
+        // Explicit Intro
+        val introPattern = Regex("""\b([A-ZÇĞİÖŞÜ][a-zçğıöşü]{2,18})\s+(adında|isminde|adlı|adındaki|ismındaki)\b""")
+        introPattern.findAll(cleanReply).forEach { match ->
+            val name = match.groupValues[1]
+            if (!comprehensiveBlacklist.contains(name.lowercase())) {
+                candidatesWithRoleAndContext.add(Triple(name, "Yan Karakter", match.value))
+            }
+        }
+
+        // Dialogue Speech Attribution
+        val speechPattern = Regex("""(?:"[^"]{3,}"\s+(?:dedi|sordu|fısıldadı|bağırdı|güldü|mırıldandı|haykırdı|söyledi|yanıtladı)\s+([A-ZÇĞİÖŞÜ][a-zçğıöşü]{2,18})\b)|\b([A-ZÇĞİÖŞÜ][a-zçğıöşü]{2,18})\s*,\s*"[^"]{3,}"[.]?""")
+        speechPattern.findAll(cleanReply).forEach { match ->
+            val name = match.groupValues[1].ifBlank { match.groupValues[2] }
+            if (name.isNotBlank() && !comprehensiveBlacklist.contains(name.lowercase())) {
+                candidatesWithRoleAndContext.add(Triple(name, "Sahnede Konuşan Karakter", match.value))
+            }
+        }
+
         var keyChars = parseKeyCharacters(bot.keyCharactersJson).toMutableList()
         var updatedKeyChars = false
 
-        for (candidate in candidateNames) {
-            if (genericBlacklist.contains(candidate)) continue
+        for ((candidate, inferredRole, cueSnippet) in candidatesWithRoleAndContext.distinctBy { it.first }) {
             if (candidate.equals(bot.aiName, ignoreCase = true) || candidate.equals(bot.userCharName, ignoreCase = true)) continue
 
             val existing = castMemberDao.findByName(botId, candidate)
@@ -1277,42 +1486,55 @@ class EmochiRepository(
                     castMemberDao.updateCastMember(existing.copy(importanceScore = 85))
                 }
             } else {
-                val isImportant = candidate.length >= 4 && !candidate.equals("Kullanıcı", ignoreCase = true)
-                if (isImportant) {
-                    castMemberDao.insertCastMember(
-                        CastMemberEntity(
-                            botId = botId,
-                            name = candidate,
-                            description = "Sahnede beliren yan karakter: $candidate",
-                            role = "Yan Karakter",
-                            affectionScore = 50,
-                            relationshipState = "Tanıdık",
-                            firstAppearedAt = now,
-                            importanceScore = 70,
-                            isAutoAdded = true
-                        )
+                val sentences = cleanReply.split(Regex("""[.!?]\s+"""))
+                val matchSentence = sentences.firstOrNull { it.contains(candidate) } ?: cueSnippet
+                val richDesc = "Sahnede beliren karakter ($inferredRole). Bağlam: ${matchSentence.take(110)}"
+
+                val lowerSentence = matchSentence.lowercase()
+                val isThreatening = listOf("saldır", "tehdit", "kılıç", "silah", "düşman", "öfke", "bağırdı", "nefret", "kan", "öldür", "zarar", "korku", "soğuk", "sert").any { lowerSentence.contains(it) }
+                val isFriendly = listOf("dost", "yardım", "gülümsedi", "sarıldı", "teşekkür", "nazik", "tatlı", "arkadaş", "güven", "hediye", "kurtar", "sevecen").any { lowerSentence.contains(it) }
+
+                val (initialRelState, initialAffection, initialMood, initialTrust, initialTension) = when {
+                    isThreatening -> Tuple5("Düşmanca / Tehditkar", 25, "Tehditkar", 20, 75)
+                    isFriendly -> Tuple5("Dostça / Müttefik", 70, "Sıcak / Yardımsever", 75, 20)
+                    else -> Tuple5("Resmi / Tanıdık", 50, "Temkinli", 50, 40)
+                }
+
+                castMemberDao.insertCastMember(
+                    CastMemberEntity(
+                        botId = botId,
+                        name = candidate,
+                        description = richDesc,
+                        role = inferredRole,
+                        affectionScore = initialAffection,
+                        relationshipState = initialRelState,
+                        firstAppearedAt = now,
+                        importanceScore = 70,
+                        isAutoAdded = true
                     )
+                )
 
-                    // Auto-add to CharacterEmotion table
-                    try {
-                        val existingEmotion = emotionDao.getEmotionForCharacter(botId, candidate)
-                        if (existingEmotion == null) {
-                            val baseState = EmotionState.calculateBaselineEmotionState(bot.aiName, candidate, "")
-                            emotionDao.insertOrUpdate(
-                                CharacterEmotionEntity(
-                                    botId = botId,
-                                    characterName = candidate,
-                                    emotionState = baseState.toJson()
-                                )
+                try {
+                    val existingEmotion = emotionDao.getEmotionForCharacter(botId, candidate)
+                    if (existingEmotion == null) {
+                        val dynamicState = EmotionState(
+                            dominantEmotion = initialMood,
+                            relationshipAxes = RelationshipAxes(affectionScore = initialAffection),
+                            primaryEmotions = PrimaryEmotions(trust = initialTrust)
+                        )
+                        emotionDao.insertOrUpdate(
+                            CharacterEmotionEntity(
+                                botId = botId,
+                                characterName = candidate,
+                                emotionState = dynamicState.toJson()
                             )
-                        }
-                    } catch (_: Exception) {}
-
-                    // Auto-add to keyCharactersJson if missing
-                    if (keyChars.none { it.name.equals(candidate, ignoreCase = true) }) {
-                        keyChars.add(KeyCharacter(id = "auto_${System.currentTimeMillis()}_${candidate}", name = candidate, desc = "Otomatik tespit edilen yan karakter"))
-                        updatedKeyChars = true
+                        )
                     }
+                } catch (_: Exception) {}
+
+                if (keyChars.none { it.name.equals(candidate, ignoreCase = true) }) {
+                    keyChars.add(KeyCharacter(id = "auto_${System.currentTimeMillis()}_${candidate}", name = candidate, desc = richDesc))
+                    updatedKeyChars = true
                 }
             }
         }
@@ -1320,6 +1542,55 @@ class EmochiRepository(
         if (updatedKeyChars) {
             botDao.insertOrUpdate(bot.copy(keyCharactersJson = serializeKeyCharacters(keyChars)))
         }
+    }
+
+    suspend fun deleteCharacterAndBlacklist(botId: String, characterName: String) {
+        val cleanName = characterName.trim()
+        if (cleanName.isBlank()) return
+
+        try {
+            emotionDao.deleteByCharacterName(botId, cleanName)
+        } catch (_: Exception) {}
+
+        try {
+            val existingCast = castMemberDao.findByName(botId, cleanName)
+            if (existingCast != null) {
+                castMemberDao.updateCastMember(existingCast.copy(isBlacklisted = true))
+            } else {
+                castMemberDao.insertCastMember(
+                    CastMemberEntity(
+                        botId = botId,
+                        name = cleanName,
+                        description = "Silindi / Kara Listede",
+                        role = "Kara Liste",
+                        isBlacklisted = true
+                    )
+                )
+            }
+        } catch (_: Exception) {}
+
+        try {
+            val bot = botDao.getBotById(botId)
+            if (bot != null) {
+                val keyChars = parseKeyCharacters(bot.keyCharactersJson).toMutableList()
+                val removed = keyChars.removeAll { it.name.equals(cleanName, ignoreCase = true) }
+                if (removed) {
+                    botDao.insertOrUpdate(bot.copy(keyCharactersJson = serializeKeyCharacters(keyChars)))
+                }
+            }
+        } catch (_: Exception) {}
+    }
+
+    fun getActiveFactsFlow(botId: String) = memoryFactDao.getActiveFactsFlow(botId)
+    fun getActiveEventsFlow(botId: String) = memoryEventDao.getActiveEventsFlow(botId)
+
+    suspend fun deleteMemoryFact(id: Long) = memoryFactDao.deleteFact(id)
+    suspend fun deleteMemoryEvent(id: Long) = memoryEventDao.deleteEvent(id)
+    suspend fun updateMemoryFact(fact: MemoryFactEntity) = memoryFactDao.updateFact(fact)
+    suspend fun updateMemoryEvent(event: MemoryEventEntity) = memoryEventDao.updateEvent(event)
+    suspend fun deleteAllAutoMemories(botId: String) {
+        memoryFactDao.deleteAllFactsForBot(botId)
+        memoryEventDao.deleteAllEventsForBot(botId)
     }
 
     suspend fun checkAndGenerateCheckpoint(botId: String, totalMsgCount: Int, apiKey: String? = null) {
@@ -1483,67 +1754,6 @@ class EmochiRepository(
         } catch (e: Exception) {
             android.util.Log.e("EmochiRepository", "EmptyResponseLog kaydedilemedi: ${e.message}")
         }
-    }
-
-    fun cleanEmotionTags(rawText: String): String {
-        if (rawText.isBlank()) return ""
-        var result = rawText
-
-        result = result
-            .replace(Regex("""(?is)<think>.*?</think>"""), "")
-            .replace(Regex("""(?is)<reasoning>.*?</reasoning>"""), "")
-            .replace(Regex("""(?is)\[\[?CHARACTER_EMOTION.*?(?:\]\]?|\[/CHARACTER_EMOTION\]\]?|$)"""), "")
-            .replace(Regex("""(?is)\[\[?WORLD_ATMOSPHERE.*?(?:\]\]?|\[/WORLD_ATMOSPHERE\]\]?|$)"""), "")
-            .replace(Regex("""(?is)\[\[?EMOTION_UPDATE.*?(?:\]\]?|\[/EMOTION_UPDATE\]\]?|$)"""), "")
-            .replace(Regex("""(?is)\[\[STATE_JSON\s*\{.*?\}\s*\]\]"""), "")
-            .replace(Regex("""(?is)\[\[STATE\s+affectionScore=.*?\]\]"""), "")
-            .replace(Regex("""(?is)\[\[STATE.*?\]\]"""), "")
-            .replace(Regex("""(?is)\[\[MEMORY_SAVE.*?\]\]"""), "")
-            .replace(Regex("""(?is)```(?:json)?\s*\{.*?"primary_emotions".*?\}\s*```"""), "")
-
-        val cleanLines = result.lines().filterNot { line ->
-            val l = line.trim().lowercase()
-            l.startsWith("\"primary_emotions\"") || l.startsWith("\"relationship_axes\"") ||
-                    l.startsWith("\"physicalcomfortscore\"") || l.startsWith("\"dominant_emotion\"") ||
-                    l.startsWith("\"suppressed_emotion\"") || l.startsWith("\"computed_secondary_emotion\"") ||
-                    l.startsWith("\"self_check\"") || l.startsWith("\"schemaversion\"") ||
-                    l.startsWith("[emotion_update") || l.startsWith("[character_emotion") ||
-                    l.startsWith("[world_atmosphere") || l.startsWith("[[state") ||
-                    l.startsWith("mood:") || l.startsWith("secondary_mood:") || l.startsWith("suppressed_emotion:") ||
-                    l.startsWith("intensity:") || l.startsWith("current_event:") || l.startsWith("macro_atmosphere:") ||
-                    l.startsWith("micro_atmosphere:") || l.startsWith("[/character_emotion") || l.startsWith("[/world_atmosphere") ||
-                    l.startsWith("[/emotion_update") ||
-                    l.startsWith("affection_delta:") || l.startsWith("trust_delta:") || l.startsWith("tension_delta:") ||
-                    l.startsWith("hurt_delta:") || l.startsWith("speech_pattern:") || l.startsWith("obsession_delta:") ||
-                    l.startsWith("delta:") || l.startsWith("reason:") || l.startsWith("setting:") || l.startsWith("mode:") ||
-                    l.startsWith("tension:") || l.startsWith("affection:") || l.startsWith("trust:") || l.startsWith("hurt:")
-        }
-
-        val cleaned = cleanLines.joinToString("\n").trim()
-        if (cleaned.isNotBlank()) return cleaned
-
-        // Fallback 1: Try parsing JSON for embedded response text
-        try {
-            val jsonMatch = Regex("""(?is)\{.*\}""").find(rawText)?.value
-            if (jsonMatch != null) {
-                val jsonObj = org.json.JSONObject(jsonMatch)
-                val possibleKeys = listOf("response_text", "dialogue", "response", "reply", "message", "content", "narrative", "text")
-                for (key in possibleKeys) {
-                    val str = jsonObj.optString(key, "")
-                    if (str.isNotBlank()) {
-                        return str.trim()
-                    }
-                }
-            }
-        } catch (_: Exception) {}
-
-        // Fallback 2: Basic clean
-        val basicClean = rawText
-            .replace(Regex("""(?is)\[\[STATE_JSON\s*\{.*?\}\s*\]\]"""), "")
-            .replace(Regex("""(?is)```(?:json)?.*?```"""), "")
-            .trim()
-
-        return basicClean
     }
 
     suspend fun mergeDuplicateCharacterEmotions(botId: String) {
@@ -3557,26 +3767,28 @@ micro_atmosphere: <mikro mekan/fiziksel ortam/ışık/ses/gerilim>
         executeActiveMemoryToolCalls(updatedTimeBot.id, result.text, toolCalls = result.toolCalls, apiKey = apiKey)
         val replyText = parseAndApplyEmotionUpdates(updatedTimeBot.id, result.text)
 
-        if (replyText.isBlank()) {
+        val finalReplyText = if (replyText.isBlank()) {
             logEmptyResponse(
                 botId = updatedTimeBot.id,
                 provider = result.usedProvider,
                 model = selectedModel,
                 finishReason = "empty_cleaned_reply",
                 rawLength = result.text.length,
-                errorMessage = "Duygu/STATE etiketleri temizlendikten sonra mesaj içeriği boş kaldı."
+                errorMessage = "Duygu/STATE etiketleri temizlendikten sonra mesaj içeriği boş kaldı. Otomatik karakter kurtarma yanıtı oluşturuldu."
             )
-            throw IllegalStateException("Sağlayıcı (${result.usedProvider}) boş yanıt üretti. Lütfen tekrar deneyin.")
+            "${updatedTimeBot.aiName} bir an tereddütle sessiz kaldı, ardından gözlerinin içine bakarak konuşmaya devam etti: \"Seni dinliyorum...\""
+        } else {
+            replyText
         }
 
         try {
-            extractAndSaveRealtimeMemories(updatedTimeBot.id, userQuery, replyText, apiKey)
-            detectAndRegisterCastMembers(updatedTimeBot.id, replyText, apiKey)
+            extractAndSaveRealtimeMemories(updatedTimeBot.id, userQuery, finalReplyText, apiKey)
+            detectAndRegisterCastMembers(updatedTimeBot.id, finalReplyText, apiKey)
             checkAndGenerateCheckpoint(updatedTimeBot.id, totalCount + 1, apiKey)
-            checkTimePerceptionMismatch(updatedTimeBot.id, userQuery, replyText, elapsedMs)
+            checkTimePerceptionMismatch(updatedTimeBot.id, userQuery, finalReplyText, elapsedMs)
         } catch (_: Exception) {}
 
-        return@withContext AiReplyResult(replyText = replyText, usedProvider = result.usedProvider)
+        return@withContext AiReplyResult(replyText = finalReplyText, usedProvider = result.usedProvider)
     }
 
     private suspend fun generateDeterministicBookReply(
@@ -4446,19 +4658,20 @@ Tebrikler! Bölüm 3'ü başarıyla tamamladın."""
                     resp = adapter.sendMessage(currentPrompt, messages, tools)
                 }
 
-                if (resp.text.isBlank() && resp.toolCalls.isNullOrEmpty()) {
+                val cleanText = cleanEmotionTags(resp.text)
+                if (cleanText.isBlank() && resp.toolCalls.isNullOrEmpty()) {
                     logEmptyResponse(
                         botId = botId ?: "unknown",
                         provider = resp.usedProvider,
                         model = model,
                         finishReason = "empty_response_content",
-                        rawLength = 0,
-                        errorMessage = "Model içerik döndürmedi (attempt=$attempt)."
+                        rawLength = resp.text.length,
+                        errorMessage = "Model etiketler temizlendikten sonra boş içerik döndürdü (attempt=$attempt)."
                     )
                     if (isSecondary) {
                         com.example.util.ProviderRateLimitTracker.recordMalformedOutput(providerKey)
                     }
-                    throw IllegalStateException("Sağlayıcı (${resp.usedProvider}) boş yanıt döndürdü.")
+                    throw IllegalStateException("Sağlayıcı (${resp.usedProvider}) boş/temizlenmiş yanıt üretti.")
                 }
 
                 if (isSecondary) {
@@ -4537,6 +4750,26 @@ Tebrikler! Bölüm 3'ü başarıyla tamamladın."""
             providerKey.startsWith("custom_") -> customProvider?.modelName ?: ""
             else -> sanitizeModelName(settings.geminiModel.ifBlank { "gemini-2.0-flash" })
         }
+    }
+
+    private fun validateAndPrepareResult(
+        respText: String,
+        toolCalls: List<com.example.data.api.ParsedMemoryToolCall>?,
+        promptTokens: Long,
+        candidateTokens: Long,
+        usedProvider: String
+    ): com.example.data.api.ModelResponseResult {
+        val clean = cleanEmotionTags(respText)
+        if (clean.isBlank() && toolCalls.isNullOrEmpty()) {
+            throw IllegalStateException("Sağlayıcı ($usedProvider) boş/temizlenmiş metin yanıtı üretti.")
+        }
+        return com.example.data.api.ModelResponseResult(
+            text = respText,
+            toolCalls = toolCalls ?: emptyList(),
+            promptTokens = promptTokens,
+            candidateTokens = candidateTokens,
+            usedProvider = usedProvider
+        )
     }
 
     private suspend fun tryExecuteProviderByKey(
@@ -4627,7 +4860,7 @@ Tebrikler! Bölüm 3'ü başarıyla tamamladın."""
                     com.example.util.ProviderRateLimitTracker.recordRequest("llm7", tokensUsed = totalTokens, responseTimeMs = duration)
 
                     logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "SUCCESS", layer = layer))
-                    return com.example.data.api.ModelResponseResult(textResult, resp.toolCalls ?: emptyList(), resp.usage?.promptTokens ?: 0L, resp.usage?.candidateTokens ?: 0L, resp.usedProvider)
+                    return validateAndPrepareResult(textResult, resp.toolCalls, resp.usage?.promptTokens ?: 0L, resp.usage?.candidateTokens ?: 0L, resp.usedProvider)
                 } catch (e: Exception) {
                     com.example.util.ProviderRateLimitTracker.recordFallbackTrigger("llm7")
                     logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "FAILED", errorMessage = e.message ?: e.toString(), layer = layer))
@@ -4659,7 +4892,7 @@ Tebrikler! Bölüm 3'ü başarıyla tamamladın."""
                     val totalTokens = (resp.usage?.promptTokens ?: 0L) + (resp.usage?.candidateTokens ?: 0L)
                     com.example.util.ProviderRateLimitTracker.recordRequest("pollinations", tokensUsed = totalTokens, responseTimeMs = duration)
                     logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "SUCCESS", layer = layer))
-                    return com.example.data.api.ModelResponseResult(textResult, resp.toolCalls ?: emptyList(), resp.usage?.promptTokens ?: 0L, resp.usage?.candidateTokens ?: 0L, resp.usedProvider)
+                    return validateAndPrepareResult(textResult, resp.toolCalls, resp.usage?.promptTokens ?: 0L, resp.usage?.candidateTokens ?: 0L, resp.usedProvider)
                 } catch (e: Exception) {
                     com.example.util.ProviderRateLimitTracker.recordFallbackTrigger("pollinations")
                     logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "FAILED", errorMessage = e.message ?: e.toString(), layer = layer))
@@ -4701,7 +4934,7 @@ Tebrikler! Bölüm 3'ü başarıyla tamamladın."""
                     val totalTokens = (resp.usage?.promptTokens ?: 0L) + (resp.usage?.candidateTokens ?: 0L)
                     com.example.util.ProviderRateLimitTracker.recordRequest("ovh", tokensUsed = totalTokens, responseTimeMs = duration)
                     logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "SUCCESS", layer = layer))
-                    return com.example.data.api.ModelResponseResult(textResult, resp.toolCalls ?: emptyList(), resp.usage?.promptTokens ?: 0L, resp.usage?.candidateTokens ?: 0L, resp.usedProvider)
+                    return validateAndPrepareResult(textResult, resp.toolCalls, resp.usage?.promptTokens ?: 0L, resp.usage?.candidateTokens ?: 0L, resp.usedProvider)
                 } catch (e: Exception) {
                     com.example.util.ProviderRateLimitTracker.recordFallbackTrigger("ovh")
                     logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "FAILED", errorMessage = e.message ?: e.toString(), layer = layer))
@@ -4718,7 +4951,7 @@ Tebrikler! Bölüm 3'ü başarıyla tamamladın."""
                     val adapter = com.example.data.api.LLMAdapterFactory.createAdapter("gemini", gModel, settings, buildConfigGeminiKey = gemKey)
                     val resp = adapter.sendMessage(systemPrompt, messages, com.example.data.api.MemoryToolRegistry.CENTRAL_TOOLS)
                     logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "SUCCESS", layer = layer))
-                    return com.example.data.api.ModelResponseResult(resp.text, resp.toolCalls ?: emptyList(), resp.usage?.promptTokens ?: 0L, resp.usage?.candidateTokens ?: 0L, resp.usedProvider)
+                    return validateAndPrepareResult(resp.text, resp.toolCalls, resp.usage?.promptTokens ?: 0L, resp.usage?.candidateTokens ?: 0L, resp.usedProvider)
                 } catch (e: Exception) {
                     logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "FAILED", errorMessage = e.message ?: e.toString(), layer = layer))
                 }
@@ -4732,7 +4965,7 @@ Tebrikler! Bölüm 3'ü başarıyla tamamladın."""
                     val adapter = com.example.data.api.LLMAdapterFactory.createAdapter("claude", cModel, settings)
                     val resp = adapter.sendMessage(systemPrompt, messages, com.example.data.api.MemoryToolRegistry.CENTRAL_TOOLS)
                     logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "SUCCESS", layer = layer))
-                    return com.example.data.api.ModelResponseResult(resp.text, resp.toolCalls ?: emptyList(), resp.usage?.promptTokens ?: 0L, resp.usage?.candidateTokens ?: 0L, resp.usedProvider)
+                    return validateAndPrepareResult(resp.text, resp.toolCalls, resp.usage?.promptTokens ?: 0L, resp.usage?.candidateTokens ?: 0L, resp.usedProvider)
                 } catch (e: Exception) {
                     logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "FAILED", errorMessage = e.message ?: e.toString(), layer = layer))
                 }
@@ -4746,7 +4979,7 @@ Tebrikler! Bölüm 3'ü başarıyla tamamladın."""
                     val adapter = com.example.data.api.LLMAdapterFactory.createAdapter("groq", gModel, settings)
                     val resp = adapter.sendMessage(systemPrompt, messages, com.example.data.api.MemoryToolRegistry.CENTRAL_TOOLS)
                     logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "SUCCESS", layer = layer))
-                    return com.example.data.api.ModelResponseResult(resp.text, resp.toolCalls ?: emptyList(), resp.usage?.promptTokens ?: 0L, resp.usage?.candidateTokens ?: 0L, resp.usedProvider)
+                    return validateAndPrepareResult(resp.text, resp.toolCalls, resp.usage?.promptTokens ?: 0L, resp.usage?.candidateTokens ?: 0L, resp.usedProvider)
                 } catch (e: Exception) {
                     val errRaw = e.message ?: e.toString()
                     val errLower = errRaw.lowercase()
@@ -4767,7 +5000,7 @@ Tebrikler! Bölüm 3'ü başarıyla tamamladın."""
                     val adapter = com.example.data.api.LLMAdapterFactory.createAdapter("openai", oModel, settings)
                     val resp = adapter.sendMessage(systemPrompt, messages, com.example.data.api.MemoryToolRegistry.CENTRAL_TOOLS)
                     logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "SUCCESS", layer = layer))
-                    return com.example.data.api.ModelResponseResult(resp.text, resp.toolCalls ?: emptyList(), resp.usage?.promptTokens ?: 0L, resp.usage?.candidateTokens ?: 0L, resp.usedProvider)
+                    return validateAndPrepareResult(resp.text, resp.toolCalls, resp.usage?.promptTokens ?: 0L, resp.usage?.candidateTokens ?: 0L, resp.usedProvider)
                 } catch (e: Exception) {
                     logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "FAILED", errorMessage = e.message ?: e.toString(), layer = layer))
                 }
@@ -4803,7 +5036,7 @@ Tebrikler! Bölüm 3'ü başarıyla tamamladın."""
                     val totalTokens = (resp.usage?.promptTokens ?: 0L) + (resp.usage?.candidateTokens ?: 0L)
                     com.example.util.ProviderRateLimitTracker.recordRequest("openrouter", tokensUsed = totalTokens, responseTimeMs = duration)
                     logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "SUCCESS", layer = layer))
-                    return com.example.data.api.ModelResponseResult(textResult, resp.toolCalls ?: emptyList(), resp.usage?.promptTokens ?: 0L, resp.usage?.candidateTokens ?: 0L, resp.usedProvider)
+                    return validateAndPrepareResult(textResult, resp.toolCalls, resp.usage?.promptTokens ?: 0L, resp.usage?.candidateTokens ?: 0L, resp.usedProvider)
                 } catch (e: Exception) {
                     com.example.util.ProviderRateLimitTracker.recordFallbackTrigger("openrouter")
                     logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "FAILED", errorMessage = e.message ?: e.toString(), layer = layer))
@@ -4840,7 +5073,7 @@ Tebrikler! Bölüm 3'ü başarıyla tamamladın."""
                     val totalTokens = (resp.usage?.promptTokens ?: 0L) + (resp.usage?.candidateTokens ?: 0L)
                     com.example.util.ProviderRateLimitTracker.recordRequest("nvidia", tokensUsed = totalTokens, responseTimeMs = duration)
                     logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "SUCCESS", layer = layer))
-                    return com.example.data.api.ModelResponseResult(textResult, resp.toolCalls ?: emptyList(), resp.usage?.promptTokens ?: 0L, resp.usage?.candidateTokens ?: 0L, resp.usedProvider)
+                    return validateAndPrepareResult(textResult, resp.toolCalls, resp.usage?.promptTokens ?: 0L, resp.usage?.candidateTokens ?: 0L, resp.usedProvider)
                 } catch (e: Exception) {
                     com.example.util.ProviderRateLimitTracker.recordFallbackTrigger("nvidia")
                     logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "FAILED", errorMessage = e.message ?: e.toString(), layer = layer))
@@ -4877,7 +5110,7 @@ Tebrikler! Bölüm 3'ü başarıyla tamamladın."""
                     val totalTokens = (resp.usage?.promptTokens ?: 0L) + (resp.usage?.candidateTokens ?: 0L)
                     com.example.util.ProviderRateLimitTracker.recordRequest("mistral", tokensUsed = totalTokens, responseTimeMs = duration)
                     logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "SUCCESS", layer = layer))
-                    return com.example.data.api.ModelResponseResult(textResult, resp.toolCalls ?: emptyList(), resp.usage?.promptTokens ?: 0L, resp.usage?.candidateTokens ?: 0L, resp.usedProvider)
+                    return validateAndPrepareResult(textResult, resp.toolCalls, resp.usage?.promptTokens ?: 0L, resp.usage?.candidateTokens ?: 0L, resp.usedProvider)
                 } catch (e: Exception) {
                     com.example.util.ProviderRateLimitTracker.recordFallbackTrigger("mistral")
                     logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "FAILED", errorMessage = e.message ?: e.toString(), layer = layer))
@@ -4897,7 +5130,7 @@ Tebrikler! Bölüm 3'ü başarıyla tamamladın."""
                     val tools = if (cpAdapter.supportsFunctionCalling()) com.example.data.api.MemoryToolRegistry.CENTRAL_TOOLS else null
                     val resp = cpAdapter.sendMessage(finalPrompt, messages, tools)
                     logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "SUCCESS", layer = layer))
-                    return com.example.data.api.ModelResponseResult(resp.text, resp.toolCalls ?: emptyList(), resp.usage?.promptTokens ?: 0L, resp.usage?.candidateTokens ?: 0L, resp.usedProvider)
+                    return validateAndPrepareResult(resp.text, resp.toolCalls, resp.usage?.promptTokens ?: 0L, resp.usage?.candidateTokens ?: 0L, resp.usedProvider)
                 } catch (e: Exception) {
                     logFallbackAttempt(ProviderFallbackLogEntry(providerName = label, status = "FAILED", errorMessage = e.message ?: e.toString(), layer = layer))
                 }

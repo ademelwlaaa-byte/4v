@@ -40,6 +40,8 @@ import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.PhotoCamera
@@ -3845,6 +3847,7 @@ fun BotSettingsModal(
                                 storyNotes = storyNotes,
                                 memoryNotes = memoryNotes
                             ),
+                            viewModel = viewModel,
                             onDismiss = { showNeuralVault = false },
                             onSaveMemory = { updatedBot ->
                                 pinnedMemory = updatedBot.pinnedMemory
@@ -4238,6 +4241,7 @@ fun FilterToggleRow(
 @Composable
 fun NeuralVaultModal(
     bot: BotEntity,
+    viewModel: com.example.ui.viewmodel.EmochiViewModel? = null,
     onDismiss: () -> Unit,
     onSaveMemory: (BotEntity) -> Unit
 ) {
@@ -4251,6 +4255,15 @@ fun NeuralVaultModal(
     var pinnedMemoryText by remember { mutableStateOf(bot.pinnedMemory) }
     var memoryNotesText by remember { mutableStateOf(bot.memoryNotes) }
     var storyNotesText by remember { mutableStateOf(bot.storyNotes) }
+
+    val activeFactsFlow = remember(bot.id) { viewModel?.getActiveFactsFlow(bot.id) }
+    val activeFacts by (activeFactsFlow ?: kotlinx.coroutines.flow.flowOf(emptyList())).collectAsStateWithLifecycle(initialValue = emptyList())
+
+    val activeEventsFlow = remember(bot.id) { viewModel?.getActiveEventsFlow(bot.id) }
+    val activeEvents by (activeEventsFlow ?: kotlinx.coroutines.flow.flowOf(emptyList())).collectAsStateWithLifecycle(initialValue = emptyList())
+
+    var editingFact by remember { mutableStateOf<com.example.data.local.MemoryFactEntity?>(null) }
+    var editingEvent by remember { mutableStateOf<com.example.data.local.MemoryEventEntity?>(null) }
     
     val memoriesList = remember(pinnedMemoryText, memoryNotesText, storyNotesText) {
         val list = mutableListOf<Triple<String, String, String>>()
@@ -4294,6 +4307,20 @@ fun NeuralVaultModal(
         val matchesSearch = searchQuery.isBlank() || key.contains(searchQuery, ignoreCase = true) ||
                 cat.contains(searchQuery, ignoreCase = true) ||
                 body.contains(searchQuery, ignoreCase = true)
+        matchesCategory && matchesSearch
+    }
+
+    val filteredFacts = activeFacts.filter { fact ->
+        val matchesCategory = categoryFilter == "Tümü" || categoryFilter.contains("Bilgi", ignoreCase = true)
+        val matchesSearch = searchQuery.isBlank() || fact.subject.contains(searchQuery, ignoreCase = true) ||
+                fact.key.contains(searchQuery, ignoreCase = true) ||
+                fact.value.contains(searchQuery, ignoreCase = true)
+        matchesCategory && matchesSearch
+    }
+
+    val filteredEvents = activeEvents.filter { event ->
+        val matchesCategory = categoryFilter == "Tümü" || categoryFilter.contains("Biyografi", ignoreCase = true) || categoryFilter.contains("İlişki", ignoreCase = true)
+        val matchesSearch = searchQuery.isBlank() || event.description.contains(searchQuery, ignoreCase = true)
         matchesCategory && matchesSearch
     }
 
@@ -4343,7 +4370,7 @@ fun NeuralVaultModal(
                             .background(Color(0xFF1E1E28), RoundedCornerShape(12.dp))
                             .padding(horizontal = 10.dp, vertical = 4.dp)
                     ) {
-                        Text("${memoriesList.size} Kayıt", color = Color.LightGray, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                        Text("${memoriesList.size + activeFacts.size + activeEvents.size} Kayıt", color = Color.LightGray, fontSize = 11.sp, fontWeight = FontWeight.Medium)
                     }
                     Box(
                         modifier = Modifier
@@ -4554,17 +4581,19 @@ fun NeuralVaultModal(
                 Spacer(modifier = Modifier.height(12.dp))
 
                 // Saved Memory List Cards
-                if (filteredMemories.isEmpty()) {
+                val totalItemsCount = filteredMemories.size + filteredFacts.size + filteredEvents.size
+                if (totalItemsCount == 0) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(24.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text("Henüz enjekte edilmiş bellek yok.", color = Color.Gray, fontSize = 12.sp)
+                        Text("Henüz enjekte edilmiş veya öğrenilmiş bellek yok.", color = Color.Gray, fontSize = 12.sp)
                     }
                 } else {
-                    filteredMemories.forEachIndexed { index, (keyTag, catTag, bodyText) ->
+                    // 1. Manual Enjected Memories
+                    filteredMemories.forEach { (keyTag, catTag, bodyText) ->
                         Card(
                             colors = CardDefaults.cardColors(containerColor = Color(0xFF14141E)),
                             shape = RoundedCornerShape(12.dp),
@@ -4623,6 +4652,269 @@ fun NeuralVaultModal(
                                     }
                                 }
                             }
+                        }
+                    }
+
+                    // 2. Automatic Facts
+                    filteredFacts.forEach { fact ->
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFF181B28)),
+                            shape = RoundedCornerShape(12.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF2D3250)),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp)
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "${fact.subject}: ${fact.key}",
+                                        color = Color(0xFF80CBC4),
+                                        fontSize = 12.5.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Box(
+                                        modifier = Modifier
+                                            .background(Color(0xFF2D3250), RoundedCornerShape(6.dp))
+                                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                                    ) {
+                                        Text(
+                                            text = "🤖 OTOMATİK BİLGİ",
+                                            color = Color(0xFF80CBC4),
+                                            fontSize = 9.5.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(
+                                    text = fact.value,
+                                    color = Color(0xFFE0E0F0),
+                                    fontSize = 12.sp
+                                )
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.End,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    IconButton(
+                                        onClick = { editingFact = fact },
+                                        modifier = Modifier.size(28.dp)
+                                    ) {
+                                        Icon(Icons.Default.Edit, contentDescription = "Düzenle", tint = Color(0xFF81D4FA), modifier = Modifier.size(16.dp))
+                                    }
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    IconButton(
+                                        onClick = { viewModel?.deleteMemoryFact(fact.id) },
+                                        modifier = Modifier.size(28.dp)
+                                    ) {
+                                        Icon(Icons.Default.Delete, contentDescription = "Sil", tint = Color(0xFFE53935), modifier = Modifier.size(16.dp))
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // 3. Automatic Events
+                    filteredEvents.forEach { event ->
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFF231B2A)),
+                            shape = RoundedCornerShape(12.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF4A2E50)),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp)
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "Olay Kaydı #${event.id}",
+                                        color = Color(0xFFCE93D8),
+                                        fontSize = 12.5.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Box(
+                                        modifier = Modifier
+                                            .background(Color(0xFF4A2E50), RoundedCornerShape(6.dp))
+                                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                                    ) {
+                                        Text(
+                                            text = "⚡ OTOMATİK OLAY",
+                                            color = Color(0xFFCE93D8),
+                                            fontSize = 9.5.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(
+                                    text = event.description,
+                                    color = Color(0xFFF0E0F0),
+                                    fontSize = 12.sp
+                                )
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.End,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    IconButton(
+                                        onClick = { editingEvent = event },
+                                        modifier = Modifier.size(28.dp)
+                                    ) {
+                                        Icon(Icons.Default.Edit, contentDescription = "Düzenle", tint = Color(0xFF81D4FA), modifier = Modifier.size(16.dp))
+                                    }
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    IconButton(
+                                        onClick = { viewModel?.deleteMemoryEvent(event.id) },
+                                        modifier = Modifier.size(28.dp)
+                                    ) {
+                                        Icon(Icons.Default.Delete, contentDescription = "Sil", tint = Color(0xFFE53935), modifier = Modifier.size(16.dp))
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if (activeFacts.isNotEmpty() || activeEvents.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        OutlinedButton(
+                            onClick = { viewModel?.clearAllAutoMemories(bot.id) },
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFFF6B6B)),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFF6B6B).copy(alpha = 0.5f)),
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Icon(Icons.Default.DeleteSweep, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("🧹 Tüm Otomatik Öğrenilmiş Bellekleri Temizle", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (editingFact != null) {
+        val fact = editingFact!!
+        var editSubject by remember(fact) { mutableStateOf(fact.subject) }
+        var editKey by remember(fact) { mutableStateOf(fact.key) }
+        var editValue by remember(fact) { mutableStateOf(fact.value) }
+
+        Dialog(onDismissRequest = { editingFact = null }) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E2A)),
+                shape = RoundedCornerShape(16.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF80CBC4)),
+                modifier = Modifier.fillMaxWidth().padding(16.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text("🤖 Otomatik Bilgiyi Düzenle", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Spacer(modifier = Modifier.height(10.dp))
+                    OutlinedTextField(
+                        value = editSubject,
+                        onValueChange = { editSubject = it },
+                        label = { Text("Konu / Özne (Örn: Kullanıcı)", color = Color.Gray) },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = customTextFieldColors()
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = editKey,
+                        onValueChange = { editKey = it },
+                        label = { Text("Anahtar (Örn: En sevdiği renk)", color = Color.Gray) },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = customTextFieldColors()
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = editValue,
+                        onValueChange = { editValue = it },
+                        label = { Text("Değer / İçerik (Örn: Mavi)", color = Color.Gray) },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = customTextFieldColors()
+                    )
+                    Spacer(modifier = Modifier.height(14.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        TextButton(onClick = { editingFact = null }) {
+                            Text("İptal", color = Color.Gray)
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Button(
+                            onClick = {
+                                viewModel?.updateMemoryFact(
+                                    fact.copy(
+                                        subject = editSubject.trim(),
+                                        key = editKey.trim(),
+                                        value = editValue.trim(),
+                                        lastConfirmedAt = System.currentTimeMillis()
+                                    )
+                                )
+                                editingFact = null
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF80CBC4), contentColor = Color.Black)
+                        ) {
+                            Text("Kaydet", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (editingEvent != null) {
+        val event = editingEvent!!
+        var editDesc by remember(event) { mutableStateOf(event.description) }
+
+        Dialog(onDismissRequest = { editingEvent = null }) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E2A)),
+                shape = RoundedCornerShape(16.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFCE93D8)),
+                modifier = Modifier.fillMaxWidth().padding(16.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text("⚡ Otomatik Olayı Düzenle", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Spacer(modifier = Modifier.height(10.dp))
+                    OutlinedTextField(
+                        value = editDesc,
+                        onValueChange = { editDesc = it },
+                        label = { Text("Olay Açıklaması", color = Color.Gray) },
+                        modifier = Modifier.fillMaxWidth().height(100.dp),
+                        colors = customTextFieldColors()
+                    )
+                    Spacer(modifier = Modifier.height(14.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        TextButton(onClick = { editingEvent = null }) {
+                            Text("İptal", color = Color.Gray)
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Button(
+                            onClick = {
+                                viewModel?.updateMemoryEvent(
+                                    event.copy(
+                                        description = editDesc.trim(),
+                                        timestamp = System.currentTimeMillis()
+                                    )
+                                )
+                                editingEvent = null
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFCE93D8), contentColor = Color.Black)
+                        ) {
+                            Text("Kaydet", fontWeight = FontWeight.Bold)
                         }
                     }
                 }

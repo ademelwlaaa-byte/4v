@@ -901,6 +901,45 @@ class EmochiViewModel(application: Application) : AndroidViewModel(application) 
         return repository.generateOpeningMessage(botDraft)
     }
 
+    fun deleteCharacter(botId: String, characterName: String) {
+        viewModelScope.launch {
+            repository.deleteCharacterAndBlacklist(botId, characterName)
+        }
+    }
+
+    fun getActiveFactsFlow(botId: String) = repository.getActiveFactsFlow(botId)
+    fun getActiveEventsFlow(botId: String) = repository.getActiveEventsFlow(botId)
+
+    fun deleteMemoryFact(id: Long) {
+        viewModelScope.launch {
+            repository.deleteMemoryFact(id)
+        }
+    }
+
+    fun deleteMemoryEvent(id: Long) {
+        viewModelScope.launch {
+            repository.deleteMemoryEvent(id)
+        }
+    }
+
+    fun updateMemoryFact(fact: com.example.data.local.MemoryFactEntity) {
+        viewModelScope.launch {
+            repository.updateMemoryFact(fact)
+        }
+    }
+
+    fun updateMemoryEvent(event: com.example.data.local.MemoryEventEntity) {
+        viewModelScope.launch {
+            repository.updateMemoryEvent(event)
+        }
+    }
+
+    fun clearAllAutoMemories(botId: String) {
+        viewModelScope.launch {
+            repository.deleteAllAutoMemories(botId)
+        }
+    }
+
     private fun extractUserFriendlyErrorMessage(e: Exception): String {
         val rawMsg = e.message ?: ""
         return when {

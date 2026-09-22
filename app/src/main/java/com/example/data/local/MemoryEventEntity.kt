@@ -37,6 +37,9 @@ interface MemoryEventDao {
     @Query("SELECT * FROM memory_events WHERE botId = :botId AND supersededBy IS NULL ORDER BY timestamp DESC")
     suspend fun getActiveEvents(botId: String): List<MemoryEventEntity>
 
+    @Query("SELECT * FROM memory_events WHERE botId = :botId AND supersededBy IS NULL ORDER BY timestamp DESC")
+    fun getActiveEventsFlow(botId: String): kotlinx.coroutines.flow.Flow<List<MemoryEventEntity>>
+
     @Query("SELECT COUNT(*) FROM memory_events WHERE botId = :botId AND supersededBy IS NULL")
     suspend fun getEventCount(botId: String): Int
 
@@ -45,4 +48,7 @@ interface MemoryEventDao {
 
     @Query("DELETE FROM memory_events WHERE id = :id")
     suspend fun deleteEvent(id: Long)
+
+    @Query("DELETE FROM memory_events WHERE botId = :botId")
+    suspend fun deleteAllEventsForBot(botId: String)
 }

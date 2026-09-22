@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.IconButton
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -52,6 +54,7 @@ fun EmotionStatusSection(
     affectionEvents: List<AffectionEventEntity> = emptyList(),
     filterCount: Int = 0,
     onUpdateCharacterEmotion: ((characterName: String, mood: String, affection: Int, trust: Int, tension: Int) -> Unit)? = null,
+    onDeleteCharacter: ((characterName: String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val emotion = remember(bot.emotionState) { EmotionState.fromJson(bot.emotionState) }
@@ -345,12 +348,25 @@ fun EmotionStatusSection(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text(
-                                    text = charEntity.characterName + if (onUpdateCharacterEmotion != null) " ✏️" else "",
-                                    color = EmochiTextPrimary,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Text(
+                                        text = charEntity.characterName + if (onUpdateCharacterEmotion != null) " ✏️" else "",
+                                        color = EmochiTextPrimary,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    if (onDeleteCharacter != null) {
+                                        IconButton(
+                                            onClick = { onDeleteCharacter(charEntity.characterName) },
+                                            modifier = Modifier.size(24.dp)
+                                        ) {
+                                            Text("🗑️", fontSize = 11.sp)
+                                        }
+                                    }
+                                }
                                 Text(
                                     text = "${charEmotion.getMoodEmoji()} ${charEmotion.mood}",
                                     color = EmochiTextSecondary,

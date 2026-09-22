@@ -36,6 +36,9 @@ interface MemoryFactDao {
     @Query("SELECT * FROM memory_facts WHERE botId = :botId AND supersededBy IS NULL ORDER BY lastConfirmedAt DESC")
     suspend fun getActiveFacts(botId: String): List<MemoryFactEntity>
 
+    @Query("SELECT * FROM memory_facts WHERE botId = :botId AND supersededBy IS NULL ORDER BY lastConfirmedAt DESC")
+    fun getActiveFactsFlow(botId: String): kotlinx.coroutines.flow.Flow<List<MemoryFactEntity>>
+
     @Query("SELECT * FROM memory_facts WHERE botId = :botId AND supersededBy IS NULL AND (subject LIKE '%' || :query || '%' OR key LIKE '%' || :query || '%' OR value LIKE '%' || :query || '%') ORDER BY lastConfirmedAt DESC")
     suspend fun searchFacts(botId: String, query: String): List<MemoryFactEntity>
 
@@ -47,4 +50,7 @@ interface MemoryFactDao {
 
     @Query("DELETE FROM memory_facts WHERE botId = :botId AND userCorrected = 0")
     suspend fun deleteAutoFacts(botId: String)
+
+    @Query("DELETE FROM memory_facts WHERE botId = :botId")
+    suspend fun deleteAllFactsForBot(botId: String)
 }

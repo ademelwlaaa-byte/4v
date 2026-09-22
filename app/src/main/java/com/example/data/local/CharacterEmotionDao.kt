@@ -25,4 +25,7 @@ interface CharacterEmotionDao {
 
     @Query("DELETE FROM character_emotions WHERE id = :id")
     suspend fun deleteEmotionById(id: Long)
+
+    @Query("DELETE FROM character_emotions WHERE botId = :botId AND LOWER(characterName) = LOWER(:characterName)")
+    suspend fun deleteByCharacterName(botId: String, characterName: String)
 }

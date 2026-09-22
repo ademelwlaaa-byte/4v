@@ -3853,36 +3853,5 @@ fun BookReaderView(
 }
 
 fun cleanCopyText(rawText: String): String {
-    if (rawText.isBlank()) return ""
-    var result = rawText
-        .replace(Regex("""(?is)<think>.*?</think>"""), "")
-        .replace(Regex("""(?is)<reasoning>.*?</reasoning>"""), "")
-        .replace(Regex("""(?is)\[\[?CHARACTER_EMOTION.*?(?:\]\]?|\[/CHARACTER_EMOTION\]\]?|$)"""), "")
-        .replace(Regex("""(?is)\[\[?WORLD_ATMOSPHERE.*?(?:\]\]?|\[/WORLD_ATMOSPHERE\]\]?|$)"""), "")
-        .replace(Regex("""(?is)\[\[?EMOTION_UPDATE.*?(?:\]\]?|\[/EMOTION_UPDATE\]\]?|$)"""), "")
-        .replace(Regex("""(?is)\[\[STATE_JSON\s*\{.*?\}\s*\]\]"""), "")
-        .replace(Regex("""(?is)\[\[STATE\s+affectionScore=.*?\]\]"""), "")
-        .replace(Regex("""(?is)\[\[STATE.*?\]\]"""), "")
-        .replace(Regex("""(?is)\[\[MEMORY_SAVE.*?\]\]"""), "")
-        .replace(Regex("""(?is)```(?:json)?\s*\{.*?"primary_emotions".*?\}\s*```"""), "")
-
-    val cleanLines = result.lines().filterNot { line ->
-        val l = line.trim().lowercase()
-        l.startsWith("\"primary_emotions\"") || l.startsWith("\"relationship_axes\"") ||
-                l.startsWith("\"physicalcomfortscore\"") || l.startsWith("\"dominant_emotion\"") ||
-                l.startsWith("\"suppressed_emotion\"") || l.startsWith("\"computed_secondary_emotion\"") ||
-                l.startsWith("\"self_check\"") || l.startsWith("\"schemaversion\"") ||
-                l.startsWith("[emotion_update") || l.startsWith("[character_emotion") ||
-                l.startsWith("[world_atmosphere") || l.startsWith("[[state") ||
-                l.startsWith("mood:") || l.startsWith("secondary_mood:") || l.startsWith("suppressed_emotion:") ||
-                l.startsWith("intensity:") || l.startsWith("current_event:") || l.startsWith("macro_atmosphere:") ||
-                l.startsWith("micro_atmosphere:") || l.startsWith("[/character_emotion") || l.startsWith("[/world_atmosphere") ||
-                l.startsWith("[/emotion_update") ||
-                l.startsWith("affection_delta:") || l.startsWith("trust_delta:") || l.startsWith("tension_delta:") ||
-                l.startsWith("hurt_delta:") || l.startsWith("speech_pattern:") || l.startsWith("obsession_delta:") ||
-                l.startsWith("delta:") || l.startsWith("reason:") || l.startsWith("setting:") || l.startsWith("mode:") ||
-                l.startsWith("tension:") || l.startsWith("affection:") || l.startsWith("trust:") || l.startsWith("hurt:")
-    }
-
-    return cleanLines.joinToString("\n").trim()
+    return com.example.data.repository.EmochiRepository.cleanEmotionTags(rawText)
 }
