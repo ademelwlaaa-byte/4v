@@ -1407,9 +1407,212 @@ class EmochiRepository(
         }
     }
 
-    suspend fun detectAndRegisterCastMembers(botId: String, aiReplyText: String, apiKey: String? = null) {
-        val now = System.currentTimeMillis()
+    fun cleanCharacterNameCandidate(raw: String): String {
+        var clean = raw.trim()
+            .replace(Regex("""['’`].*"""), "")
+            .replace(Regex("""[.,!?:;"'()\[\]{}]+"""), "")
+
+        val titles = listOf(
+            "bay", "bayan", "doktor", "prof", "profesör", "yüzbaşı", "kaptan", "amiral", "komutan",
+            "lord", "prens", "prenses", "kral", "kraliçe", "usta", "hoca", "savaşçı", "büyücü",
+            "şövalye", "mimar", "aziz", "üstat", "gözcü", "bey", "hanım", "efendi", "ağa", "abi",
+            "abla", "hazretleri", "sn", "sayın", "sn.", "dr.", "mr.", "mrs.", "ms.", "sir", "lady"
+        )
+
+        val words = clean.split(Regex("""\s+""")).toMutableList()
+        while (words.isNotEmpty() && titles.contains(words.first().lowercase())) {
+            words.removeAt(0)
+        }
+        while (words.isNotEmpty() && titles.contains(words.last().lowercase())) {
+            words.removeAt(words.size - 1)
+        }
+
+        return words.joinToString(" ").trim()
+    }
+
+    fun isMainOrUserCharacter(candidateRaw: String, bot: BotEntity): Boolean {
+        val cleanCandidate = cleanCharacterNameCandidate(candidateRaw)
+        val candidateLower = cleanCandidate.lowercase()
+        val rawLower = candidateRaw.lowercase().trim()
+
+        if (candidateLower.isBlank() || candidateLower.length < 2 || rawLower.length < 2) return true
+
+        val genericWords = setOf(
+            "bay", "bayan", "kaptan", "doktor", "komutan", "yüzbaşı", "kral", "prenses", "prens",
+            "adam", "kadın", "çocuk", "insan", "karakter", "kullanıcı", "sistem", "yazar", "oyuncu",
+            "sohbet", "arkadaş", "dost", "düşman", "sen", "ben", "o", "biz", "siz", "onlar", "biri",
+            "diğeri", "herkes", "kimse", "hiçbiri", "blackwood", "vane"
+        )
+
+        val aiNameClean = cleanCharacterNameCandidate(bot.aiName).lowercase()
+        val aiNameRaw = bot.aiName.lowercase().trim()
+        val aiTokens = (aiNameClean.split(Regex("""\s+""")) + aiNameRaw.split(Regex("""\s+""")))
+            .filter { it.length >= 2 }.toSet()
+
+        val userClean = cleanCharacterNameCandidate(bot.userCharName).lowercase()
+        val userRaw = bot.userCharName.lowercase().trim()
+        val userTokens = (userClean.split(Regex("""\s+""")) + userRaw.split(Regex("""\s+""")))
+            .filter { it.length >= 2 }.toSet()
+
+        if (aiNameRaw.isNotBlank() && (rawLower.contains(aiNameRaw) || aiNameRaw.contains(rawLower))) return true
+        if (aiNameClean.isNotBlank() && (candidateLower.contains(aiNameClean) || aiNameClean.contains(candidateLower))) return true
+        if (aiTokens.contains(candidateLower) || aiTokens.contains(rawLower)) return true
+
+        if (userRaw.isNotBlank() && (rawLower.contains(userRaw) || userRaw.contains(rawLower))) return true
+        if (userClean.isNotBlank() && (candidateLower.contains(userClean) || userClean.contains(candidateLower))) return true
+        if (userTokens.contains(candidateLower) || userTokens.contains(rawLower)) return true
+
+        for (token in aiTokens) {
+            if (token.length >= 3 && (candidateLower.contains(token) || rawLower.contains(token))) return true
+        }
+        for (token in userTokens) {
+            if (token.length >= 3 && (candidateLower.contains(token) || rawLower.contains(token))) return true
+        }
+
+        if (genericWords.contains(candidateLower) || genericWords.contains(rawLower)) return true
+
+        return false
+    }
+
+    fun extractCharacterDescriptionFromContext(charName: String, bot: BotEntity, fallbackSentence: String = ""): String {
+        val cleanName = cleanCharacterNameCandidate(charName)
+        if (cleanName.isBlank()) return "Sahnede beliren yan karakter."
+
+        val sources = listOf(
+            bot.scenario,
+            bot.keyCharactersJson,
+            bot.storyNotes,
+            bot.aiPersonality,
+            bot.universeName,
+            bot.openingMessage
+        )
+
+        for (source in sources) {
+            if (source.isBlank()) continue
+            val lines = source.lines()
+            for (line in lines) {
+                val trimmed = line.trim()
+                if (trimmed.isBlank()) continue
+                if (trimmed.contains(cleanName, ignoreCase = true) || (charName.length >= 3 && trimmed.contains(charName, ignoreCase = true))) {
+                    val cleanLine = trimmed
+                        .removePrefix("#")
+                        .removePrefix("-")
+                        .removePrefix("*")
+                        .trim()
+                    if (cleanLine.length >= 10 && !cleanLine.startsWith("JSON", ignoreCase = true) && !cleanLine.startsWith("[")) {
+                        return cleanLine.take(200)
+                    }
+                }
+            }
+        }
+
+        if (fallbackSentence.isNotBlank()) {
+            val cleanSentence = fallbackSentence.trim().take(150)
+            return "Sahnede geçen karakter. Bağlam: $cleanSentence"
+        }
+
+        return "Hikaye evreninde yer alan yan karakter ($cleanName)."
+    }
+
+    suspend fun ensureSideCharacterRegistered(
+        botId: String,
+        charName: String,
+        role: String = "Yan Karakter",
+        cueSentence: String = ""
+    ) {
         val bot = botDao.getBotById(botId) ?: return
+        val cleanName = cleanCharacterNameCandidate(charName)
+        if (cleanName.isBlank() || isMainOrUserCharacter(charName, bot) || isMainOrUserCharacter(cleanName, bot)) return
+
+        val existingCast = castMemberDao.findByName(botId, cleanName)
+        if (existingCast?.isBlacklisted == true) return
+
+        val richDesc = extractCharacterDescriptionFromContext(cleanName, bot, cueSentence)
+        val now = System.currentTimeMillis()
+
+        if (existingCast == null) {
+            castMemberDao.insertCastMember(
+                CastMemberEntity(
+                    botId = botId,
+                    name = cleanName,
+                    description = richDesc,
+                    role = role,
+                    affectionScore = 50,
+                    relationshipState = "Tanıdık",
+                    firstAppearedAt = now,
+                    importanceScore = 75,
+                    isAutoAdded = true
+                )
+            )
+        } else if (existingCast.isAutoAdded && existingCast.description.contains("Sahnede beliren")) {
+            if (!richDesc.contains("Sahnede beliren")) {
+                castMemberDao.updateCastMember(existingCast.copy(description = richDesc))
+            }
+        }
+
+        try {
+            val existingEmotion = emotionDao.getEmotionForCharacter(botId, cleanName)
+            if (existingEmotion == null) {
+                val defaultState = EmotionState(
+                    dominantEmotion = "Nötr",
+                    relationshipAxes = RelationshipAxes(affectionScore = 50),
+                    primaryEmotions = PrimaryEmotions(trust = 50)
+                )
+                emotionDao.insertOrUpdate(
+                    CharacterEmotionEntity(
+                        botId = botId,
+                        characterName = cleanName,
+                        emotionState = defaultState.toJson()
+                    )
+                )
+            }
+        } catch (_: Exception) {}
+
+        try {
+            val keyChars = parseKeyCharacters(bot.keyCharactersJson).toMutableList()
+            if (keyChars.none { it.name.equals(cleanName, ignoreCase = true) || cleanCharacterNameCandidate(it.name).equals(cleanName, ignoreCase = true) }) {
+                keyChars.add(
+                    KeyCharacter(
+                        id = "auto_${now}_${cleanName.replace(" ", "_")}",
+                        name = cleanName,
+                        desc = richDesc
+                    )
+                )
+                botDao.insertOrUpdate(bot.copy(keyCharactersJson = serializeKeyCharacters(keyChars)))
+            }
+        } catch (_: Exception) {}
+    }
+
+    suspend fun cleanupInvalidCastMembers(botId: String) {
+        val bot = botDao.getBotById(botId) ?: return
+        try {
+            val castMembers = castMemberDao.getCastMembersForBot(botId)
+            for (cm in castMembers) {
+                if (isMainOrUserCharacter(cm.name, bot) || cleanCharacterNameCandidate(cm.name).length < 2) {
+                    castMemberDao.deleteCastMember(cm.id)
+                }
+            }
+
+            val emotions = emotionDao.getEmotionsForBot(botId)
+            for (em in emotions) {
+                if (isMainOrUserCharacter(em.characterName, bot) || cleanCharacterNameCandidate(em.characterName).length < 2) {
+                    emotionDao.deleteEmotionById(em.id)
+                }
+            }
+
+            val keyChars = parseKeyCharacters(bot.keyCharactersJson).toMutableList()
+            val initialSize = keyChars.size
+            keyChars.removeAll { isMainOrUserCharacter(it.name, bot) || cleanCharacterNameCandidate(it.name).length < 2 }
+            if (keyChars.size != initialSize) {
+                botDao.insertOrUpdate(bot.copy(keyCharactersJson = serializeKeyCharacters(keyChars)))
+            }
+        } catch (_: Exception) {}
+    }
+
+    suspend fun detectAndRegisterCastMembers(botId: String, aiReplyText: String, apiKey: String? = null) {
+        val bot = botDao.getBotById(botId) ?: return
+
+        cleanupInvalidCastMembers(botId)
 
         val comprehensiveBlacklist = setOf(
             "bugün", "yarın", "dün", "sabah", "akşam", "gece", "gündüz", "şimdi", "sonra", "önce", "burada", "orada", "şurada",
@@ -1473,87 +1676,25 @@ class EmochiRepository(
             }
         }
 
-        var keyChars = parseKeyCharacters(bot.keyCharactersJson).toMutableList()
-        var updatedKeyChars = false
+        for ((candidateRaw, inferredRole, cueSnippet) in candidatesWithRoleAndContext.distinctBy { it.first }) {
+            val candidate = cleanCharacterNameCandidate(candidateRaw)
+            if (candidate.isBlank() || isMainOrUserCharacter(candidateRaw, bot) || isMainOrUserCharacter(candidate, bot)) continue
 
-        for ((candidate, inferredRole, cueSnippet) in candidatesWithRoleAndContext.distinctBy { it.first }) {
-            if (candidate.equals(bot.aiName, ignoreCase = true) || candidate.equals(bot.userCharName, ignoreCase = true)) continue
-
-            val existing = castMemberDao.findByName(botId, candidate)
-            if (existing != null) {
-                if (existing.isBlacklisted) continue
-                if (existing.isAutoAdded && existing.importanceScore < 80) {
-                    castMemberDao.updateCastMember(existing.copy(importanceScore = 85))
-                }
-            } else {
-                val sentences = cleanReply.split(Regex("""[.!?]\s+"""))
-                val matchSentence = sentences.firstOrNull { it.contains(candidate) } ?: cueSnippet
-                val richDesc = "Sahnede beliren karakter ($inferredRole). Bağlam: ${matchSentence.take(110)}"
-
-                val lowerSentence = matchSentence.lowercase()
-                val isThreatening = listOf("saldır", "tehdit", "kılıç", "silah", "düşman", "öfke", "bağırdı", "nefret", "kan", "öldür", "zarar", "korku", "soğuk", "sert").any { lowerSentence.contains(it) }
-                val isFriendly = listOf("dost", "yardım", "gülümsedi", "sarıldı", "teşekkür", "nazik", "tatlı", "arkadaş", "güven", "hediye", "kurtar", "sevecen").any { lowerSentence.contains(it) }
-
-                val (initialRelState, initialAffection, initialMood, initialTrust, initialTension) = when {
-                    isThreatening -> Tuple5("Düşmanca / Tehditkar", 25, "Tehditkar", 20, 75)
-                    isFriendly -> Tuple5("Dostça / Müttefik", 70, "Sıcak / Yardımsever", 75, 20)
-                    else -> Tuple5("Resmi / Tanıdık", 50, "Temkinli", 50, 40)
-                }
-
-                castMemberDao.insertCastMember(
-                    CastMemberEntity(
-                        botId = botId,
-                        name = candidate,
-                        description = richDesc,
-                        role = inferredRole,
-                        affectionScore = initialAffection,
-                        relationshipState = initialRelState,
-                        firstAppearedAt = now,
-                        importanceScore = 70,
-                        isAutoAdded = true
-                    )
-                )
-
-                try {
-                    val existingEmotion = emotionDao.getEmotionForCharacter(botId, candidate)
-                    if (existingEmotion == null) {
-                        val dynamicState = EmotionState(
-                            dominantEmotion = initialMood,
-                            relationshipAxes = RelationshipAxes(affectionScore = initialAffection),
-                            primaryEmotions = PrimaryEmotions(trust = initialTrust)
-                        )
-                        emotionDao.insertOrUpdate(
-                            CharacterEmotionEntity(
-                                botId = botId,
-                                characterName = candidate,
-                                emotionState = dynamicState.toJson()
-                            )
-                        )
-                    }
-                } catch (_: Exception) {}
-
-                if (keyChars.none { it.name.equals(candidate, ignoreCase = true) }) {
-                    keyChars.add(KeyCharacter(id = "auto_${System.currentTimeMillis()}_${candidate}", name = candidate, desc = richDesc))
-                    updatedKeyChars = true
-                }
-            }
-        }
-
-        if (updatedKeyChars) {
-            botDao.insertOrUpdate(bot.copy(keyCharactersJson = serializeKeyCharacters(keyChars)))
+            ensureSideCharacterRegistered(botId = botId, charName = candidate, role = inferredRole, cueSentence = cueSnippet)
         }
     }
 
     suspend fun deleteCharacterAndBlacklist(botId: String, characterName: String) {
-        val cleanName = characterName.trim()
+        val cleanName = cleanCharacterNameCandidate(characterName)
         if (cleanName.isBlank()) return
 
         try {
             emotionDao.deleteByCharacterName(botId, cleanName)
+            emotionDao.deleteByCharacterName(botId, characterName)
         } catch (_: Exception) {}
 
         try {
-            val existingCast = castMemberDao.findByName(botId, cleanName)
+            val existingCast = castMemberDao.findByName(botId, cleanName) ?: castMemberDao.findByName(botId, characterName)
             if (existingCast != null) {
                 castMemberDao.updateCastMember(existingCast.copy(isBlacklisted = true))
             } else {
@@ -1573,7 +1714,11 @@ class EmochiRepository(
             val bot = botDao.getBotById(botId)
             if (bot != null) {
                 val keyChars = parseKeyCharacters(bot.keyCharactersJson).toMutableList()
-                val removed = keyChars.removeAll { it.name.equals(cleanName, ignoreCase = true) }
+                val removed = keyChars.removeAll { 
+                    it.name.equals(cleanName, ignoreCase = true) || 
+                    it.name.equals(characterName, ignoreCase = true) ||
+                    cleanCharacterNameCandidate(it.name).equals(cleanName, ignoreCase = true)
+                }
                 if (removed) {
                     botDao.insertOrUpdate(bot.copy(keyCharactersJson = serializeKeyCharacters(keyChars)))
                 }
@@ -2596,11 +2741,20 @@ micro_atmosphere: <mikro mekan/fiziksel ortam/ışık/ses/gerilim>
             val charEmotionRegex = Regex("""(?is)\[CHARACTER_EMOTION:\s*([^\]]+)\](.*?)\[/CHARACTER_EMOTION\]""")
             val charMatches = charEmotionRegex.findAll(rawResponse)
             for (match in charMatches) {
-                val charName = match.groupValues[1].trim()
+                val rawCharName = match.groupValues[1].trim()
                 val blockText = match.groupValues[2]
-                if (charName.isNotBlank()) {
-                    val existingCharEntity = emotionDao.getEmotionForCharacter(botId, charName)
-                    val existingState = existingCharEntity?.let { EmotionState.fromJson(it.emotionState) } ?: EmotionState.calculateBaselineEmotionState(bot.aiName, charName, "")
+                val cleanCharName = cleanCharacterNameCandidate(rawCharName)
+
+                if (cleanCharName.isNotBlank() && !isMainOrUserCharacter(rawCharName, bot) && !isMainOrUserCharacter(cleanCharName, bot)) {
+                    ensureSideCharacterRegistered(
+                        botId = botId,
+                        charName = cleanCharName,
+                        role = "Yan Karakter",
+                        cueSentence = rawResponse.take(200)
+                    )
+
+                    val existingCharEntity = emotionDao.getEmotionForCharacter(botId, cleanCharName)
+                    val existingState = existingCharEntity?.let { EmotionState.fromJson(it.emotionState) } ?: EmotionState.calculateBaselineEmotionState(bot.aiName, cleanCharName, "")
 
                     val moodMatch = Regex("""(?i)mood\s*:\s*([^\n\r]+)""").find(blockText)?.groupValues?.get(1)?.trim() ?: existingState.dominantEmotion
                     val affMatch = Regex("""(?i)(?:affection|affection_delta)\s*:\s*([+-]?\d+)""").find(blockText)?.groupValues?.get(1)?.toIntOrNull() ?: 0
@@ -2618,8 +2772,8 @@ micro_atmosphere: <mikro mekan/fiziksel ortam/ışık/ses/gerilim>
                         tension = newTension.toString()
                     )
 
-                    val charEntityToSave = existingCharEntity?.copy(emotionState = updatedCharState.toJson())
-                        ?: CharacterEmotionEntity(botId = botId, characterName = charName, emotionState = updatedCharState.toJson())
+                    val charEntityToSave = existingCharEntity?.copy(characterName = cleanCharName, emotionState = updatedCharState.toJson())
+                        ?: CharacterEmotionEntity(botId = botId, characterName = cleanCharName, emotionState = updatedCharState.toJson())
                     emotionDao.insertOrUpdate(charEntityToSave)
                 }
             }
