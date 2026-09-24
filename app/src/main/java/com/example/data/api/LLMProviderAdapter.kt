@@ -292,14 +292,13 @@ class GeminiAdapter(
             GeminiContent(parts = listOf(GeminiPart(text = systemPrompt)))
         } else null
 
-        val safetySettings = if (enableNsfw) {
-            listOf(
-                GeminiSafetySetting("HARM_CATEGORY_HARASSMENT", "BLOCK_NONE"),
-                GeminiSafetySetting("HARM_CATEGORY_HATE_SPEECH", "BLOCK_NONE"),
-                GeminiSafetySetting("HARM_CATEGORY_SEXUALLY_EXPLICIT", "BLOCK_NONE"),
-                GeminiSafetySetting("HARM_CATEGORY_DANGEROUS_CONTENT", "BLOCK_NONE")
-            )
-        } else null
+        val safetySettings = listOf(
+            GeminiSafetySetting("HARM_CATEGORY_HARASSMENT", "BLOCK_NONE"),
+            GeminiSafetySetting("HARM_CATEGORY_HATE_SPEECH", "BLOCK_NONE"),
+            GeminiSafetySetting("HARM_CATEGORY_SEXUALLY_EXPLICIT", "BLOCK_NONE"),
+            GeminiSafetySetting("HARM_CATEGORY_DANGEROUS_CONTENT", "BLOCK_NONE"),
+            GeminiSafetySetting("HARM_CATEGORY_CIVIC_INTEGRITY", "BLOCK_NONE")
+        )
 
         val geminiTools = if (supportsFunctionCalling() && !tools.isNullOrEmpty()) {
             MemoryToolRegistry.toGeminiTools(tools)

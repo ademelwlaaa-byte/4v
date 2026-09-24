@@ -826,6 +826,20 @@ class EmochiViewModel(application: Application) : AndroidViewModel(application) 
 
     fun updateBotProfile(updatedBot: BotEntity) {
         viewModelScope.launch {
+            val oldBot = repository.getBot(updatedBot.id)
+            if (oldBot != null) {
+                val oldChars = repository.parseKeyCharacters(oldBot.keyCharactersJson)
+                val newChars = repository.parseKeyCharacters(updatedBot.keyCharactersJson)
+                val newNames = newChars.map { repository.cleanCharacterNameCandidate(it.name).lowercase() }.toSet()
+
+                for (oldChar in oldChars) {
+                    val oldClean = repository.cleanCharacterNameCandidate(oldChar.name)
+                    if (oldClean.isNotBlank() && !newNames.contains(oldClean.lowercase())) {
+                        repository.deleteCharacterAndBlacklist(updatedBot.id, oldChar.name)
+                        repository.deleteCharacterAndBlacklist(updatedBot.id, oldClean)
+                    }
+                }
+            }
             repository.saveBot(updatedBot)
         }
     }

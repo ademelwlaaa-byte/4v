@@ -49,6 +49,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -339,8 +340,32 @@ class EmochiRepository(
         }
     }
 
-    fun getCharacterEmotionsFlow(botId: String) = emotionDao.getEmotionsForBotFlow(botId)
-    suspend fun getCharacterEmotions(botId: String) = emotionDao.getEmotionsForBot(botId)
+    fun getCharacterEmotionsFlow(botId: String): Flow<List<CharacterEmotionEntity>> {
+        return emotionDao.getEmotionsForBotFlow(botId).map { list ->
+            val bot = botDao.getBotById(botId)
+            val blacklisted = castMemberDao.getBlacklistedNamesForBot(botId).map { it.lowercase() }.toSet()
+            list.filter { em ->
+                val clean = cleanCharacterNameCandidate(em.characterName)
+                clean.length >= 2 &&
+                (bot == null || (!isMainOrUserCharacter(em.characterName, bot) && !isMainOrUserCharacter(clean, bot))) &&
+                !blacklisted.contains(em.characterName.lowercase()) &&
+                !blacklisted.contains(clean.lowercase())
+            }
+        }
+    }
+
+    suspend fun getCharacterEmotions(botId: String): List<CharacterEmotionEntity> {
+        val list = emotionDao.getEmotionsForBot(botId)
+        val bot = botDao.getBotById(botId)
+        val blacklisted = castMemberDao.getBlacklistedNamesForBot(botId).map { it.lowercase() }.toSet()
+        return list.filter { em ->
+            val clean = cleanCharacterNameCandidate(em.characterName)
+            clean.length >= 2 &&
+            (bot == null || (!isMainOrUserCharacter(em.characterName, bot) && !isMainOrUserCharacter(clean, bot))) &&
+            !blacklisted.contains(em.characterName.lowercase()) &&
+            !blacklisted.contains(clean.lowercase())
+        }
+    }
 
     private val moshi = Moshi.Builder().add(KotlinJsonAdapterFactory()).build()
     private val keyCharListAdapter = moshi.adapter<List<KeyCharacter>>(
@@ -1412,11 +1437,22 @@ class EmochiRepository(
             .replace(Regex("""['’`].*"""), "")
             .replace(Regex("""[.,!?:;"'()\[\]{}]+"""), "")
 
+        val suffixRegex = Regex("""(?i)(nin|nın|nün|nun|den|dan|ten|tan|ye|ya|de|da|te|ta|yi|yı|yü|yu|in|ın|ün|un|le|la|ile)$""")
+        if (clean.length > 5 && clean.contains(suffixRegex)) {
+            val stripped = clean.replace(suffixRegex, "")
+            if (stripped.length >= 3) {
+                clean = stripped
+            }
+        }
+
         val titles = listOf(
             "bay", "bayan", "doktor", "prof", "profesör", "yüzbaşı", "kaptan", "amiral", "komutan",
             "lord", "prens", "prenses", "kral", "kraliçe", "usta", "hoca", "savaşçı", "büyücü",
-            "şövalye", "mimar", "aziz", "üstat", "gözcü", "bey", "hanım", "efendi", "ağa", "abi",
-            "abla", "hazretleri", "sn", "sayın", "sn.", "dr.", "mr.", "mrs.", "ms.", "sir", "lady"
+            "şövalye", "mimar", "aziz", "üstat", "gözcü", "dedektif", "ajan", "müfettiş", "savcı",
+            "hâkim", "teğmen", "binbaşı", "albay", "general", "sultan", "paşa", "dük", "kont",
+            "baron", "barones", "rahip", "cadı", "gölge", "muhafız", "hizmetkar", "tüccar", "eczacı",
+            "yargıç", "bakan", "başkan", "reis", "çavuş", "efe", "kethüda", "seyis", "bey", "hanım",
+            "efendi", "ağa", "abi", "abla", "hazretleri", "sn", "sayın", "sn.", "dr.", "mr.", "mrs.", "ms.", "sir", "lady"
         )
 
         val words = clean.split(Regex("""\s+""")).toMutableList()
@@ -1441,7 +1477,12 @@ class EmochiRepository(
             "bay", "bayan", "kaptan", "doktor", "komutan", "yüzbaşı", "kral", "prenses", "prens",
             "adam", "kadın", "çocuk", "insan", "karakter", "kullanıcı", "sistem", "yazar", "oyuncu",
             "sohbet", "arkadaş", "dost", "düşman", "sen", "ben", "o", "biz", "siz", "onlar", "biri",
-            "diğeri", "herkes", "kimse", "hiçbiri", "blackwood", "vane"
+            "diğeri", "herkes", "kimse", "hiçbiri", "bugün", "yarın", "dün", "sabah", "akşam", "gece",
+            "gündüz", "şimdi", "sonra", "önce", "burada", "orada", "şurada", "çünkü", "sadece", "oysa",
+            "fakat", "ayrıca", "ancak", "belki", "böyle", "şöyle", "öyle", "peki", "tamam", "pekala",
+            "lütfen", "efendim", "istanbul", "ankara", "izmir", "türkiye", "dünya", "güneş", "ay",
+            "sokak", "cadde", "oda", "masa", "kapı", "pencere", "araba", "telefon", "kitap", "kalem",
+            "kılıç", "ateş", "su", "toprak", "hava", "ruh", "işte", "biri", "diğer", "evet", "hayır"
         )
 
         val aiNameClean = cleanCharacterNameCandidate(bot.aiName).lowercase()
@@ -1454,19 +1495,19 @@ class EmochiRepository(
         val userTokens = (userClean.split(Regex("""\s+""")) + userRaw.split(Regex("""\s+""")))
             .filter { it.length >= 2 }.toSet()
 
-        if (aiNameRaw.isNotBlank() && (rawLower.contains(aiNameRaw) || aiNameRaw.contains(rawLower))) return true
-        if (aiNameClean.isNotBlank() && (candidateLower.contains(aiNameClean) || aiNameClean.contains(candidateLower))) return true
+        if (aiNameRaw.isNotBlank() && (rawLower == aiNameRaw || candidateLower == aiNameRaw)) return true
+        if (aiNameClean.isNotBlank() && (candidateLower == aiNameClean || rawLower == aiNameClean)) return true
         if (aiTokens.contains(candidateLower) || aiTokens.contains(rawLower)) return true
 
-        if (userRaw.isNotBlank() && (rawLower.contains(userRaw) || userRaw.contains(rawLower))) return true
-        if (userClean.isNotBlank() && (candidateLower.contains(userClean) || userClean.contains(candidateLower))) return true
+        if (userRaw.isNotBlank() && (rawLower == userRaw || candidateLower == userRaw)) return true
+        if (userClean.isNotBlank() && (candidateLower == userClean || rawLower == userClean)) return true
         if (userTokens.contains(candidateLower) || userTokens.contains(rawLower)) return true
 
         for (token in aiTokens) {
-            if (token.length >= 3 && (candidateLower.contains(token) || rawLower.contains(token))) return true
+            if (token.length >= 3 && (candidateLower == token || rawLower == token)) return true
         }
         for (token in userTokens) {
-            if (token.length >= 3 && (candidateLower.contains(token) || rawLower.contains(token))) return true
+            if (token.length >= 3 && (candidateLower == token || rawLower == token)) return true
         }
 
         if (genericWords.contains(candidateLower) || genericWords.contains(rawLower)) return true
@@ -1609,7 +1650,7 @@ class EmochiRepository(
         } catch (_: Exception) {}
     }
 
-    suspend fun detectAndRegisterCastMembers(botId: String, aiReplyText: String, apiKey: String? = null) {
+    suspend fun detectAndRegisterCastMembers(botId: String, aiReplyText: String, apiKey: String? = null, userQuery: String = "") {
         val bot = botDao.getBotById(botId) ?: return
 
         cleanupInvalidCastMembers(botId)
@@ -1630,16 +1671,30 @@ class EmochiRepository(
             "yine", "yeniden", "hemen", "derhal", "biraz", "çok", "fazla", "az", "hiç", "tüm", "bütün", "her", "kendi", "biri",
             "diğeri", "başka", "hangi", "nasıl", "neden", "niçin", "nere", "nerede", "nereden", "nereye", "kim", "kime", "kimden",
             "kimi", "gözü", "gözleri", "sesi", "yüzü", "adımları", "elleri", "bakışı", "dudakları", "başını", "elini", "arkası",
-            "zorba", "soğuk", "sıcak", "büyük", "küçük", "uzun", "kısa", "sessiz", "hızlı", "yavaş", "güçlü", "zayıf"
+            "zorba", "soğuk", "sıcak", "büyük", "küçük", "uzun", "kısa", "sessiz", "hızlı", "yavaş", "güçlü", "zayıf",
+            "evet", "hayır", "işte", "galiba", "sanırım", "bence", "sence", "zaten", "aslında", "gerçekten", "sonunda"
         )
 
-        val cleanReply = cleanEmotionTags(aiReplyText)
+        val combinedText = "$aiReplyText\n$userQuery"
+        val cleanReply = cleanEmotionTags(combinedText)
         if (cleanReply.isBlank()) return
 
         val candidatesWithRoleAndContext = mutableListOf<Triple<String, String, String>>()
 
-        // Title + Name
-        val titlePattern = Regex("""\b(Bay|Bayan|Doktor|Prof|Profesör|Yüzbaşı|Kaptan|Amiral|Komutan|Lord|Prens|Prenses|Kral|Kraliçe|Usta|Hoca|Savaşçı|Büyücü|Şövalye|Mimar|Aziz|Üstat|Gözcü)\s+([A-ZÇĞİÖŞÜ][a-zçğıöşü]{2,18})\b""")
+        // 0. Explicit Tags
+        val tagRegex = Regex("""(?is)\[\[?(?:CHARACTER_EMOTION|CAST_MEMBER|CHARACTER):\s*([^\]\n]+)\]\]?""")
+        tagRegex.findAll(combinedText).forEach { match ->
+            val fullVal = match.groupValues[1].trim()
+            val parts = fullVal.split("|", ",")
+            val name = parts.firstOrNull()?.trim() ?: ""
+            val role = if (parts.size > 1) parts[1].trim() else "Yan Karakter"
+            if (name.isNotBlank() && !comprehensiveBlacklist.contains(name.lowercase())) {
+                candidatesWithRoleAndContext.add(Triple(name, role, match.value))
+            }
+        }
+
+        // 1. Title + Name
+        val titlePattern = Regex("""\b(Bay|Bayan|Doktor|Prof|Profesör|Yüzbaşı|Kaptan|Amiral|Komutan|Lord|Prens|Prenses|Kral|Kraliçe|Usta|Hoca|Savaşçı|Büyücü|Şövalye|Mimar|Aziz|Üstat|Gözcü|Dedektif|Ajan|Müfettiş|Savcı|Hâkim|Teğmen|Binbaşı|Albay|General|Sultan|Paşa|Dük|Kont|Baron|Barones|Rahip|Cadı|Gölge|Muhafız|Hizmetkar|Tüccar|Eczacı|Yargıç|Bakan|Başkan|Reis|Çavuş|Efe|Kethüda|Seyis)\s+([A-ZÇĞİÖŞÜ][a-zçğıöşü]{2,18})\b""")
         titlePattern.findAll(cleanReply).forEach { match ->
             val title = match.groupValues[1]
             val name = match.groupValues[2]
@@ -1648,8 +1703,8 @@ class EmochiRepository(
             }
         }
 
-        // Name + Honorific
-        val honorificPattern = Regex("""\b([A-ZÇĞİÖŞÜ][a-zçğıöşü]{2,18})\s+(Bey|Hanım|Efendi|Ağa|Usta|Abi|Abla|Komutan|Kaptan|Doktor|Hazretleri)\b""")
+        // 2. Name + Honorific
+        val honorificPattern = Regex("""\b([A-ZÇĞİÖŞÜ][a-zçğıöşü]{2,18})\s+(Bey|Hanım|Efendi|Ağa|Usta|Abi|Abla|Komutan|Kaptan|Doktor|Hazretleri|Paşa|Hoca|Teyze|Amca|Dayı|Yenge|Dede|Peder)\b""")
         honorificPattern.findAll(cleanReply).forEach { match ->
             val name = match.groupValues[1]
             val honorific = match.groupValues[2]
@@ -1658,8 +1713,8 @@ class EmochiRepository(
             }
         }
 
-        // Explicit Intro
-        val introPattern = Regex("""\b([A-ZÇĞİÖŞÜ][a-zçğıöşü]{2,18})\s+(adında|isminde|adlı|adındaki|ismındaki)\b""")
+        // 3. Explicit Introduction / Relation
+        val introPattern = Regex("""\b([A-ZÇĞİÖŞÜ][a-zçğıöşü]{2,18})\s+(adında|isminde|adlı|denen|diye çağrılan|isimli|adındaki|ismindeki|arkadaşım|doktorum|yardımcım|sekreterim|muhafızım|garsonum)\b""")
         introPattern.findAll(cleanReply).forEach { match ->
             val name = match.groupValues[1]
             if (!comprehensiveBlacklist.contains(name.lowercase())) {
@@ -1667,8 +1722,8 @@ class EmochiRepository(
             }
         }
 
-        // Dialogue Speech Attribution
-        val speechPattern = Regex("""(?:"[^"]{3,}"\s+(?:dedi|sordu|fısıldadı|bağırdı|güldü|mırıldandı|haykırdı|söyledi|yanıtladı)\s+([A-ZÇĞİÖŞÜ][a-zçğıöşü]{2,18})\b)|\b([A-ZÇĞİÖŞÜ][a-zçğıöşü]{2,18})\s*,\s*"[^"]{3,}"[.]?""")
+        // 4. Dialogue Speech Attribution
+        val speechPattern = Regex("""(?:"[^"]{3,}"\s+(?:dedi|sordu|fısıldadı|bağırdı|güldü|mırıldandı|haykırdı|söyledi|yanıtladı|ekledi|çıkıştı|karşılık verdi)\s+([A-ZÇĞİÖŞÜ][a-zçğıöşü]{2,18})\b)|\b([A-ZÇĞİÖŞÜ][a-zçğıöşü]{2,18})\s*,\s*"[^"]{3,}"[.]?""")
         speechPattern.findAll(cleanReply).forEach { match ->
             val name = match.groupValues[1].ifBlank { match.groupValues[2] }
             if (name.isNotBlank() && !comprehensiveBlacklist.contains(name.lowercase())) {
@@ -1676,7 +1731,16 @@ class EmochiRepository(
             }
         }
 
-        for ((candidateRaw, inferredRole, cueSnippet) in candidatesWithRoleAndContext.distinctBy { it.first }) {
+        // 5. Action / Interaction Sentence Patterns
+        val actionPattern = Regex("""\b([A-ZÇĞİÖŞÜ][a-zçğıöşü]{2,18})\s+(?:içeri girdi|kapıyı çaldı|masaya oturdu|elini uzattı|gülümsedi|arkasını döndü|ayağa kalktı|bize katıldı|yaklaştı|konuşmaya başladı|yanımıza geldi|bize baktı)\b""")
+        actionPattern.findAll(cleanReply).forEach { match ->
+            val name = match.groupValues[1]
+            if (!comprehensiveBlacklist.contains(name.lowercase())) {
+                candidatesWithRoleAndContext.add(Triple(name, "Sahnede Eyleme Geçen Karakter", match.value))
+            }
+        }
+
+        for ((candidateRaw, inferredRole, cueSnippet) in candidatesWithRoleAndContext.distinctBy { cleanCharacterNameCandidate(it.first).lowercase() }) {
             val candidate = cleanCharacterNameCandidate(candidateRaw)
             if (candidate.isBlank() || isMainOrUserCharacter(candidateRaw, bot) || isMainOrUserCharacter(candidate, bot)) continue
 
@@ -1691,6 +1755,17 @@ class EmochiRepository(
         try {
             emotionDao.deleteByCharacterName(botId, cleanName)
             emotionDao.deleteByCharacterName(botId, characterName)
+            val allEmotions = emotionDao.getEmotionsForBot(botId)
+            for (emo in allEmotions) {
+                val emoClean = cleanCharacterNameCandidate(emo.characterName)
+                if (emo.characterName.equals(cleanName, ignoreCase = true) ||
+                    emo.characterName.equals(characterName, ignoreCase = true) ||
+                    emoClean.equals(cleanName, ignoreCase = true) ||
+                    emoClean.equals(characterName, ignoreCase = true)
+                ) {
+                    emotionDao.deleteEmotionById(emo.id)
+                }
+            }
         } catch (_: Exception) {}
 
         try {
@@ -2102,8 +2177,11 @@ class EmochiRepository(
 
         val castBlock = if (castMembers.isNotEmpty()) {
             "\n\n## Yan Karakterler (Cast)\n" +
-                    castMembers.joinToString("\n") { "- ${it.name} (${it.role}): İntiba=${it.relationshipState}, Skor=${it.affectionScore} | ${it.description}" }
-        } else ""
+                    castMembers.joinToString("\n") { "- ${it.name} (${it.role}): İntiba=${it.relationshipState}, Skor=${it.affectionScore} | ${it.description}" } +
+                    "\n• Sahnede yan karakterler eylemde bulunduğunda veya konuştuğunda `[CHARACTER_EMOTION: KarakterAdı]` etiketi ekleyerek durumlarını veya duygularını bildir."
+        } else {
+            "\n\n## OTOMATİK KARAKTER ALGILAMA SİSTEMİ\n• Sahnede yeni bir yan karakter (doktor, arkadaş, garson, düşman vb.) belirdiğinde veya konuştuğunda `[CHARACTER_EMOTION: KarakterAdı]` veya `[CAST_MEMBER: KarakterAdı | Rol]` etiketi ekle. Sistem karakteri otomatik algılayıp kadroya kaydedecektir."
+        }
 
         val memoryEnforcementDirective = """
 
@@ -2738,7 +2816,7 @@ micro_atmosphere: <mikro mekan/fiziksel ortam/ışık/ses/gerilim>
             )
 
             // Parse Side Character Emotion Blocks [CHARACTER_EMOTION: {name}] ... [/CHARACTER_EMOTION]
-            val charEmotionRegex = Regex("""(?is)\[CHARACTER_EMOTION:\s*([^\]]+)\](.*?)\[/CHARACTER_EMOTION\]""")
+            val charEmotionRegex = Regex("""(?is)\[\[?CHARACTER_EMOTION:\s*([^\]]+)\]\]?(.*?)\[\[?/CHARACTER_EMOTION\]\]?""")
             val charMatches = charEmotionRegex.findAll(rawResponse)
             for (match in charMatches) {
                 val rawCharName = match.groupValues[1].trim()
@@ -2756,8 +2834,8 @@ micro_atmosphere: <mikro mekan/fiziksel ortam/ışık/ses/gerilim>
                     val existingCharEntity = emotionDao.getEmotionForCharacter(botId, cleanCharName)
                     val existingState = existingCharEntity?.let { EmotionState.fromJson(it.emotionState) } ?: EmotionState.calculateBaselineEmotionState(bot.aiName, cleanCharName, "")
 
-                    val moodMatch = Regex("""(?i)mood\s*:\s*([^\n\r]+)""").find(blockText)?.groupValues?.get(1)?.trim() ?: existingState.dominantEmotion
-                    val affMatch = Regex("""(?i)(?:affection|affection_delta)\s*:\s*([+-]?\d+)""").find(blockText)?.groupValues?.get(1)?.toIntOrNull() ?: 0
+                    val moodMatch = Regex("""(?i)mood\s*:\s*([^\n\r,\]]+)""").find(blockText)?.groupValues?.get(1)?.trim() ?: existingState.dominantEmotion
+                    val affMatch = Regex("""(?i)(?:affection|affection_delta|aff)\s*:\s*([+-]?\d+)""").find(blockText)?.groupValues?.get(1)?.toIntOrNull() ?: 0
                     val trustMatch = Regex("""(?i)(?:trust|trust_delta)\s*:\s*([+-]?\d+)""").find(blockText)?.groupValues?.get(1)?.toIntOrNull() ?: 0
                     val tensionMatch = Regex("""(?i)(?:tension|tension_delta)\s*:\s*([+-]?\d+)""").find(blockText)?.groupValues?.get(1)?.toIntOrNull() ?: 0
 
@@ -2775,6 +2853,26 @@ micro_atmosphere: <mikro mekan/fiziksel ortam/ışık/ses/gerilim>
                     val charEntityToSave = existingCharEntity?.copy(characterName = cleanCharName, emotionState = updatedCharState.toJson())
                         ?: CharacterEmotionEntity(botId = botId, characterName = cleanCharName, emotionState = updatedCharState.toJson())
                     emotionDao.insertOrUpdate(charEntityToSave)
+                }
+            }
+
+            // Parse Inline Tags [CHARACTER_EMOTION: Name], [CAST_MEMBER: Name | Role], [CHARACTER: Name]
+            val inlineTagRegex = Regex("""(?is)\[\[?(?:CHARACTER_EMOTION|CAST_MEMBER|CHARACTER):\s*([^\]\n]+)\]\]?""")
+            inlineTagRegex.findAll(rawResponse).forEach { match ->
+                val fullVal = match.groupValues[1].trim()
+                if (!fullVal.contains("[/CHARACTER_EMOTION]", ignoreCase = true)) {
+                    val parts = fullVal.split("|", ",")
+                    val rawCharName = parts.firstOrNull()?.trim() ?: ""
+                    val inferredRole = if (parts.size > 1) parts[1].trim() else "Yan Karakter"
+                    val cleanCharName = cleanCharacterNameCandidate(rawCharName)
+                    if (cleanCharName.isNotBlank() && !isMainOrUserCharacter(rawCharName, bot) && !isMainOrUserCharacter(cleanCharName, bot)) {
+                        ensureSideCharacterRegistered(
+                            botId = botId,
+                            charName = cleanCharName,
+                            role = inferredRole,
+                            cueSentence = rawResponse.take(200)
+                        )
+                    }
                 }
             }
 
@@ -3509,7 +3607,7 @@ micro_atmosphere: <mikro mekan/fiziksel ortam/ışık/ses/gerilim>
         val sanitizedModel = sanitizeModelName(model)
         val geminiContents = formatMessagesForGemini(messages)
 
-        val threshold = if (enableNsfw) "BLOCK_NONE" else "BLOCK_MEDIUM_AND_ABOVE"
+        val threshold = "BLOCK_NONE"
         val safetySettings = listOf(
             com.example.data.api.GeminiSafetySetting("HARM_CATEGORY_HARASSMENT", threshold),
             com.example.data.api.GeminiSafetySetting("HARM_CATEGORY_HATE_SPEECH", threshold),
@@ -3937,7 +4035,7 @@ micro_atmosphere: <mikro mekan/fiziksel ortam/ışık/ses/gerilim>
 
         try {
             extractAndSaveRealtimeMemories(updatedTimeBot.id, userQuery, finalReplyText, apiKey)
-            detectAndRegisterCastMembers(updatedTimeBot.id, finalReplyText, apiKey)
+            detectAndRegisterCastMembers(updatedTimeBot.id, finalReplyText, apiKey, userQuery = userQuery)
             checkAndGenerateCheckpoint(updatedTimeBot.id, totalCount + 1, apiKey)
             checkTimePerceptionMismatch(updatedTimeBot.id, userQuery, finalReplyText, elapsedMs)
         } catch (_: Exception) {}

@@ -45,4 +45,7 @@ interface CastMemberDao {
 
     @Query("DELETE FROM cast_members WHERE id = :id")
     suspend fun deleteCastMember(id: Long)
+
+    @Query("SELECT name FROM cast_members WHERE botId = :botId AND isBlacklisted = 1")
+    suspend fun getBlacklistedNamesForBot(botId: String): List<String>
 }
